@@ -46,10 +46,12 @@ async function installUv(channel, log) {
 
   const asset = uvPlatformAsset();
   if (!asset) throw new Error(`Unsupported platform for uv: ${process.platform}`);
-  const url = `https://github.com/${repo}/releases/download/${version.startsWith('v') ? version : `v${version}`}/${asset}`;
+  // astral-sh/uv tags are bare versions (0.6.14), not v-prefixed.
+  const tag = String(version).replace(/^v/, '');
+  const url = `https://github.com/${repo}/releases/download/${tag}/${asset}`;
   const archive = path.join(runtimeUvDir, asset);
   log?.info(`Downloading ${url}`);
-  p.log.info(`Downloading uv ${version}…`);
+  p.log.info(`Downloading uv ${tag}…`);
   await downloadFile(url, archive);
 
   for (const e of fs.readdirSync(runtimeUvDir)) {

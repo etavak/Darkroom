@@ -51,7 +51,7 @@ export function formatStatusLine(s) {
  * @param {boolean} [initialValue]
  */
 export async function defaultConfirm(message, initialValue = true) {
-  const { default: prompts } = await import('@clack/prompts');
+  const prompts = await import('@clack/prompts');
   const { handleCancel } = await import('../lib/prompt.js');
   const ok = await prompts.confirm({ message, initialValue });
   if (handleCancel(ok)) return false;
