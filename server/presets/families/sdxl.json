@@ -1,0 +1,76 @@
+{
+  "id": "sdxl",
+  "name": "SDXL",
+  "settings": {
+    "cfg": 5,
+    "baseRes": 1024
+  },
+  "negative": [
+    "cartoon",
+    "anime",
+    "illustration",
+    "painting",
+    "cgi",
+    "lowres",
+    "blurry",
+    "deformed"
+  ],
+  "defaultStyle": "photo",
+  "styles": {
+    "photo": {
+      "name": "Photo",
+      "positive": [
+        "photo",
+        "natural lighting",
+        "high detail"
+      ]
+    },
+    "cinematic": {
+      "name": "Cinematic",
+      "positive": [
+        "cinematic still",
+        "film grain",
+        "dramatic lighting",
+        "shallow depth of field"
+      ]
+    },
+    "portrait": {
+      "name": "Portrait",
+      "positive": [
+        "portrait photo",
+        "85mm",
+        "soft light"
+      ]
+    },
+    "analog": {
+      "name": "Analog",
+      "positive": [
+        "analog film photo",
+        "kodak portra 400"
+      ]
+    },
+    "editorial": {
+      "name": "Editorial",
+      "positive": [
+        "editorial fashion photo",
+        "studio lighting"
+      ]
+    },
+    "landscape": {
+      "name": "Landscape",
+      "positive": [
+        "landscape photography",
+        "golden hour"
+      ]
+    },
+    "product": {
+      "name": "Product",
+      "positive": [
+        "product photography",
+        "clean studio background"
+      ]
+    }
+  },
+  "tagSources": [],
+  "tagFormat": "spaces"
+}

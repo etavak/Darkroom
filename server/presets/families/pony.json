@@ -1,0 +1,76 @@
+{
+  "id": "pony",
+  "name": "Pony",
+  "settings": {
+    "cfg": 7,
+    "clipSkip": 2,
+    "baseRes": 1024
+  },
+  "positive": [
+    "score_9",
+    "score_8_up",
+    "score_7_up"
+  ],
+  "negative": [
+    "score_4",
+    "score_5",
+    "score_6"
+  ],
+  "defaultStyle": "anime",
+  "styles": {
+    "anime": {
+      "name": "Anime",
+      "positive": [
+        "source_anime"
+      ],
+      "negative": [
+        "3d"
+      ]
+    },
+    "cartoon": {
+      "name": "Cartoon",
+      "positive": [
+        "source_cartoon"
+      ],
+      "negative": [
+        "source_anime"
+      ]
+    },
+    "furry": {
+      "name": "Furry",
+      "positive": [
+        "source_furry"
+      ],
+      "negative": [
+        "source_anime"
+      ]
+    },
+    "realism": {
+      "name": "Realism",
+      "positive": [
+        "photo",
+        "realistic"
+      ],
+      "negative": [
+        "source_anime",
+        "source_cartoon",
+        "source_furry"
+      ]
+    },
+    "3d": {
+      "name": "3D",
+      "positive": [
+        "3d"
+      ],
+      "negative": [
+        "flat color"
+      ]
+    }
+  },
+  "tagSources": [
+    "danbooru",
+    "e621",
+    "pony-extra"
+  ],
+  "tagFormat": "underscores"
+}

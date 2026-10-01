@@ -1,0 +1,57 @@
+{
+  "id": "noobai",
+  "name": "NoobAI",
+  "settings": {
+    "cfg": 5,
+    "baseRes": 1024
+  },
+  "positive": [
+    "masterpiece",
+    "best quality",
+    "newest",
+    "absurdres"
+  ],
+  "negative": [
+    "worst quality",
+    "old",
+    "early",
+    "low quality",
+    "lowres",
+    "signature",
+    "username",
+    "logo"
+  ],
+  "defaultStyle": "anime",
+  "styles": {
+    "anime": {
+      "name": "Anime"
+    },
+    "furry": {
+      "name": "Furry",
+      "positive": [
+        "furry",
+        "anthro"
+      ]
+    },
+    "painterly": {
+      "name": "Painterly",
+      "positive": [
+        "watercolor (medium)",
+        "traditional media"
+      ]
+    },
+    "sketch": {
+      "name": "Sketch",
+      "positive": [
+        "sketch",
+        "lineart",
+        "monochrome"
+      ]
+    }
+  },
+  "tagSources": [
+    "danbooru",
+    "e621"
+  ],
+  "tagFormat": "underscores"
+}

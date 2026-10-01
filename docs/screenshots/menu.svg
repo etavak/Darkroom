@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Darkroom terminal menu">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12141a"/>
+      <stop offset="100%" stop-color="#1a1d27"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)"/>
+  <rect x="48" y="40" width="864" height="460" rx="12" fill="#0d0f14" stroke="#2a2f3a"/>
+  <text x="72" y="84" fill="#e8eaed" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22" font-weight="700">Darkroom</text>
+  <text x="72" y="118" fill="#8b93a7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">Status</text>
+  <text x="72" y="144" fill="#7dd3a7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">ComfyUI online  ·  Server online</text>
+  <text x="72" y="190" fill="#8b93a7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">What do you want to do?</text>
+  <rect x="72" y="210" width="520" height="36" rx="6" fill="#243044"/>
+  <text x="88" y="233" fill="#f0f3f8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">¸ Start Darkroom</text>
+  <text x="88" y="278" fill="#c5cddc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">  Start backend only</text>
+  <text x="88" y="312" fill="#c5cddc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">  Install model from file</text>
+  <text x="88" y="346" fill="#c5cddc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">  Download model from URL</text>
+  <text x="88" y="380" fill="#c5cddc" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">  Diagnostics</text>
+  <text x="72" y="460" fill="#6b7385" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">Windows · macOS · Linux</text>
+</svg>

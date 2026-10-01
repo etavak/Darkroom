@@ -1,0 +1,36 @@
+{
+  "name": "darkroom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local ComfyUI frontend — NovelAI/SeaArt-style image generation",
+  "scripts": {
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run start -w server",
+    "launch": "node scripts/cli/index.js",
+    "cli": "node scripts/cli/index.js",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "mock:comfy": "MOCK=true tsx scripts/mock-comfy.ts",
+    "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
+    "lint": "eslint ."
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.39.4",
+    "typescript-eslint": "^8.71.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "7zip-bin": "^5.2.0"
+  }
+}

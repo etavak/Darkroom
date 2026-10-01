@@ -1,0 +1,53 @@
+{
+  "id": "flux",
+  "name": "Flux",
+  "settings": {
+    "cfg": 1,
+    "guidance": 3.5,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "baseRes": 1024
+  },
+  "disableNegative": true,
+  "defaultStyle": "photo",
+  "styles": {
+    "photo": {
+      "name": "Photo",
+      "positive": [
+        "shot on 35mm film, natural light"
+      ]
+    },
+    "cinematic": {
+      "name": "Cinematic",
+      "positive": [
+        "cinematic film still, moody lighting"
+      ]
+    },
+    "illustration": {
+      "name": "Illustration",
+      "positive": [
+        "digital illustration, clean linework"
+      ]
+    },
+    "anime": {
+      "name": "Anime",
+      "positive": [
+        "anime-style illustration, cel shading"
+      ]
+    },
+    "3d": {
+      "name": "3D",
+      "positive": [
+        "3D render, soft studio lighting"
+      ]
+    },
+    "poster": {
+      "name": "Poster",
+      "positive": [
+        "graphic design poster, bold typography"
+      ]
+    }
+  },
+  "tagSources": [],
+  "tagFormat": "spaces"
+}

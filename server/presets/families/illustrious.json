@@ -1,0 +1,78 @@
+{
+  "id": "illustrious",
+  "name": "Illustrious",
+  "settings": {
+    "cfg": 5.5,
+    "baseRes": 1024
+  },
+  "positive": [
+    "masterpiece",
+    "best quality",
+    "amazing quality"
+  ],
+  "negative": [
+    "worst quality",
+    "low quality",
+    "lowres",
+    "bad anatomy",
+    "watermark"
+  ],
+  "defaultStyle": "anime",
+  "styles": {
+    "anime": {
+      "name": "Anime",
+      "positive": [
+        "anime coloring"
+      ]
+    },
+    "cel": {
+      "name": "Cel",
+      "positive": [
+        "cel shading",
+        "flat color"
+      ]
+    },
+    "painterly": {
+      "name": "Painterly",
+      "positive": [
+        "watercolor (medium)",
+        "traditional media"
+      ]
+    },
+    "sketch": {
+      "name": "Sketch",
+      "positive": [
+        "sketch",
+        "lineart",
+        "monochrome"
+      ]
+    },
+    "retro90s": {
+      "name": "Retro 90s",
+      "positive": [
+        "1990s (style)",
+        "retro artstyle"
+      ]
+    },
+    "chibi": {
+      "name": "Chibi",
+      "positive": [
+        "chibi"
+      ]
+    },
+    "semireal": {
+      "name": "Semi-real",
+      "positive": [
+        "realistic"
+      ],
+      "negative": [
+        "flat color",
+        "cel shading"
+      ]
+    }
+  },
+  "tagSources": [
+    "danbooru"
+  ],
+  "tagFormat": "underscores"
+}

@@ -1,0 +1,38 @@
+node_modules/
+dist/
+build/
+*.log
+logs/
+.DS_Store
+Thumbs.db
+
+# Secrets / local config — never commit
+.env
+.env.local
+.env.*.local
+
+# Runtime data
+server/data/
+*.db
+*.db-journal
+.vite/
+
+# Downloaded / generated assets (setup wizard fetches these)
+server/tags/*.csv
+!server/tags/.gitkeep
+**/models/
+**/vae_approx/
+**/outputs/
+**/output/
+ComfyUI/
+ComfyUI_windows_portable/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# Screenshots may be large; keep svg placeholders, ignore raw captures unless added intentionally
+docs/screenshots/*.png
+docs/screenshots/*.jpg
+docs/screenshots/*.webp

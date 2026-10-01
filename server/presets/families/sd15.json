@@ -1,0 +1,43 @@
+{
+  "id": "sd15",
+  "name": "SD 1.5",
+  "settings": {
+    "cfg": 7,
+    "clipSkip": 2,
+    "baseRes": 512
+  },
+  "positive": [
+    "masterpiece",
+    "best quality"
+  ],
+  "negative": [
+    "worst quality",
+    "low quality",
+    "lowres",
+    "bad hands"
+  ],
+  "defaultStyle": "anime",
+  "styles": {
+    "anime": {
+      "name": "Anime"
+    },
+    "realism": {
+      "name": "Realism",
+      "positive": [
+        "photo",
+        "realistic"
+      ],
+      "negative": [
+        "anime",
+        "cartoon"
+      ],
+      "settings": {
+        "clipSkip": 1
+      }
+    }
+  },
+  "tagSources": [
+    "danbooru"
+  ],
+  "tagFormat": "underscores"
+}
