@@ -1,9 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
-import { config } from '../config.js';
 import { db } from '../db/index.js';
 import type { GenerationSettings } from '../workflow/index.js';
+import { disposeFile } from './appSettings.js';
 
 export type GenerationRow = {
   id: string;
@@ -103,9 +101,8 @@ export function deleteGeneration(id: string): boolean {
   if (!row) return false;
 
   for (const filename of row.images) {
-    const filePath = path.join(config.imagesDir, filename);
     try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      disposeFile(filename);
     } catch {
       // ignore missing files
     }

@@ -212,7 +212,7 @@ export function TagPromptInput({
             ref={mirrorRef}
             aria-hidden
             className={cn(
-              'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 text-sm leading-relaxed text-foreground',
+              'pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-[8px] border border-transparent px-3 py-2 text-sm leading-relaxed text-foreground',
               className,
             )}
           >
@@ -271,7 +271,7 @@ export function TagPromptInput({
       </div>
       {open && suggestions.length > 0 && (
         <ul
-          className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border bg-popover py-1 text-sm shadow-md"
+          className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-[10px] border border-border bg-popover py-1 text-sm shadow-md"
           role="listbox"
         >
           {suggestions.map((s, i) => (

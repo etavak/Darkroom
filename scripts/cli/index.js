@@ -14,6 +14,11 @@ import { manageModels } from './actions/manageModels.js';
 import { customNodes } from './actions/customNodes.js';
 import { updateAll } from './actions/update.js';
 import { diagnostics } from './actions/diagnostics.js';
+import {
+  componentsMenu,
+  doctorAction,
+  installEverythingAction,
+} from './actions/components.js';
 
 async function menuLoop() {
   if (!envFileExists()) {
@@ -28,7 +33,8 @@ async function menuLoop() {
     const remote = isRemoteMode();
     const status = await getServiceStatus();
     p.note(
-      formatStatusHeader(status) + (remote ? '\nMode: remote (local ComfyUI start + model tools hidden)' : ''),
+      formatStatusHeader(status) +
+        (remote ? '\nMode: remote (local ComfyUI start + model tools hidden)' : ''),
       'Status',
     );
 
@@ -57,6 +63,21 @@ async function menuLoop() {
     }
 
     options.push(
+      {
+        value: 'install_all',
+        label: 'Install everything',
+        hint: remote ? 'switch to local stack' : 'missing components in order',
+      },
+      {
+        value: 'components',
+        label: 'Components',
+        hint: 'status · install · update · repair',
+      },
+      {
+        value: 'doctor',
+        label: 'Doctor',
+        hint: 'diagnose + repair',
+      },
       { value: 'update', label: 'Update' },
       { value: 'diag', label: 'Diagnostics' },
       { value: 'quit', label: 'Quit' },
@@ -80,6 +101,9 @@ async function menuLoop() {
       download: downloadModelFromUrl,
       manage: manageModels,
       nodes: customNodes,
+      install_all: installEverythingAction,
+      components: componentsMenu,
+      doctor: doctorAction,
       update: updateAll,
       diag: diagnostics,
     };

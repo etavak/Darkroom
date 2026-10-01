@@ -3,28 +3,38 @@ import type { GenerationRecord } from '@/types/generation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { RotateCcw, Star, Trash2 } from 'lucide-react';
 
 type Props = {
   items: GenerationRecord[];
   selectedId: string | null;
+  favorites: Set<string>;
   onSelect: (item: GenerationRecord) => void;
   onReuse: (item: GenerationRecord) => void;
   onDelete: (item: GenerationRecord) => void;
+  onToggleFavorite: (item: GenerationRecord) => void;
   loading?: boolean;
-  /** Horizontal strip for mobile bottom bar */
   orientation?: 'vertical' | 'horizontal';
 };
 
 export function Gallery({
   items,
   selectedId,
+  favorites,
   onSelect,
   onReuse,
   onDelete,
+  onToggleFavorite,
   loading,
   orientation = 'vertical',
 }: Props) {
+  const sorted = [...items].sort((a, b) => {
+    const af = favorites.has(a.id) ? 1 : 0;
+    const bf = favorites.has(b.id) ? 1 : 0;
+    if (af !== bf) return bf - af;
+    return b.createdAt - a.createdAt;
+  });
+
   if (orientation === 'horizontal') {
     return (
       <div className="px-3 py-2">
@@ -36,18 +46,20 @@ export function Gallery({
             {loading ? 'Loading…' : `${items.length}`}
           </span>
         </div>
-        {items.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="py-3 text-center text-xs text-muted-foreground">No generations yet</p>
         ) : (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {items.map((item) => (
+            {sorted.map((item) => (
               <HistoryThumb
                 key={item.id}
                 item={item}
                 selected={item.id === selectedId}
+                favorite={favorites.has(item.id)}
                 onSelect={() => onSelect(item)}
                 onReuse={() => onReuse(item)}
                 onDelete={() => onDelete(item)}
+                onToggleFavorite={() => onToggleFavorite(item)}
                 compact
               />
             ))}
@@ -69,19 +81,21 @@ export function Gallery({
       </div>
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-2 p-3">
-          {items.length === 0 ? (
+          {sorted.length === 0 ? (
             <p className="py-8 text-center text-xs text-muted-foreground">
               Generations will appear here
             </p>
           ) : (
-            items.map((item) => (
+            sorted.map((item) => (
               <HistoryThumb
                 key={item.id}
                 item={item}
                 selected={item.id === selectedId}
+                favorite={favorites.has(item.id)}
                 onSelect={() => onSelect(item)}
                 onReuse={() => onReuse(item)}
                 onDelete={() => onDelete(item)}
+                onToggleFavorite={() => onToggleFavorite(item)}
               />
             ))
           )}
@@ -94,16 +108,20 @@ export function Gallery({
 function HistoryThumb({
   item,
   selected,
+  favorite,
   onSelect,
   onReuse,
   onDelete,
+  onToggleFavorite,
   compact,
 }: {
   item: GenerationRecord;
   selected: boolean;
+  favorite: boolean;
   onSelect: () => void;
   onReuse: () => void;
   onDelete: () => void;
+  onToggleFavorite: () => void;
   compact?: boolean;
 }) {
   const thumb = item.images[0] ? imageUrl(item.images[0]) : null;
@@ -120,7 +138,7 @@ function HistoryThumb({
         type="button"
         onClick={onSelect}
         className={cn(
-          'h-16 w-16 shrink-0 overflow-hidden rounded-md border transition-colors',
+          'relative h-16 w-16 shrink-0 overflow-hidden rounded-md border transition-colors',
           selected ? 'border-primary' : 'border-border',
         )}
       >
@@ -130,6 +148,9 @@ function HistoryThumb({
           <div className="flex h-full w-full items-center justify-center bg-muted text-[10px] text-muted-foreground">
             —
           </div>
+        )}
+        {favorite && (
+          <Star className="absolute right-0.5 top-0.5 h-3 w-3 fill-primary text-primary" />
         )}
       </button>
     );
@@ -142,7 +163,7 @@ function HistoryThumb({
         selected ? 'border-primary' : 'border-border hover:border-muted-foreground/40',
       )}
     >
-      <button type="button" onClick={onSelect} className="block w-full">
+      <button type="button" onClick={onSelect} className="relative block w-full">
         <div className="aspect-square w-full overflow-hidden bg-muted">
           {thumb ? (
             <img src={thumb} alt="" className="h-full w-full object-cover" />
@@ -152,6 +173,9 @@ function HistoryThumb({
             </div>
           )}
         </div>
+        {favorite && (
+          <Star className="absolute right-1.5 top-1.5 h-3.5 w-3.5 fill-primary text-primary drop-shadow" />
+        )}
       </button>
       <div className="space-y-1.5 p-2">
         <p className="truncate text-[10px] text-muted-foreground">{time}</p>
@@ -173,9 +197,21 @@ function HistoryThumb({
             type="button"
             size="icon"
             variant="ghost"
+            className={cn('h-7 w-7', favorite ? 'text-primary' : 'text-muted-foreground')}
+            onClick={onToggleFavorite}
+            aria-label={favorite ? 'Unfavorite' : 'Favorite'}
+            title={favorite ? 'Unfavorite' : 'Favorite (F)'}
+          >
+            <Star className={cn('h-3.5 w-3.5', favorite && 'fill-current')} />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
             onClick={onDelete}
             aria-label="Delete"
+            title="Delete"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

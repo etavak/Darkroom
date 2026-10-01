@@ -32,8 +32,13 @@ export function fetchHealth(): Promise<{
   comfy: boolean;
   comfyUrl: string;
   mock?: boolean;
+  mode?: 'local' | 'remote';
 }> {
   return request('/api/health');
+}
+
+export function startComfyApi(): Promise<{ ok: boolean; alreadyRunning?: boolean }> {
+  return request('/api/comfy/start', { method: 'POST', body: '{}' });
 }
 
 export function startGenerate(
@@ -59,6 +64,36 @@ export function updatePreviewQuality(quality: 'fast' | 'detailed'): Promise<Prev
     method: 'PUT',
     body: JSON.stringify({ quality }),
   });
+}
+
+export function fetchServerSettings(): Promise<
+  import('../types/serverSettings').ServerSettingsResponse
+> {
+  return request('/api/settings');
+}
+
+export function updateServerSettings(
+  partial: Partial<import('../types/serverSettings').ServerSettings>,
+): Promise<import('../types/serverSettings').ServerSettingsResponse> {
+  return request('/api/settings', {
+    method: 'PUT',
+    body: JSON.stringify(partial),
+  });
+}
+
+export function fetchDiagnostics(): Promise<{
+  text: string;
+  diskUsage: import('../types/serverSettings').DiskUsageInfo;
+}> {
+  return request('/api/settings/diagnostics');
+}
+
+export function runBackupApi(): Promise<{
+  ok: boolean;
+  path?: string;
+  diskUsage?: import('../types/serverSettings').DiskUsageInfo;
+}> {
+  return request('/api/settings/backup', { method: 'POST' });
 }
 
 export function cancelGenerate(jobId: string | null): Promise<{ ok: boolean }> {

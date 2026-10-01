@@ -27,6 +27,8 @@ const sheetVariants = {
   left: 'inset-y-0 left-0 h-full w-[min(100%,22rem)] border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left',
   right:
     'inset-y-0 right-0 h-full w-[min(100%,22rem)] border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+  center:
+    'left-1/2 top-1/2 h-[min(90vh,36rem)] w-[min(96vw,48rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg border shadow-2xl data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
 };
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {

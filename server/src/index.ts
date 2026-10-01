@@ -13,6 +13,7 @@ import { imagesRouter } from './routes/images.js';
 import { presetsRouter } from './routes/presets.js';
 import { settingsRouter } from './routes/settings.js';
 import { tagsRouter } from './routes/tags.js';
+import { comfyRouter } from './routes/comfy.js';
 import { loadAllTagDictionaries } from './tags/dictionary.js';
 import { attachComfyWsProxy } from './ws/comfyProxy.js';
 
@@ -27,6 +28,7 @@ app.get('/api/health', async (_req, res) => {
     comfy: comfyOk,
     comfyUrl: config.comfyUrl,
     mock: process.env.MOCK === 'true',
+    mode: (process.env.COMFY_MODE || 'local').toLowerCase() === 'remote' ? 'remote' : 'local',
   });
 });
 
@@ -37,6 +39,7 @@ app.use('/api/images', imagesRouter);
 app.use('/api/presets', presetsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/tags', tagsRouter);
+app.use('/api/comfy', comfyRouter);
 
 const clientDist = config.clientDist;
 if (fs.existsSync(clientDist)) {

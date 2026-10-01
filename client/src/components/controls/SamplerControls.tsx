@@ -1,6 +1,6 @@
 import { SAMPLERS, SCHEDULERS } from '@/constants/samplers';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ScrubbyNumber } from '@/components/ui/scrubby-number';
 import {
   Select,
   SelectContent,
@@ -35,33 +35,28 @@ export function SamplerControls({
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="steps">Steps</Label>
-          <Input
-            id="steps"
-            type="number"
-            min={1}
-            max={150}
-            className="font-mono"
-            value={steps}
-            onChange={(e) => onStepsChange(Number(e.target.value))}
-            disabled={disabled}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="cfg">CFG</Label>
-          <Input
-            id="cfg"
-            type="number"
-            min={1}
-            max={30}
-            step={0.5}
-            className="font-mono"
-            value={cfg}
-            onChange={(e) => onCfgChange(Number(e.target.value))}
-            disabled={disabled}
-          />
-        </div>
+        <ScrubbyNumber
+          id="steps"
+          label="Steps"
+          value={steps}
+          onChange={onStepsChange}
+          min={1}
+          max={150}
+          step={1}
+          defaultValue={25}
+          disabled={disabled}
+        />
+        <ScrubbyNumber
+          id="cfg"
+          label="CFG"
+          value={cfg}
+          onChange={onCfgChange}
+          min={1}
+          max={30}
+          step={0.5}
+          defaultValue={7}
+          disabled={disabled}
+        />
       </div>
 
       <div className="space-y-1.5">

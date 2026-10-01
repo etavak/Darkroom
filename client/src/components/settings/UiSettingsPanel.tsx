@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Image as ImageIcon, Sparkles } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -7,7 +8,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import type { PreviewQuality, UiSettings } from '@/lib/uiSettings';
 
@@ -16,6 +16,7 @@ export type SettingEntry = {
   label: string;
   description?: string;
   hint?: string;
+  icon?: ReactNode;
   control: ReactNode;
 };
 
@@ -31,27 +32,48 @@ type Props = {
 
 function SettingRow({ entry }: { entry: SettingEntry }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <Label htmlFor={entry.id} className="normal-case tracking-normal text-foreground">
-          {entry.label}
-        </Label>
-        {entry.description && (
-          <p className="text-[11px] leading-snug text-muted-foreground">{entry.description}</p>
+    <div className="setting-row flex items-start justify-between gap-4 py-3">
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        {entry.icon && (
+          <span className="mt-0.5 shrink-0 text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">
+            {entry.icon}
+          </span>
         )}
-        {entry.hint && (
-          <p className="text-[11px] leading-snug text-amber-500/90">{entry.hint}</p>
-        )}
+        <div className="min-w-0 space-y-0.5">
+          <Label htmlFor={entry.id} className="normal-case tracking-normal text-foreground">
+            {entry.label}
+          </Label>
+          {entry.description && (
+            <p className="text-[11px] leading-snug text-muted-foreground">{entry.description}</p>
+          )}
+          {entry.hint && (
+            <p className="text-[11px] leading-snug text-primary/90">{entry.hint}</p>
+          )}
+        </div>
       </div>
       <div className="shrink-0 pt-0.5">{entry.control}</div>
     </div>
   );
 }
 
-/**
- * Device-local UI settings (localStorage). Built as a list of entries so new
- * options can be added without restructuring the panel.
- */
+function SettingsGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <section>
+      <h3 className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </h3>
+      <div className="divide-y divide-border/60">{children}</div>
+    </section>
+  );
+}
+
+/** Device-local UI settings (localStorage). */
 export function UiSettingsPanel({
   settings,
   onLivePreviewChange,
@@ -66,11 +88,12 @@ export function UiSettingsPanel({
         ? 'Applied on next generate'
         : undefined;
 
-  const entries: SettingEntry[] = [
+  const previewEntries: SettingEntry[] = [
     {
       id: 'live-preview',
       label: 'Live preview',
       description: 'Stream latent previews while generating. Progress still updates when off.',
+      icon: <Sparkles />,
       control: (
         <Switch
           id="live-preview"
@@ -85,6 +108,7 @@ export function UiSettingsPanel({
       label: 'Preview quality',
       description: 'Fast is cheaper on the GPU; Detailed is sharper.',
       hint: qualityHint,
+      icon: <ImageIcon />,
       control: (
         <Select
           value={settings.previewQuality}
@@ -104,16 +128,15 @@ export function UiSettingsPanel({
   ];
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-2">
-      <p className="pb-1 text-[11px] text-muted-foreground">
+    <div className="flex flex-col gap-4 px-4 pb-4 pt-1">
+      <p className="text-[11px] text-muted-foreground">
         Saved on this device only — other phones or tablets keep their own choices.
       </p>
-      {entries.map((entry, i) => (
-        <div key={entry.id}>
-          {i > 0 && <Separator />}
-          <SettingRow entry={entry} />
-        </div>
-      ))}
+      <SettingsGroup label="Preview">
+        {previewEntries.map((entry) => (
+          <SettingRow key={entry.id} entry={entry} />
+        ))}
+      </SettingsGroup>
     </div>
   );
 }

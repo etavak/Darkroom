@@ -1,14 +1,18 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as p from '@clack/prompts';
 import sevenBin from '7zip-bin';
 import { root } from '../lib/paths.js';
 import { runCommand } from '../lib/process.js';
-import { findSystemPython, validateComfyInstall } from './detect.js';
+import {
+  getPythonVersionTuple,
+  validateComfyInstall,
+} from './detect.js';
+import { ensurePreferredPython, isPreferredPythonVersion } from './ensurePython.js';
+import { handleCancel } from '../lib/prompt.js';
 
 /**
  * @param {string} url
@@ -153,10 +157,13 @@ function findPortableRoot(extractRoot) {
 }
 
 /**
+ * @param {{ dest?: string }} [opts]
  * @returns {Promise<import('./detect.js').DetectedComfy>}
  */
-export async function installComfyWindowsPortable() {
-  const destParent = path.join(os.homedir(), 'ComfyUI_windows_portable');
+export async function installComfyWindowsPortable(opts = {}) {
+  const destParent = opts.dest
+    ? path.resolve(opts.dest)
+    : path.join(root, 'ComfyUI_windows_portable');
   p.log.info(`Install location: ${destParent}`);
 
   const s = p.spinner();
@@ -208,18 +215,97 @@ export async function installComfyWindowsPortable() {
 }
 
 /**
- * @param {{ cuda?: boolean }} [opts]
+ * @param {string} pip
+ * @param {string[]} pkgs
+ * @param {{ cwd: string, extraArgs?: string[] }} opts
+ */
+async function pipInstall(pip, pkgs, opts) {
+  const base = [
+    '-m',
+    'pip',
+    'install',
+    '--upgrade',
+    '--retries',
+    '10',
+    '--timeout',
+    '60',
+    ...(opts.extraArgs || []),
+    ...pkgs,
+  ];
+  try {
+    await runCommand(pip, base, { cwd: opts.cwd, stdio: 'inherit' });
+    return;
+  } catch {
+    // Common on flaky networks / captive portals — retry with trusted hosts.
+    p.log.warn('pip failed — retrying with --trusted-host (PyPI)…');
+    await runCommand(
+      pip,
+      [
+        '-m',
+        'pip',
+        'install',
+        '--upgrade',
+        '--retries',
+        '10',
+        '--timeout',
+        '60',
+        '--trusted-host',
+        'pypi.org',
+        '--trusted-host',
+        'files.pythonhosted.org',
+        '--trusted-host',
+        'download.pytorch.org',
+        ...(opts.extraArgs || []),
+        ...pkgs,
+      ],
+      { cwd: opts.cwd, stdio: 'inherit' },
+    );
+  }
+}
+
+/**
+ * @param {string} venvPython
+ * @param {string} basePython
+ * @param {[number, number]} baseVersion
+ */
+function venvNeedsRecreate(venvPython, basePython, baseVersion) {
+  if (!fs.existsSync(venvPython)) return true;
+  const ver = getPythonVersionTuple(venvPython);
+  if (!ver) return true;
+  if (ver[0] !== baseVersion[0] || ver[1] !== baseVersion[1]) return true;
+  const probe = spawnSync(venvPython, ['-c', 'import sys; print(sys.executable)'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 15_000,
+  });
+  if (probe.status !== 0) return true;
+  void basePython;
+  return false;
+}
+
+/**
+ * @param {{ cuda?: boolean, dest?: string, _retriedPythonFix?: boolean }} [opts]
  * @returns {Promise<import('./detect.js').DetectedComfy>}
  */
 export async function installComfyFromSource(opts = {}) {
-  const python = findSystemPython();
-  if (!python) {
-    throw new Error('Python 3.10+ not found on PATH. Install Python, then retry.');
+  const dest = opts.dest ? path.resolve(opts.dest) : path.join(root, 'ComfyUI');
+
+  let info = await ensurePreferredPython();
+
+  if (!info) {
+    throw new Error(
+      'Python 3.10–3.13 is required for a reliable ComfyUI install. Install Python 3.12, then retry.',
+    );
   }
 
-  const dest = path.join(os.homedir(), 'ComfyUI');
+  const { executable: python, version } = info;
   p.log.info(`Install location: ${dest}`);
-  p.log.info(`Using Python: ${python}`);
+  p.log.info(`Using Python: ${python} (${version[0]}.${version[1]})`);
+  if (!isPreferredPythonVersion(version)) {
+    p.log.warn(
+      `Python ${version[0]}.${version[1]} is not preferred — installs may fail. Prefer 3.12/3.13.`,
+    );
+  }
 
   if (fs.existsSync(path.join(dest, '.git'))) {
     p.log.info('Existing git clone found — updating…');
@@ -235,57 +321,84 @@ export async function installComfyFromSource(opts = {}) {
     );
   }
 
+  const venvDir = path.join(dest, 'venv');
   const venvPython =
     process.platform === 'win32'
-      ? path.join(dest, 'venv', 'Scripts', 'python.exe')
-      : path.join(dest, 'venv', 'bin', 'python');
+      ? path.join(venvDir, 'Scripts', 'python.exe')
+      : path.join(venvDir, 'bin', 'python');
 
-  if (!fs.existsSync(venvPython)) {
-    p.log.step('Creating venv…');
+  const recreateVenv = async () => {
+    if (fs.existsSync(venvDir)) {
+      p.log.step('Recreating venv…');
+      fs.rmSync(venvDir, { recursive: true, force: true });
+    } else {
+      p.log.step('Creating venv…');
+    }
     await runCommand(python, ['-m', 'venv', 'venv'], { cwd: dest, stdio: 'inherit' });
+  };
+
+  if (venvNeedsRecreate(venvPython, python, version)) {
+    await recreateVenv();
   }
 
-  const pip = venvPython;
-  p.log.step('Upgrading pip…');
-  await runCommand(pip, ['-m', 'pip', 'install', '--upgrade', 'pip', 'wheel', 'setuptools'], {
-    cwd: dest,
-    stdio: 'inherit',
-  });
+  try {
+    const pip = venvPython;
+    p.log.step('Upgrading pip…');
+    await pipInstall(pip, ['pip', 'wheel', 'setuptools'], { cwd: dest });
 
-  const useCuda = opts.cuda === true && process.platform === 'linux';
-  if (useCuda) {
-    p.log.step('Installing PyTorch (CUDA 12.4 index)…');
-    await runCommand(
-      pip,
-      [
-        '-m',
-        'pip',
-        'install',
-        'torch',
-        'torchvision',
-        'torchaudio',
-        '--index-url',
-        'https://download.pytorch.org/whl/cu124',
-      ],
-      { cwd: dest, stdio: 'inherit' },
-    );
-  } else {
-    p.log.step(
-      process.platform === 'darwin'
-        ? 'Installing PyTorch (macOS / MPS)…'
-        : 'Installing PyTorch…',
-    );
-    await runCommand(pip, ['-m', 'pip', 'install', 'torch', 'torchvision', 'torchaudio'], {
-      cwd: dest,
-      stdio: 'inherit',
+    const useCuda = opts.cuda === true && process.platform === 'linux';
+    if (useCuda) {
+      p.log.step('Installing PyTorch (CUDA 12.4 index)…');
+      await pipInstall(pip, ['torch', 'torchvision', 'torchaudio'], {
+        cwd: dest,
+        extraArgs: ['--index-url', 'https://download.pytorch.org/whl/cu124'],
+      });
+    } else {
+      p.log.step(
+        process.platform === 'darwin'
+          ? 'Installing PyTorch (macOS / MPS)…'
+          : 'Installing PyTorch…',
+      );
+      await pipInstall(pip, ['torch', 'torchvision', 'torchaudio'], { cwd: dest });
+    }
+
+    p.log.step('Installing ComfyUI requirements…');
+    await pipInstall(pip, ['-r', 'requirements.txt'], { cwd: dest });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (opts._retriedPythonFix) {
+      throw new Error(
+        `${msg}\n\nPyPI install still failed after switching Python. Check your network and try again.`,
+      );
+    }
+
+    p.log.error(msg);
+
+    if (!isPreferredPythonVersion(version)) {
+      const fixed = await ensurePreferredPython({
+        forceOffer: true,
+        reason:
+          'Dependency install failed — often caused by Python 3.14 or a flaky PyPI connection. Install Python 3.12 and retry with a fresh venv?',
+      });
+      if (fixed && isPreferredPythonVersion(fixed.version)) {
+        if (fs.existsSync(venvDir)) {
+          fs.rmSync(venvDir, { recursive: true, force: true });
+        }
+        return installComfyFromSource({ ...opts, _retriedPythonFix: true });
+      }
+    }
+
+    const cont = await p.confirm({
+      message: 'Retry dependency install?',
+      initialValue: true,
     });
-  }
+    if (handleCancel(cont) || !cont) throw err;
 
-  p.log.step('Installing ComfyUI requirements…');
-  await runCommand(pip, ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-    cwd: dest,
-    stdio: 'inherit',
-  });
+    if (fs.existsSync(venvDir)) {
+      fs.rmSync(venvDir, { recursive: true, force: true });
+    }
+    return installComfyFromSource({ ...opts, _retriedPythonFix: true });
+  }
 
   const validated = validateComfyInstall(dest);
   if (!validated) throw new Error('Install finished but validation failed');

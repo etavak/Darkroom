@@ -1,6 +1,9 @@
+import { HelpCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
+import { Tooltip } from '@/components/ui/tooltip';
 import { TagChips } from '@/components/controls/TagChips';
 import { TagPromptInput } from '@/components/controls/TagPromptInput';
+import { estimateTokenCount } from '@/lib/tokens';
 import type { InjectedTag } from '@/types/presets';
 
 type Props = {
@@ -11,12 +14,30 @@ type Props = {
   disableNegative?: boolean;
   familyId: string | null;
   tagsEnabled: boolean;
+  finalPositive?: string;
+  finalNegative?: string;
   onPromptChange: (v: string) => void;
   onNegativeChange: (v: string) => void;
   onDismissPositive: (tag: string) => void;
   onDismissNegative: (tag: string) => void;
   disabled?: boolean;
 };
+
+function TokenBadge({ text }: { text: string }) {
+  const count = estimateTokenCount(text);
+  const over = count > 75;
+  return (
+    <span
+      className={
+        over
+          ? 'pointer-events-none absolute bottom-2 right-2 z-10 rounded bg-background/85 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-destructive'
+          : 'pointer-events-none absolute bottom-2 right-2 z-10 rounded bg-background/85 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground'
+      }
+    >
+      {count} / 75
+    </span>
+  );
+}
 
 export function PromptPanel({
   prompt,
@@ -26,6 +47,8 @@ export function PromptPanel({
   disableNegative,
   familyId,
   tagsEnabled,
+  finalPositive,
+  finalNegative,
   onPromptChange,
   onNegativeChange,
   onDismissPositive,
@@ -35,47 +58,60 @@ export function PromptPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="space-y-1.5">
-        <Label htmlFor="prompt">Prompt</Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="prompt">Prompt</Label>
+          <Tooltip content="Describe the image. Preset tags are injected automatically; your text is appended after them.">
+            <button
+              type="button"
+              className="text-muted-foreground transition-colors duration-150 hover:text-foreground"
+              aria-label="About the prompt field"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+        </div>
         {positiveTags.length > 0 && (
           <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Injected tags
-            </p>
+            <p className="field-label text-[10px]">Injected tags</p>
             <TagChips tags={positiveTags} onRemove={onDismissPositive} disabled={disabled} />
           </div>
         )}
-        <TagPromptInput
-          id="prompt"
-          value={prompt}
-          onChange={onPromptChange}
-          placeholder="Your text (appended after preset tags)…"
-          disabled={disabled}
-          familyId={familyId}
-          tagsEnabled={tagsEnabled}
-          className="min-h-[100px]"
-        />
+        <div className="relative">
+          <TagPromptInput
+            id="prompt"
+            value={prompt}
+            onChange={onPromptChange}
+            placeholder="Describe your image..."
+            disabled={disabled}
+            familyId={familyId}
+            tagsEnabled={tagsEnabled}
+            className="min-h-[100px] pb-7"
+          />
+          <TokenBadge text={finalPositive ?? prompt} />
+        </div>
       </div>
       {!disableNegative && (
         <div className="space-y-1.5">
           <Label htmlFor="negative">Negative prompt</Label>
           {negativeTags.length > 0 && (
             <div className="space-y-1">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Injected tags
-              </p>
+              <p className="field-label text-[10px]">Injected tags</p>
               <TagChips tags={negativeTags} onRemove={onDismissNegative} disabled={disabled} />
             </div>
           )}
-          <TagPromptInput
-            id="negative"
-            value={negativePrompt}
-            onChange={onNegativeChange}
-            placeholder="Your negatives…"
-            disabled={disabled}
-            familyId={familyId}
-            tagsEnabled={tagsEnabled}
-            className="min-h-[64px]"
-          />
+          <div className="relative">
+            <TagPromptInput
+              id="negative"
+              value={negativePrompt}
+              onChange={onNegativeChange}
+              placeholder="What to avoid…"
+              disabled={disabled}
+              familyId={familyId}
+              tagsEnabled={tagsEnabled}
+              className="min-h-[64px] pb-7"
+            />
+            <TokenBadge text={finalNegative ?? negativePrompt} />
+          </div>
         </div>
       )}
       {disableNegative && (

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  applyUiAppearance,
   loadUiSettings,
   saveUiSettings,
   type PreviewQuality,
@@ -7,20 +8,26 @@ import {
 } from '@/lib/uiSettings';
 
 export function useUiSettings() {
-  const [settings, setSettings] = useState<UiSettings>(() => loadUiSettings());
+  const [settings, setSettings] = useState<UiSettings>(() => {
+    const loaded = loadUiSettings();
+    applyUiAppearance(loaded);
+    return loaded;
+  });
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (
-        e.key === 'darkroom.livePreview' ||
-        e.key === 'darkroom.previewQuality' ||
-        e.key === null
-      ) {
-        setSettings(loadUiSettings());
+      if (e.key?.startsWith('darkroom.') || e.key === null) {
+        const next = loadUiSettings();
+        applyUiAppearance(next);
+        setSettings(next);
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const update = useCallback((partial: Partial<UiSettings>) => {
+    setSettings(saveUiSettings(partial));
   }, []);
 
   const setLivePreview = useCallback((livePreview: boolean) => {
@@ -31,5 +38,10 @@ export function useUiSettings() {
     setSettings(saveUiSettings({ previewQuality }));
   }, []);
 
-  return { settings, setLivePreview, setPreviewQuality };
+  return {
+    settings,
+    update,
+    setLivePreview,
+    setPreviewQuality,
+  };
 }

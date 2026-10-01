@@ -1,35 +1,63 @@
 import * as p from '@clack/prompts';
-import { installCustomNode, listCustomNodeStatus } from '../lib/nodes.js';
 import { handleCancel } from '../lib/prompt.js';
+import { createAllNodeComponents } from '../components/nodes.js';
+import { formatStatusLine } from '../components/types.js';
 
 export async function customNodes() {
-  const status = listCustomNodeStatus();
-  const lines = status.map((n) => `${n.installed ? '✓' : '✗'}  ${n.name}`).join('\n');
-  p.note(lines, 'Custom nodes');
+  const nodes = createAllNodeComponents();
+  const statuses = [];
+  for (const n of nodes) {
+    statuses.push({ comp: n, status: await n.status() });
+  }
+  p.note(
+    statuses.map((s) => `${s.comp.name}: ${formatStatusLine(s.status)}`).join('\n'),
+    'Custom nodes',
+  );
 
-  const missing = status.filter((n) => !n.installed);
+  const missing = statuses.filter((s) => s.status.state === 'missing');
   if (missing.length === 0) {
     p.log.success('All listed nodes are installed');
-    return;
+    const manage = await p.confirm({
+      message: 'Open Components for a specific node?',
+      initialValue: false,
+    });
+    if (handleCancel(manage) || !manage) return;
   }
 
   const choice = await p.select({
-    message: 'Install a node?',
+    message: 'Custom node action',
     options: [
-      ...missing.map((n) => ({ value: n.id, label: n.name })),
+      ...statuses.map((s) => ({
+        value: s.comp.id,
+        label: s.comp.name,
+        hint: formatStatusLine(s.status),
+      })),
       { value: '', label: 'Back' },
     ],
   });
   if (handleCancel(choice) || !choice) return;
 
-  const node = missing.find((n) => n.id === choice);
-  if (!node) return;
+  const entry = statuses.find((s) => s.comp.id === choice);
+  if (!entry) return;
+
+  const action = await p.select({
+    message: entry.comp.name,
+    options: [
+      { value: 'install', label: 'Install' },
+      { value: 'update', label: 'Update' },
+      { value: 'reinstall', label: 'Reinstall' },
+      { value: 'uninstall', label: 'Uninstall' },
+      { value: '', label: 'Back' },
+    ],
+  });
+  if (handleCancel(action) || !action) return;
 
   try {
-    p.log.step(`Installing ${node.name} (git + pip)…`);
-    await installCustomNode(node);
-    p.log.success(`Installed ${node.name}`);
-    p.log.info('Restart ComfyUI to load the new node.');
+    if (action === 'install') await entry.comp.install({});
+    else if (action === 'update') await entry.comp.update({ channel: 'tested' });
+    else if (action === 'reinstall') await entry.comp.reinstall({});
+    else if (action === 'uninstall') await entry.comp.uninstall({});
+    p.log.success('Done — restart ComfyUI to load node changes.');
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
   }

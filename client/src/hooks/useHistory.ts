@@ -29,5 +29,16 @@ export function useHistory() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }, []);
 
-  return { items, loading, error, reload, remove };
+  const confirmRemove = useCallback(
+    async (id: string, confirmDelete: boolean) => {
+      if (confirmDelete && !window.confirm('Remove this generation from history?')) {
+        return false;
+      }
+      await remove(id);
+      return true;
+    },
+    [remove],
+  );
+
+  return { items, loading, error, reload, remove, confirmRemove };
 }

@@ -8,12 +8,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const root = path.resolve(__dirname, '../../..');
 export const envPath = path.join(root, '.env');
 export const logsDir = path.join(root, 'logs');
+export const opsLogDir = path.join(logsDir, 'ops');
 export const pidPath = path.join(logsDir, 'pids.json');
 export const clientDist = path.join(root, 'client', 'dist');
 export const serverEntry = path.join(root, 'server', 'dist', 'index.js');
 export const checkpointsPath = path.join(root, 'server', 'presets', 'checkpoints.json');
 export const familiesDir = path.join(root, 'server', 'presets', 'families');
 export const tagsDir = path.join(root, 'server', 'tags');
+
+/** Self-contained runtime (portable node, uv, MinGit, restore points) */
+export const runtimeDir = path.join(root, 'runtime');
+export const runtimeNodeDir = path.join(runtimeDir, 'node');
+export const runtimeUvDir = path.join(runtimeDir, 'uv');
+export const runtimeGitDir = path.join(runtimeDir, 'git');
+export const restorePointsDir = path.join(runtimeDir, 'restore-points');
+export const componentsJsonPath = path.join(root, 'scripts', 'cli', 'components.json');
 
 /**
  * Resolve ComfyUI source root (folder with main.py).
@@ -92,3 +101,72 @@ export function getComfyPython(comfyDir = process.env.COMFY_DIR || '') {
 export function ensureLogsDir() {
   fs.mkdirSync(logsDir, { recursive: true });
 }
+
+export function ensureRuntimeDirs() {
+  for (const dir of [runtimeDir, runtimeNodeDir, runtimeUvDir, runtimeGitDir, restorePointsDir, opsLogDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+/**
+ * Resolve portable Node binary if present under runtime/node.
+ * Layout: runtime/node/node-vX.Y.Z-<platform>-<arch>/bin/node (Unix)
+ *         runtime/node/node-vX.Y.Z-win-x64/node.exe (Windows)
+ */
+export function getPortableNodeBin() {
+  if (!fs.existsSync(runtimeNodeDir)) return null;
+  const entries = fs.readdirSync(runtimeNodeDir, { withFileTypes: true });
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (process.platform === 'win32') {
+      const exe = path.join(runtimeNodeDir, e.name, 'node.exe');
+      if (fs.existsSync(exe)) return exe;
+    } else {
+      const bin = path.join(runtimeNodeDir, e.name, 'bin', 'node');
+      if (fs.existsSync(bin)) return bin;
+    }
+  }
+  return null;
+}
+
+/** npm next to portable node, or null */
+export function getPortableNpmBin() {
+  const nodeBin = getPortableNodeBin();
+  if (!nodeBin) return null;
+  if (process.platform === 'win32') {
+    const npmCmd = path.join(path.dirname(nodeBin), 'npm.cmd');
+    return fs.existsSync(npmCmd) ? npmCmd : null;
+  }
+  const npm = path.join(path.dirname(nodeBin), 'npm');
+  return fs.existsSync(npm) ? npm : null;
+}
+
+/** Best node to use: current process if >=22, else portable */
+export function getPreferredNodeBin() {
+  const major = Number(process.versions.node.split('.')[0]);
+  if (major >= 22) return process.execPath;
+  return getPortableNodeBin() || process.execPath;
+}
+
+/**
+ * uv binary under runtime/uv
+ */
+export function getUvBin() {
+  const name = process.platform === 'win32' ? 'uv.exe' : 'uv';
+  const candidate = path.join(runtimeUvDir, name);
+  return fs.existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * MinGit / portable git under runtime/git (Windows), else `git` on PATH
+ */
+export function getGitBin() {
+  if (process.platform === 'win32') {
+    const portable = path.join(runtimeGitDir, 'cmd', 'git.exe');
+    if (fs.existsSync(portable)) return portable;
+    const mingw = path.join(runtimeGitDir, 'mingw64', 'bin', 'git.exe');
+    if (fs.existsSync(mingw)) return mingw;
+  }
+  return 'git';
+}
+

@@ -24,9 +24,21 @@ export function loadEnvFile(file = envPath) {
   return out;
 }
 
-export function applyEnv(fileEnv) {
+/**
+ * @param {Record<string, string>} fileEnv
+ * @param {{ overwrite?: boolean }} [opts]
+ */
+export function applyEnv(fileEnv, opts = {}) {
+  const overwrite = opts.overwrite === true;
   for (const [k, v] of Object.entries(fileEnv)) {
-    if (process.env[k] === undefined) process.env[k] = v;
+    if (overwrite || process.env[k] === undefined) process.env[k] = v;
+  }
+  if (overwrite) {
+    // Drop local-only keys when switching to remote so getConfig() stays accurate.
+    if ((fileEnv.COMFY_MODE || '').toLowerCase() === 'remote') {
+      delete process.env.COMFY_DIR;
+      delete process.env.COMFY_PYTHON;
+    }
   }
 }
 

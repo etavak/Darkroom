@@ -17,13 +17,15 @@ server/data/
 *.db-journal
 .vite/
 
+# Portable toolchain (Node, uv, MinGit, restore points)
+runtime/
+
 # Downloaded / generated assets (setup wizard fetches these)
 server/tags/*.csv
 !server/tags/.gitkeep
-**/models/
-**/vae_approx/
-**/outputs/
-**/output/
+/models/
+/outputs/
+/output/
 ComfyUI/
 ComfyUI_windows_portable/
 *.safetensors

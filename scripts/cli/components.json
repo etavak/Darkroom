@@ -1,0 +1,88 @@
+{
+  "node": {
+    "tested": "22.14.0",
+    "distBase": "https://nodejs.org/dist"
+  },
+  "uv": {
+    "tested": "0.6.14",
+    "githubRepo": "astral-sh/uv"
+  },
+  "mingit": {
+    "tested": "2.47.1",
+    "url": "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/MinGit-2.47.1-64-bit.zip"
+  },
+  "python": {
+    "tested": "3.12"
+  },
+  "comfyui": {
+    "repo": "https://github.com/comfyanonymous/ComfyUI.git",
+    "testedRef": "master"
+  },
+  "torch": {
+    "tested": "2.6.0",
+    "cudaIndex": "https://download.pytorch.org/whl/cu124",
+    "cpuIndex": "https://download.pytorch.org/whl/cpu"
+  },
+  "nodes": {
+    "controlnet-aux": {
+      "name": "ControlNet Aux",
+      "repo": "https://github.com/Fannovel16/comfyui_controlnet_aux.git",
+      "dir": "comfyui_controlnet_aux",
+      "testedRef": "main",
+      "requiresCuda": false
+    },
+    "impact-pack": {
+      "name": "Impact Pack",
+      "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git",
+      "dir": "ComfyUI-Impact-Pack",
+      "testedRef": "Main",
+      "requiresCuda": false
+    },
+    "ipadapter-plus": {
+      "name": "IPAdapter Plus",
+      "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git",
+      "dir": "ComfyUI_IPAdapter_plus",
+      "testedRef": "main",
+      "requiresCuda": false
+    }
+  },
+  "cudaOnlyNodeHints": [
+    "ComfyUI-AnimateDiff-Evolved",
+    "ComfyUI_InstantID",
+    "ComfyUI-AdvancedLivePortrait",
+    "ComfyUI-DynamiCrafterWrapper",
+    "ComfyUI-OpenPose-Editor"
+  ],
+  "tags": {
+    "files": [
+      {
+        "name": "danbooru.csv",
+        "url": "https://raw.githubusercontent.com/DominikDoom/a1111-sd-webui-tagcomplete/master/tags/danbooru.csv"
+      },
+      {
+        "name": "e621.csv",
+        "url": "https://raw.githubusercontent.com/DominikDoom/a1111-sd-webui-tagcomplete/master/tags/e621.csv"
+      }
+    ]
+  },
+  "taesd": {
+    "files": [
+      {
+        "name": "taesd_decoder.safetensors",
+        "url": "https://github.com/madebyollin/taesd/raw/main/taesd_decoder.safetensors"
+      },
+      {
+        "name": "taesdxl_decoder.safetensors",
+        "url": "https://github.com/madebyollin/taesd/raw/main/taesdxl_decoder.safetensors"
+      },
+      {
+        "name": "taesd3_decoder.safetensors",
+        "url": "https://github.com/madebyollin/taesd/raw/main/taesd3_decoder.safetensors"
+      },
+      {
+        "name": "taef1_decoder.safetensors",
+        "url": "https://github.com/madebyollin/taesd/raw/main/taef1_decoder.safetensors"
+      }
+    ]
+  }
+}

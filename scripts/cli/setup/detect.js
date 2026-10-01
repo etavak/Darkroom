@@ -3,9 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { root } from '../lib/paths.js';
+import { detectComfyDesktopInstalls } from './desktopDetect.js';
 
 /**
- * @typedef {{ comfyDir: string, python: string, kind: string, label: string }} DetectedComfy
+ * @typedef {{ comfyDir: string, python: string, kind: string, label: string, port?: number, url?: string }} DetectedComfy
  */
 
 /**
@@ -113,33 +114,142 @@ export function detectComfyInstalls() {
       // ignore
     }
   }
+
+  for (const desk of detectComfyDesktopInstalls()) {
+    // Config-only entries (no python) are kept under a synthetic key so Use existing can pick port
+    const key =
+      desk.kind === 'desktop-config'
+        ? `desktop-config:${desk.port}:${desk.comfyDir}`
+        : path.resolve(desk.comfyDir);
+    if (!found.has(key) || desk.kind === 'desktop') {
+      found.set(key, desk);
+    }
+  }
+
   return [...found.values()];
 }
 
+/** ComfyUI: 3.10–3.13 preferred; 3.14 works but custom nodes may break. */
+export const PYTHON_MIN = [3, 10];
+export const PYTHON_MAX_PREFERRED = [3, 13];
+export const PYTHON_MAX = [3, 14];
+
+/**
+ * Prefer stable versions first (3.12 → 3.13 → 3.11 → 3.10), then 3.14 / bare `python3`.
+ * @returns {string[]}
+ */
 export function systemPythonCandidates() {
   if (process.platform === 'win32') {
-    return ['python.exe', 'python', 'py'];
+    return [
+      'py -3.12',
+      'py -3.13',
+      'py -3.11',
+      'py -3.10',
+      'py -3.14',
+      'python3.12',
+      'python3.13',
+      'python3.11',
+      'python3.10',
+      'python3.14',
+      'python.exe',
+      'python',
+      'py',
+    ];
   }
-  return ['python3', 'python'];
+  return [
+    'python3.12',
+    'python3.13',
+    'python3.11',
+    'python3.10',
+    'python3.14',
+    'python3',
+    'python',
+  ];
 }
 
 /**
- * Pick first working system python 3.10+.
+ * @param {string} executable
+ * @returns {[number, number] | null}
+ */
+export function getPythonVersionTuple(executable) {
+  const r = spawnSync(
+    executable,
+    ['-c', 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")'],
+    { encoding: 'utf8', windowsHide: true, timeout: 15_000 },
+  );
+  if (r.status !== 0 || !r.stdout?.trim()) return null;
+  const m = r.stdout.trim().match(/^(\d+)\.(\d+)/);
+  if (!m) return null;
+  return [Number(m[1]), Number(m[2])];
+}
+
+/**
+ * @param {[number, number]} ver
+ * @param {[number, number]} min
+ * @param {[number, number]} max
+ */
+function versionInRange(ver, min, max) {
+  const [a, b] = ver;
+  if (a < min[0] || (a === min[0] && b < min[1])) return false;
+  if (a > max[0] || (a === max[0] && b > max[1])) return false;
+  return true;
+}
+
+/**
+ * Resolve a command (possibly `py -3.12`) to an absolute interpreter path + version.
+ * @param {string} cmd
+ * @returns {{ executable: string, version: [number, number] } | null}
+ */
+function resolvePythonCommand(cmd) {
+  const parts = cmd.split(/\s+/);
+  const bin = parts[0];
+  const args = [
+    ...parts.slice(1),
+    '-c',
+    'import sys; print(sys.executable); print(f"{sys.version_info[0]}.{sys.version_info[1]}")',
+  ];
+  const r = spawnSync(bin, args, {
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: process.platform === 'win32',
+    timeout: 15_000,
+  });
+  if (r.status !== 0 || !r.stdout?.trim()) return null;
+  const lines = r.stdout
+    .trim()
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const executable = lines[lines.length - 2] || lines[0];
+  const verLine = lines[lines.length - 1] || '';
+  const m = verLine.match(/^(\d+)\.(\d+)/);
+  if (!executable || !m) return null;
+  return { executable, version: [Number(m[1]), Number(m[2])] };
+}
+
+/**
+ * Pick best system Python in the supported range (prefers 3.12/3.13 over 3.14).
+ * @returns {{ executable: string, version: [number, number] } | null}
+ */
+export function findSystemPythonInfo() {
+  /** @type {{ executable: string, version: [number, number] } | null} */
+  let fallback314 = null;
+  for (const cmd of systemPythonCandidates()) {
+    const hit = resolvePythonCommand(cmd);
+    if (!hit) continue;
+    if (!versionInRange(hit.version, PYTHON_MIN, PYTHON_MAX)) continue;
+    if (versionInRange(hit.version, PYTHON_MIN, PYTHON_MAX_PREFERRED)) {
+      return hit;
+    }
+    if (!fallback314) fallback314 = hit;
+  }
+  return fallback314;
+}
+
+/**
+ * Pick first working system python in the supported range.
  * @returns {string | null}
  */
 export function findSystemPython() {
-  for (const cmd of systemPythonCandidates()) {
-    const r = spawnSync(
-      cmd,
-      ['-c', 'import sys; assert sys.version_info >= (3, 10); print(sys.executable)'],
-      {
-        encoding: 'utf8',
-        windowsHide: true,
-        shell: process.platform === 'win32',
-        timeout: 15_000,
-      },
-    );
-    if (r.status === 0 && r.stdout?.trim()) return r.stdout.trim().split(/\r?\n/).pop() || null;
-  }
-  return null;
+  return findSystemPythonInfo()?.executable || null;
 }

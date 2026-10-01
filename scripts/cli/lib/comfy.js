@@ -36,11 +36,13 @@ export async function ensureComfyRunning() {
 
   if (!cfg.comfyDir) {
     throw new Error(
-      `ComfyUI is not reachable at ${statsUrl}. Set COMFY_DIR in .env (and COMFY_PYTHON on macOS/Linux).`,
+      `ComfyUI is not reachable at ${statsUrl}. Use Components → ComfyUI or Install everything.`,
     );
   }
   if (!fs.existsSync(cfg.comfyDir)) {
-    throw new Error(`COMFY_DIR does not exist: ${cfg.comfyDir}`);
+    throw new Error(
+      `COMFY_DIR does not exist: ${cfg.comfyDir}. Use Components or Doctor to repair.`,
+    );
   }
 
   const portable = getComfyPortableRoot(cfg.comfyDir);
@@ -90,6 +92,12 @@ export async function ensureComfyRunning() {
       {
         cwd: uiRoot,
         logFile,
+        env: {
+          ...process.env,
+          ...(process.platform === 'darwin'
+            ? { PYTORCH_ENABLE_MPS_FALLBACK: '1' }
+            : {}),
+        },
       },
     );
   }
