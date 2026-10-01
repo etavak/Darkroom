@@ -32,10 +32,17 @@ function probeTorch(python) {
 async function installTorchForHardware(python, channel, log) {
   const pins = loadPins();
   const profile = detectAccelProfile();
-  const ver = channel === 'latest' ? '' : pins.torch?.tested;
-  const pkgs = ver
-    ? [`torch==${ver}`, `torchvision`, `torchaudio`]
-    : ['torch', 'torchvision', 'torchaudio'];
+  /** @type {string[]} */
+  let pkgs;
+  if (channel === 'latest') {
+    pkgs = ['torch', 'torchvision', 'torchaudio'];
+  } else {
+    const ver = pins.torch?.tested || '2.7.1';
+    const vision = pins.torch?.torchvision || '0.22.1';
+    const audio = pins.torch?.torchaudio || '2.7.1';
+    // Pin all three — unpinned vision/audio can resolve to mismatched majors.
+    pkgs = [`torch==${ver}`, `torchvision==${vision}`, `torchaudio==${audio}`];
+  }
 
   if (isIntelMac()) {
     const ok = await defaultConfirm(

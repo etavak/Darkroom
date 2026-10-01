@@ -2,28 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as p from '@clack/prompts';
 import { downloadFile } from '../lib/download.js';
+import { loadPins } from '../lib/pins.js';
 import { getModelsRoot, tagsDir } from '../lib/paths.js';
 import { refreshTagCsvs } from '../lib/update.js';
-
-/** madebyollin TAESD decoders used by ComfyUI latent preview */
-const TAESD_FILES = [
-  {
-    name: 'taesd_decoder.safetensors',
-    url: 'https://github.com/madebyollin/taesd/raw/main/taesd_decoder.safetensors',
-  },
-  {
-    name: 'taesdxl_decoder.safetensors',
-    url: 'https://github.com/madebyollin/taesd/raw/main/taesdxl_decoder.safetensors',
-  },
-  {
-    name: 'taesd3_decoder.safetensors',
-    url: 'https://github.com/madebyollin/taesd/raw/main/taesd3_decoder.safetensors',
-  },
-  {
-    name: 'taef1_decoder.safetensors',
-    url: 'https://github.com/madebyollin/taesd/raw/main/taef1_decoder.safetensors',
-  },
-];
 
 /**
  * @param {string} [comfyDir]
@@ -37,7 +18,7 @@ export async function downloadTaesdDecoders(comfyDir) {
   const destDir = path.join(models, 'vae_approx');
   fs.mkdirSync(destDir, { recursive: true });
 
-  for (const file of TAESD_FILES) {
+  for (const file of loadPins().taesd?.files || []) {
     const dest = path.join(destDir, file.name);
     if (fs.existsSync(dest) && fs.statSync(dest).size > 10_000) {
       p.log.info(`TAESD exists: ${file.name}`);

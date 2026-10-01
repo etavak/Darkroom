@@ -19,7 +19,9 @@
     "testedRef": "master"
   },
   "torch": {
-    "tested": "2.6.0",
+    "tested": "2.7.1",
+    "torchvision": "0.22.1",
+    "torchaudio": "2.7.1",
     "cudaIndex": "https://download.pytorch.org/whl/cu124",
     "cpuIndex": "https://download.pytorch.org/whl/cpu"
   },
@@ -69,19 +71,19 @@
     "files": [
       {
         "name": "taesd_decoder.safetensors",
-        "url": "https://github.com/madebyollin/taesd/raw/main/taesd_decoder.safetensors"
+        "url": "https://huggingface.co/madebyollin/taesd/resolve/main/taesd_decoder.safetensors"
       },
       {
         "name": "taesdxl_decoder.safetensors",
-        "url": "https://github.com/madebyollin/taesd/raw/main/taesdxl_decoder.safetensors"
+        "url": "https://huggingface.co/madebyollin/taesdxl/resolve/main/taesdxl_decoder.safetensors"
       },
       {
         "name": "taesd3_decoder.safetensors",
-        "url": "https://github.com/madebyollin/taesd/raw/main/taesd3_decoder.safetensors"
+        "url": "https://huggingface.co/madebyollin/taesd3/resolve/main/diffusion_pytorch_model.safetensors"
       },
       {
         "name": "taef1_decoder.safetensors",
-        "url": "https://github.com/madebyollin/taesd/raw/main/taef1_decoder.safetensors"
+        "url": "https://huggingface.co/madebyollin/taef1/resolve/main/diffusion_pytorch_model.safetensors"
       }
     ]
   }

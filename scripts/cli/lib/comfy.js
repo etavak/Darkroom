@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfig } from './env.js';
-import { waitForUrl } from './http.js';
+import { httpGetOk, sleep } from './http.js';
 import {
   ensureLogsDir,
   getComfyPortableRoot,
@@ -9,9 +9,57 @@ import {
   getComfyUiRoot,
   logsDir,
 } from './paths.js';
-import { setPid, spawnDetached } from './process.js';
+import { clearPid, isPidAlive, setPid, spawnDetached } from './process.js';
 
 const COMFY_TIMEOUT_MS = 120_000;
+
+/**
+ * @param {string} logFile
+ * @param {number} [maxChars]
+ */
+function readLogTail(logFile, maxChars = 1800) {
+  try {
+    if (!fs.existsSync(logFile)) return '';
+    const text = fs.readFileSync(logFile, 'utf8');
+    const slice = text.length > maxChars ? text.slice(-maxChars) : text;
+    const ansi = new RegExp(String.raw`\u001b\[[0-9;]*m`, 'g');
+    return slice
+      .split(/\r?\n/)
+      .map((l) => l.replace(ansi, ''))
+      .filter((l) => l.trim())
+      .slice(-24)
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Wait until ComfyUI answers, or fail early if the process dies.
+ * @param {string} statsUrl
+ * @param {number} pid
+ * @param {string} logFile
+ */
+async function waitForComfyReady(statsUrl, pid, logFile) {
+  const start = Date.now();
+  while (Date.now() - start < COMFY_TIMEOUT_MS) {
+    if (await httpGetOk(statsUrl)) return;
+    if (!isPidAlive(pid)) {
+      const tail = readLogTail(logFile);
+      clearPid('comfy');
+      throw new Error(
+        `ComfyUI exited before becoming ready (${statsUrl}).` +
+          (tail ? `\n\nLast log lines (${logFile}):\n${tail}` : `\nSee ${logFile}`),
+      );
+    }
+    await sleep(1000);
+  }
+  const tail = readLogTail(logFile);
+  throw new Error(
+    `ComfyUI did not become ready within ${Math.round(COMFY_TIMEOUT_MS / 1000)}s (${statsUrl}).` +
+      (tail ? `\n\nLast log lines (${logFile}):\n${tail}` : `\nSee ${logFile}`),
+  );
+}
 
 /**
  * @returns {Promise<{ started: boolean, alreadyRunning: boolean }>}
@@ -19,7 +67,6 @@ const COMFY_TIMEOUT_MS = 120_000;
 export async function ensureComfyRunning() {
   const cfg = getConfig();
   const statsUrl = `${cfg.comfyUrl}/system_stats`;
-  const { httpGetOk } = await import('./http.js');
 
   if (cfg.remote) {
     if (await httpGetOk(statsUrl)) {
@@ -103,6 +150,6 @@ export async function ensureComfyRunning() {
   }
 
   setPid('comfy', pid, true);
-  await waitForUrl(statsUrl, COMFY_TIMEOUT_MS, 'ComfyUI');
+  await waitForComfyReady(statsUrl, pid, logFile);
   return { started: true, alreadyRunning: false };
 }
