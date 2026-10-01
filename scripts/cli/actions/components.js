@@ -1,7 +1,7 @@
 import * as p from '@clack/prompts';
 import { handleCancel } from '../lib/prompt.js';
-import { listComponents, componentMenuLabel, getComponent } from './registry.js';
-import { installEverything, runDoctor } from './orchestrator.js';
+import { listComponents, componentMenuLabel, getComponent } from '../components/registry.js';
+import { installEverything, runDoctor } from '../components/orchestrator.js';
 
 export async function componentsMenu() {
   while (true) {

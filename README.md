@@ -30,17 +30,37 @@ Works on **Windows**, **macOS**, and **Linux**.
 
 ### macOS
 
-1. Install [Node.js 22 LTS](https://nodejs.org/).
-2. Clone this repo.
-3. Double-click **`Darkroom.command`** (right-click → Open the first time if Gatekeeper blocks it),  
-   or in Terminal:
+**1. Recommended — one-liner** (clones or updates `~/Darkroom`, then launches):
 
 ```bash
-chmod +x Darkroom.command Darkroom.sh
-./Darkroom.command
+curl -fsSL https://raw.githubusercontent.com/etavak/Darkroom/main/install.sh | bash
 ```
 
-4. Complete the first-run wizard (detect / install / remote), then **Start Darkroom**.
+If git is missing, the script offers **Xcode Command Line Tools** (`xcode-select --install`), waits until git works, then continues.
+
+**2. Git clone** (if you already have git / CLT):
+
+```bash
+git clone https://github.com/etavak/Darkroom.git ~/Darkroom
+cd ~/Darkroom
+bash Darkroom.command
+```
+
+**3. ZIP download** (when you cannot use git):
+
+1. Download the repo ZIP from GitHub and unzip it.
+2. If macOS blocks the app on first launch, open **System Settings → Privacy & Security**, scroll to the blocked-item message, and click **Open Anyway**. Confirm when prompted.
+3. Or clear the quarantine flag in Terminal (replace the path with your unzipped folder):
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/Darkroom-main
+cd ~/Downloads/Darkroom-main
+bash Darkroom.command
+```
+
+`Darkroom.command` bootstraps portable Node 22+ into `runtime/node/` if needed, then opens the setup wizard. Complete first-run (**Install everything** / Use existing / Remote), then **Start Darkroom**.
+
+> Note: **right-click → Open** no longer bypasses Gatekeeper on current macOS — use Privacy & Security → Open Anyway, `xattr`, or the curl/git methods above.
 
 ### Linux
 
