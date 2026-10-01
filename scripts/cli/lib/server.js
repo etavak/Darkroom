@@ -40,9 +40,13 @@ export async function ensureNativeModules() {
     require('better-sqlite3');
     return;
   } catch {
-    // fall through to rebuild
+    // fall through to rebuild against this process's Node
   }
-  await runNpm(['rebuild', 'better-sqlite3']);
+  // Use inherit so rebuild failures are visible in the CLI.
+  await runNpm(['rebuild', 'better-sqlite3'], { stdio: 'inherit' });
+  const { createRequire } = await import('node:module');
+  const require = createRequire(path.join(root, 'package.json'));
+  require('better-sqlite3');
 }
 
 /**

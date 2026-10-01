@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import { ensureLogsDir, logsDir, pidPath, root } from './paths.js';
 
 /**
@@ -98,18 +99,53 @@ export function spawnDetached(command, args, opts) {
 }
 
 /**
+ * Resolve npm that belongs to the same Node as process.execPath.
+ * PATH npm can be a different major (e.g. system Node 24 while Darkroom runs portable 22),
+ * which rebuilds native addons against the wrong NODE_MODULE_VERSION.
+ */
+export function resolveNpmBin() {
+  const dir = path.dirname(process.execPath);
+  const candidates =
+    process.platform === 'win32'
+      ? [path.join(dir, 'npm.cmd'), path.join(dir, 'npm.exe')]
+      : [path.join(dir, 'npm'), path.join(dir, 'npm-cli.js')];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+/**
  * @param {string[]} args
  * @param {{ cwd?: string, env?: NodeJS.ProcessEnv, stdio?: 'ignore' | 'inherit' }} [opts]
  */
 export function runNpm(args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const child = spawn(npm, args, {
+    const npm = resolveNpmBin();
+    const nodeDir = path.dirname(process.execPath);
+    const baseEnv = opts.env ?? process.env;
+    const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+    const prevPath = baseEnv.PATH || baseEnv.Path || process.env.PATH || '';
+    const env = {
+      ...baseEnv,
+      [pathKey]: `${nodeDir}${path.delimiter}${prevPath}`,
+      npm_config_scripts_prepend_node_path: 'true',
+    };
+    /** @type {string} */
+    let command = npm;
+    /** @type {string[]} */
+    let npmArgs = args;
+    // Portable Node on Unix sometimes ships npm as a script without +x via npm-cli.js only.
+    if (npm.endsWith('npm-cli.js')) {
+      command = process.execPath;
+      npmArgs = [npm, ...args];
+    }
+    const child = spawn(command, npmArgs, {
       cwd: opts.cwd ?? root,
-      env: opts.env ?? process.env,
+      env,
       stdio: opts.stdio ?? 'ignore',
       windowsHide: true,
-      shell: process.platform === 'win32',
+      shell: process.platform === 'win32' && command.endsWith('.cmd'),
     });
     child.on('error', reject);
     child.on('exit', (code) => {
