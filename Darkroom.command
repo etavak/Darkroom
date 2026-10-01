@@ -37,10 +37,12 @@ pause_err() {
   exit 1
 }
 
+# Prefer Node 22 (LTS pin). Node 24+ can crash better-sqlite3 native addons.
+PIN_MAJOR="${PIN_NODE%%.*}"
 NODE_BIN=""
 if command -v node >/dev/null 2>&1; then
   SYS_MAJOR="$(node_major "$(command -v node)")"
-  if [ "$SYS_MAJOR" -ge 22 ]; then
+  if [ "$SYS_MAJOR" = "$PIN_MAJOR" ]; then
     NODE_BIN="$(command -v node)"
   fi
 fi
@@ -48,14 +50,14 @@ fi
 if [ -z "$NODE_BIN" ]; then
   if PORTABLE="$(find_portable_node)"; then
     P_MAJOR="$(node_major "$PORTABLE")"
-    if [ "$P_MAJOR" -ge 22 ]; then
+    if [ "$P_MAJOR" = "$PIN_MAJOR" ]; then
       NODE_BIN="$PORTABLE"
     fi
   fi
 fi
 
 if [ -z "$NODE_BIN" ]; then
-  echo "[Darkroom] Node.js 22+ not found — downloading portable Node v${PIN_NODE}…"
+  echo "[Darkroom] Node.js ${PIN_MAJOR} not found — downloading portable Node v${PIN_NODE}…"
   LOG="$OPS_LOG_DIR/$(date -u +%Y-%m-%dT%H-%M-%SZ)-node-bootstrap.log"
   ARCHIVE="node-v${PIN_NODE}-${NODE_PLAT}-${NODE_ARCH}.tar.gz"
   URL="https://nodejs.org/dist/v${PIN_NODE}/${ARCHIVE}"
@@ -79,6 +81,9 @@ if [ ! -d "$ROOT/node_modules/@clack/prompts" ]; then
   else
     "$NPM_BIN" install --prefix "$ROOT" || pause_err "[Darkroom] npm install failed."
   fi
+elif ! "$NODE_BIN" -e "require('better-sqlite3')" >/dev/null 2>&1; then
+  echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
+  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
 fi
 
 exec "$NODE_BIN" "$ROOT/scripts/cli/index.js"
