@@ -31,6 +31,8 @@ presetsRouter.post('/resolve', (req, res) => {
       styleId: typeof b.styleId === 'string' ? b.styleId : null,
       dismissedPositive: strArr(b.dismissedPositive),
       dismissedNegative: strArr(b.dismissedNegative),
+      qualityPreset: typeof b.qualityPreset === 'string' ? b.qualityPreset : null,
+      negativePreset: typeof b.negativePreset === 'string' ? b.negativePreset : null,
       userPositive: typeof b.userPositive === 'string' ? b.userPositive : '',
       userNegative: typeof b.userNegative === 'string' ? b.userNegative : '',
     });

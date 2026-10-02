@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { getFamily } from '../presets/catalog.js';
 import {
+  dictionaryKey,
   getFamilyTagMeta,
   searchTags,
+  tagCategoryInFamily,
   tagExistsInFamily,
 } from '../tags/dictionary.js';
 
@@ -45,13 +48,36 @@ tagsRouter.post('/validate', (req, res) => {
     return;
   }
 
+  // The family's own preset tags (masterpiece, score_9…) count as known meta tags even when
+  // the dictionary doesn't list them
+  const fam = getFamily(family);
+  const presetTags = new Set(
+    [
+      ...(fam?.positive ?? []),
+      ...(fam?.negative ?? []),
+      ...(fam?.qualityPresets ?? []).flatMap((l) => l.tags),
+      ...(fam?.negativePresets ?? []).flatMap((l) => l.tags),
+    ].map((t) => dictionaryKey(t)),
+  );
+
   const unknown: string[] = [];
+  // Non-general categories (character, copyright, artist, meta) for colouring the prompt
+  const categories: Record<string, string> = {};
   for (const tag of tags) {
     const lookup = stripWeightForLookup(tag);
     if (!lookup) continue;
-    if (!tagExistsInFamily(family, lookup)) unknown.push(tag);
+    if (presetTags.has(dictionaryKey(lookup))) {
+      categories[tag] = 'meta';
+      continue;
+    }
+    if (!tagExistsInFamily(family, lookup)) {
+      unknown.push(tag);
+      continue;
+    }
+    const cat = tagCategoryInFamily(family, lookup);
+    if (cat && cat !== 'general') categories[tag] = cat;
   }
-  res.json({ unknown, enabled: true });
+  res.json({ unknown, categories, enabled: true });
 });
 
 /** Unwrap (tag:1.2) weight syntax for dictionary lookup. */

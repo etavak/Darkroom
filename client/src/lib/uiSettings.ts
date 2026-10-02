@@ -1,5 +1,6 @@
 export type PreviewQuality = 'fast' | 'detailed';
-export type HistoryPosition = 'right' | 'bottom' | 'hidden';
+export type HistoryPosition = 'right' | 'left' | 'bottom' | 'hidden';
+export type Palette = 'darkroom' | 'night';
 export type UiScale = 0.85 | 1 | 1.1 | 1.25;
 /** Preview stage backdrop behind the image. */
 export type CanvasBackground = 'theme' | 'neutral' | 'black';
@@ -29,6 +30,12 @@ export type UiSettings = {
   jumpToNewest: boolean;
   confirmDelete: boolean;
   shortcuts: ShortcutMap;
+  /** Studio layout (the redesigned UI at /) */
+  palette: Palette;
+  studioLeftWidth: number;
+  studioHistoryWidth: number;
+  studioLeftCollapsed: boolean;
+  studioHistoryCollapsed: boolean;
 };
 
 const KEYS = {
@@ -43,6 +50,11 @@ const KEYS = {
   jumpToNewest: 'darkroom.jumpToNewest',
   confirmDelete: 'darkroom.confirmDelete',
   shortcuts: 'darkroom.shortcuts',
+  palette: 'darkroom.palette',
+  studioLeftWidth: 'darkroom.studio.leftWidth',
+  studioHistoryWidth: 'darkroom.studio.historyWidth',
+  studioLeftCollapsed: 'darkroom.studio.leftCollapsed',
+  studioHistoryCollapsed: 'darkroom.studio.historyCollapsed',
 } as const;
 
 export const DEFAULT_SHORTCUTS: ShortcutMap = {
@@ -62,10 +74,15 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   atmosphereIntensity: 100,
   canvasBackground: 'theme',
   historyPosition: 'right',
-  resizablePanels: false,
+  resizablePanels: true,
   jumpToNewest: true,
   confirmDelete: true,
   shortcuts: { ...DEFAULT_SHORTCUTS },
+  palette: 'darkroom',
+  studioLeftWidth: 360,
+  studioHistoryWidth: 176,
+  studioLeftCollapsed: false,
+  studioHistoryCollapsed: false,
 };
 
 /** Maps UI quality to ComfyUI preview_method values. */
@@ -118,8 +135,17 @@ function readUiScale(fallback: UiScale): UiScale {
 function readHistoryPosition(fallback: HistoryPosition): HistoryPosition {
   try {
     const raw = localStorage.getItem(KEYS.historyPosition);
-    if (raw === 'right' || raw === 'bottom' || raw === 'hidden') return raw;
+    if (raw === 'right' || raw === 'left' || raw === 'bottom' || raw === 'hidden') return raw;
     return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readPalette(fallback: Palette): Palette {
+  try {
+    const raw = localStorage.getItem(KEYS.palette);
+    return raw === 'darkroom' || raw === 'night' ? raw : fallback;
   } catch {
     return fallback;
   }
@@ -155,9 +181,20 @@ export function applyUiAppearance(settings: UiSettings) {
   root.dataset.historyPosition = settings.historyPosition;
   root.dataset.resizablePanels = settings.resizablePanels ? 'true' : 'false';
   root.dataset.canvasBackground = settings.canvasBackground;
+  root.dataset.palette = settings.palette;
 }
 
 export function loadUiSettings(): UiSettings {
+  // The studio made resizable panels the default; older builds saved "false" for everyone
+  // (every setting is written on any change), so turn it on once for existing installs.
+  try {
+    if (!localStorage.getItem('darkroom.studio.migrated')) {
+      localStorage.setItem(KEYS.resizablePanels, 'true');
+      localStorage.setItem('darkroom.studio.migrated', '1');
+    }
+  } catch {
+    // private mode
+  }
   return {
     livePreview: readBool(KEYS.livePreview, DEFAULT_UI_SETTINGS.livePreview),
     previewQuality: readQuality(DEFAULT_UI_SETTINGS.previewQuality),
@@ -175,6 +212,11 @@ export function loadUiSettings(): UiSettings {
     jumpToNewest: readBool(KEYS.jumpToNewest, DEFAULT_UI_SETTINGS.jumpToNewest),
     confirmDelete: readBool(KEYS.confirmDelete, DEFAULT_UI_SETTINGS.confirmDelete),
     shortcuts: readShortcuts(DEFAULT_SHORTCUTS),
+    palette: readPalette(DEFAULT_UI_SETTINGS.palette),
+    studioLeftWidth: readNumber(KEYS.studioLeftWidth, DEFAULT_UI_SETTINGS.studioLeftWidth, 320, 480),
+    studioHistoryWidth: readNumber(KEYS.studioHistoryWidth, DEFAULT_UI_SETTINGS.studioHistoryWidth, 120, 440),
+    studioLeftCollapsed: readBool(KEYS.studioLeftCollapsed, DEFAULT_UI_SETTINGS.studioLeftCollapsed),
+    studioHistoryCollapsed: readBool(KEYS.studioHistoryCollapsed, DEFAULT_UI_SETTINGS.studioHistoryCollapsed),
   };
 }
 
@@ -199,6 +241,11 @@ export function saveUiSettings(partial: Partial<UiSettings>): UiSettings {
     localStorage.setItem(KEYS.jumpToNewest, String(next.jumpToNewest));
     localStorage.setItem(KEYS.confirmDelete, String(next.confirmDelete));
     localStorage.setItem(KEYS.shortcuts, JSON.stringify(next.shortcuts));
+    localStorage.setItem(KEYS.palette, next.palette);
+    localStorage.setItem(KEYS.studioLeftWidth, String(next.studioLeftWidth));
+    localStorage.setItem(KEYS.studioHistoryWidth, String(next.studioHistoryWidth));
+    localStorage.setItem(KEYS.studioLeftCollapsed, String(next.studioLeftCollapsed));
+    localStorage.setItem(KEYS.studioHistoryCollapsed, String(next.studioHistoryCollapsed));
   } catch {
     // private mode / quota
   }

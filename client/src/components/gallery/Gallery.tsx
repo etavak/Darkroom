@@ -20,6 +20,8 @@ type Props = {
   orientation?: 'vertical' | 'horizontal';
   /** Show Image Info under the grid (vertical rail) */
   showInfo?: boolean;
+  /** The studio draws its own History header */
+  showHeader?: boolean;
 };
 
 export function Gallery({
@@ -35,6 +37,7 @@ export function Gallery({
   loading,
   orientation = 'vertical',
   showInfo = true,
+  showHeader = true,
 }: Props) {
   const sorted = [...items].sort((a, b) => {
     const af = favorites.has(a.id) ? 1 : 0;
@@ -82,14 +85,16 @@ export function Gallery({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-baseline justify-between border-b px-3 py-2.5">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          History
-        </h2>
-        <span className="text-[11px] text-muted-foreground">
-          {loading ? 'Loading…' : `${items.length}`}
-        </span>
-      </div>
+      {showHeader ? (
+        <div className="flex shrink-0 items-baseline justify-between border-b px-3 py-2.5">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            History
+          </h2>
+          <span className="text-[11px] text-muted-foreground">
+            {loading ? 'Loading…' : `${items.length}`}
+          </span>
+        </div>
+      ) : null}
       <ScrollArea className="min-h-0 flex-1">
         <div className="p-2">
           {sorted.length === 0 ? (

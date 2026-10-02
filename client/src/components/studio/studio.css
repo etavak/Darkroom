@@ -1,0 +1,834 @@
+/*
+ * Studio — the redesigned layout served at "/" (the old one stays at /classic).
+ * Palettes live on <html> so portals (menus, dialogs) pick them up too. The shadcn
+ * tokens are mapped onto them, so existing controls take the new look unchanged.
+ */
+
+/* This file can load before index.css: pin Tailwind's layer order so `components` sits above `base` */
+@layer theme, base, components, utilities;
+
+html[data-ui='studio'] {
+  font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-ui='studio'][data-palette='darkroom'] {
+  --s-ground: #0e0f11;
+  --s-plane: #0b0c0e;
+  --s-panel: #16171a;
+  --s-raised: #1d1f23;
+  --s-raised2: #25272c;
+  --s-line: rgba(255, 255, 255, 0.075);
+  --s-text: #ecebe6;
+  --s-muted: #a3a19a;
+  --s-faint: #6e6c66;
+  --s-accent: #f2b544;
+  --s-accent-ink: #1d1405;
+  --s-accent-soft: rgba(242, 181, 68, 0.14);
+  --s-dot: rgba(255, 255, 255, 0.055);
+  --s-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+html[data-ui='studio'][data-palette='night'] {
+  --s-ground: #0d1020;
+  --s-plane: #0a0d1b;
+  --s-panel: #141831;
+  --s-raised: #1b2040;
+  --s-raised2: #232850;
+  --s-line: rgba(170, 180, 255, 0.09);
+  --s-text: #ecebf5;
+  --s-muted: #a6a8c6;
+  --s-faint: #6f7396;
+  --s-accent: #efe6c4;
+  --s-accent-ink: #191a2c;
+  --s-accent-soft: rgba(239, 230, 196, 0.13);
+  --s-dot: rgba(170, 180, 255, 0.07);
+  --s-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+html[data-ui='studio'] {
+  --background: var(--s-ground);
+  --foreground: var(--s-text);
+  --card: var(--s-panel);
+  --card-foreground: var(--s-text);
+  --popover: var(--s-raised);
+  --popover-foreground: var(--s-text);
+  --primary: var(--s-accent);
+  --primary-foreground: var(--s-accent-ink);
+  --secondary: var(--s-raised);
+  --secondary-foreground: var(--s-text);
+  --muted: var(--s-raised);
+  --muted-foreground: var(--s-muted);
+  --accent: var(--s-raised2);
+  --accent-foreground: var(--s-text);
+  --border: var(--s-line);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: var(--s-accent);
+  --sidebar: var(--s-panel);
+  --sidebar-foreground: var(--s-text);
+  --sidebar-border: var(--s-line);
+}
+
+html[data-ui='studio'] .legacy-tip {
+  display: none;
+}
+
+/* Component rules sit in a layer so Tailwind utilities on the same element (h-7, text-xs…) win */
+@layer components {
+  .st-root {
+    position: relative;
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    color: var(--s-text);
+    background: var(--s-ground);
+  }
+
+  .st-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- side columns ---- */
+  .st-col {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    min-height: 0;
+    background: var(--s-ground);
+  }
+  .st-col-left {
+    border-right: 1px solid var(--s-line);
+  }
+  .st-col-history {
+    border-left: 1px solid var(--s-line);
+    border-right: 1px solid var(--s-line);
+  }
+  .st-rail {
+    width: 60px;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 0;
+    box-sizing: border-box;
+  }
+  .st-plane {
+    position: relative;
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background-color: var(--s-plane);
+    background-image: radial-gradient(circle at 1px 1px, var(--s-dot) 1.2px, transparent 0);
+    background-size: 24px 24px;
+  }
+
+  /* ---- controls ---- */
+  .st-ibtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--s-text);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .st-ibtn:hover {
+    background: var(--s-raised2);
+  }
+  .st-ibtn.on {
+    background: var(--s-accent-soft);
+    color: var(--s-accent);
+  }
+  .st-ibtn:disabled {
+    opacity: 0.35;
+    cursor: default;
+    background: transparent;
+  }
+  .st-ibtn svg {
+    width: 18px;
+    height: 18px;
+  }
+  .st-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--s-line);
+    border-radius: 999px;
+    background: var(--s-raised);
+    color: var(--s-text);
+    font-size: 12.5px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .st-pill:hover {
+    background: var(--s-raised2);
+  }
+  .st-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--s-raised);
+    border: 1px solid var(--s-line);
+    font-size: 11.5px;
+    color: var(--s-muted);
+  }
+  .st-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    margin-right: 4px;
+    border-radius: 999px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    font-size: 12px;
+    color: var(--s-muted);
+    white-space: nowrap;
+  }
+  .st-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .st-sec {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--s-faint);
+  }
+
+  /* ---- resize edges ---- */
+  .st-edge {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 9px;
+    z-index: 6;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .st-edge span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    width: 1px;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .st-edge:hover span,
+  .st-edge.on span {
+    left: 3.5px;
+    width: 2px;
+    background: var(--s-accent);
+  }
+
+
+  /* ---- tooltips (one layer, placed outside the panel a control lives in) ---- */
+  .st-tip {
+    position: absolute;
+    z-index: 200;
+    max-width: 240px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: var(--s-raised2);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+    color: var(--s-text);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: pre-line;
+    pointer-events: none;
+    animation: st-tip-in 0.12s ease;
+  }
+  @keyframes st-tip-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* ---- preferences screen ---- */
+  .st-prefs {
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    background: var(--s-ground);
+  }
+  .st-navitem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--s-muted);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .st-navitem:hover {
+    background: var(--s-raised);
+  }
+  .st-navitem.on {
+    background: var(--s-raised2);
+    color: var(--s-text);
+    font-weight: 600;
+  }
+  .st-search {
+    width: 100%;
+    height: 36px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    border: 1px solid var(--s-line);
+    background: var(--s-panel);
+    color: var(--s-text);
+    font: inherit;
+    font-size: 13.5px;
+    outline: none;
+  }
+  .st-search:focus {
+    border-color: var(--s-accent);
+  }
+  .st-prow {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--s-line);
+  }
+  .st-scope {
+    display: inline-flex;
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  /* ---- controls column (phase 2) ---- */
+  .st-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .st-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    border-radius: 14px;
+  }
+  .st-card-icon {
+    display: inline-flex;
+    color: var(--s-text);
+  }
+  .st-card-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+  .st-card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--s-raised2);
+    color: var(--s-text);
+    cursor: pointer;
+  }
+  .st-card-btn:hover,
+  .st-card-btn.on {
+    background: var(--s-accent-soft);
+    color: var(--s-accent);
+  }
+  .st-card-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+    background: var(--s-raised2);
+    color: var(--s-text);
+  }
+  .st-card-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  .st-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 16px 16px;
+  }
+  .st-switch {
+    display: flex;
+    flex-shrink: 0;
+    padding: 3px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--s-raised2);
+    cursor: pointer;
+  }
+  .st-switch.md {
+    width: 44px;
+    height: 26px;
+  }
+  .st-switch.sm {
+    width: 36px;
+    height: 22px;
+  }
+  .st-switch span {
+    border-radius: 50%;
+    background: var(--s-muted);
+    transition: transform 0.15s;
+  }
+  .st-switch.md span {
+    width: 20px;
+    height: 20px;
+  }
+  .st-switch.sm span {
+    width: 16px;
+    height: 16px;
+  }
+  .st-switch.on {
+    background: var(--s-accent);
+  }
+  .st-switch.on span {
+    background: var(--s-accent-ink);
+  }
+  .st-switch.md.on span {
+    transform: translateX(18px);
+  }
+  .st-switch.sm.on span {
+    transform: translateX(14px);
+  }
+  .st-switch:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .st-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 46px;
+    padding: 0 12px;
+    border: 1px solid var(--s-line);
+    border-radius: 10px;
+    background: var(--s-panel);
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .st-chip:hover {
+    background: var(--s-raised);
+  }
+  .st-menu {
+    position: absolute;
+    z-index: 40;
+    left: 0;
+    min-width: 220px;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 12px;
+    background: var(--s-raised);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+  }
+  .st-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--s-text);
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .st-menu-item:hover {
+    background: var(--s-raised2);
+  }
+  .st-menu-item.on {
+    background: var(--s-accent-soft);
+  }
+  .st-seg {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+  }
+  .st-seg button {
+    flex: 1;
+    height: 38px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--s-text);
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .st-seg.sm button {
+    height: 32px;
+    font-size: 13px;
+  }
+  .st-seg button:hover {
+    background: var(--s-raised2);
+  }
+  .st-seg button.on {
+    background: var(--s-raised2);
+    box-shadow: inset 0 0 0 1px var(--s-line);
+  }
+  .st-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 6px 6px 10px;
+    border-radius: 10px;
+    background: var(--s-ground);
+    border: 1px solid var(--s-line);
+    font-size: 12.5px;
+  }
+  .st-param {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--s-text);
+    cursor: pointer;
+  }
+  .st-param:hover {
+    background: var(--s-raised2);
+  }
+  .st-lbl {
+    font-size: 12px;
+    color: var(--s-muted);
+  }
+  .st-gen {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 52px;
+    padding: 0 10px 0 18px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--s-accent);
+    color: var(--s-accent-ink);
+    font-size: 16px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .st-gen:hover {
+    filter: brightness(1.06);
+  }
+  .st-gen:disabled {
+    opacity: 0.45;
+    cursor: default;
+    filter: none;
+  }
+  .st-stop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    border: 1px solid var(--s-line);
+    border-radius: 12px;
+    background: var(--s-raised);
+    color: #f0857f;
+    cursor: pointer;
+  }
+  .st-stop:hover {
+    background: var(--s-raised2);
+  }
+  .st-popout {
+    position: fixed;
+    left: var(--st-pop-left, 372px);
+    top: 118px;
+    z-index: 50;
+    width: 340px;
+    max-height: calc(100vh - 236px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    box-sizing: border-box;
+    border-radius: 14px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+  }
+  .st-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--s-raised);
+  }
+  .st-tabs button {
+    flex: 1;
+    height: 32px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--s-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .st-tabs button.on {
+    background: var(--s-raised2);
+    color: var(--s-text);
+  }
+  .st-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 40px;
+  }
+  .st-listbtn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--s-line);
+    border-radius: 10px;
+    background: var(--s-raised);
+    color: var(--s-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .st-listbtn:hover {
+    background: var(--s-raised2);
+  }
+  /* Existing controls rendered inside studio cards: drop their own frames */
+  .st-card .st-embedded > :first-child {
+    margin-top: 0;
+  }
+
+  /* ---------- Prompt text: sits straight on the card (no box), overlay highlights behind ---------- */
+  .st-pwrap {
+    position: relative;
+  }
+  .st-ta {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: transparent;
+    color: var(--s-text);
+    font-family: inherit;
+    font-size: 15.5px;
+    line-height: 1.6;
+    letter-spacing: normal;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .st-ta::-webkit-scrollbar {
+    display: none;
+  }
+  .st-ta::placeholder {
+    color: var(--s-faint);
+  }
+  .st-ta:disabled {
+    opacity: 0.6;
+  }
+  .st-ta-hl {
+    pointer-events: none;
+    user-select: none;
+    overflow: hidden;
+  }
+  .st-ta-measure {
+    visibility: hidden;
+    pointer-events: none;
+    height: auto;
+    overflow: hidden;
+  }
+  .st-ta.st-ta-clear {
+    color: transparent;
+    caret-color: var(--s-text);
+  }
+  .st-ta.st-ta-clear::selection {
+    background: var(--s-accent-soft);
+    color: transparent;
+  }
+
+  /* Tag suggestions, opened at the caret */
+  .st-ac {
+    position: absolute;
+    z-index: 45;
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--s-raised);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .st-ac-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--s-text);
+    cursor: pointer;
+    font-size: 13.5px;
+    text-align: left;
+  }
+  .st-ac-item:hover {
+    background: var(--s-raised2);
+  }
+  .st-ac-item.on {
+    background: var(--s-accent-soft);
+  }
+  .st-ac-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .st-ac-hit {
+    color: var(--s-accent);
+    font-weight: 650;
+  }
+  .st-ac-alias {
+    font-size: 11.5px;
+    color: var(--s-faint);
+  }
+  .st-ac-meta {
+    font-size: 11px;
+    color: var(--s-faint);
+  }
+  .st-ac-foot {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px 3px;
+    font-size: 11px;
+    color: var(--s-faint);
+  }
+
+  .st-swatch {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 2px solid var(--s-panel);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--s-line);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .st-swatch:disabled {
+    cursor: default;
+  }
+
+  .st-rng {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--s-accent);
+    cursor: pointer;
+  }
+  .st-rng:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* Sub-section inside a card, split from the header by a hairline */
+  .st-card-sec {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 12px 14px 16px;
+    border-top: 1px solid var(--s-line);
+  }
+  .st-thumb {
+    position: relative;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--s-raised);
+  }
+  .st-thumb img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .st-thumb.empty {
+    background: transparent;
+    border: 1px dashed var(--s-line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--s-faint);
+  }
+  .st-warn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 8px 8px 10px;
+    border-radius: 10px;
+    background: rgba(226, 180, 79, 0.08);
+    border: 1px solid rgba(226, 180, 79, 0.35);
+    font-size: 12.5px;
+  }
+}

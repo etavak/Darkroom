@@ -63,7 +63,8 @@ export function AppShell({
   vramTooltip,
   queueCount = 0,
 }: Props) {
-  const historyOnRight = historyPosition === 'right';
+  // The classic layout has no left rail; the studio's "left" shows on the right here
+  const historyOnRight = historyPosition === 'right' || historyPosition === 'left';
   const historyOnBottom = historyPosition === 'bottom';
   const historyHidden = historyPosition === 'hidden';
   const subtitle = systemLabel || 'local · ComfyUI';

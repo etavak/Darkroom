@@ -38,6 +38,7 @@ import { Switch } from '@/components/ui/switch';
 import type {
   CanvasBackground,
   HistoryPosition,
+  Palette,
   PreviewQuality,
   ShortcutAction,
   UiScale,
@@ -62,7 +63,7 @@ export type PrefCategory =
   | 'network'
   | 'advanced';
 
-const CATEGORIES: { id: PrefCategory; label: string }[] = [
+export const PREF_CATEGORIES: { id: PrefCategory; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'interface', label: 'Interface' },
   { id: 'generation', label: 'Generation' },
@@ -72,12 +73,12 @@ const CATEGORIES: { id: PrefCategory; label: string }[] = [
   { id: 'advanced', label: 'Advanced' },
 ];
 
-type PrefEntry = SettingEntry & {
+export type PrefEntry = SettingEntry & {
   category: PrefCategory;
   scope: SettingScope;
 };
 
-type Props = {
+export type PreferenceProps = {
   ui: UiSettings;
   onUiPatch: (partial: Partial<UiSettings>) => void;
   onLivePreviewChange: (enabled: boolean) => void;
@@ -144,7 +145,7 @@ function CompactNumber({
   );
 }
 
-function matchesQuery(entry: PrefEntry, q: string): boolean {
+export function matchesQuery(entry: PrefEntry, q: string): boolean {
   if (!q) return true;
   const hay = [
     entry.label,
@@ -163,10 +164,10 @@ function matchesQuery(entry: PrefEntry, q: string): boolean {
 }
 
 /**
- * Photoshop-style Preferences: category list + searchable settings.
- * Changes apply instantly (localStorage / server PATCH).
+ * Every preference as data (label, description, live control). Shared by the classic
+ * panel and the studio's full-screen Preferences, so both stay wired to the same settings.
  */
-export function AppSettingsPanel({
+export function usePreferenceEntries({
   ui,
   onUiPatch,
   onLivePreviewChange,
@@ -175,13 +176,10 @@ export function AppSettingsPanel({
   server,
   serverHints,
   diskUsage,
-  serverLoading,
   onServerPatch,
   onCopyDiagnostics,
   onBackupNow,
-}: Props) {
-  const [category, setCategory] = useState<PrefCategory>('general');
-  const [query, setQuery] = useState('');
+}: PreferenceProps): PrefEntry[] {
   const [diagFlash, setDiagFlash] = useState<string | null>(null);
   const [backupFlash, setBackupFlash] = useState<string | null>(null);
   const [foldersText, setFoldersText] = useState(server.extraModelFolders.join('\n'));
@@ -278,6 +276,26 @@ export function AppSettingsPanel({
       },
 
       // —— Interface ——
+      {
+        id: 'palette',
+        category: 'interface',
+        scope: 'device',
+        label: 'Palette',
+        description: 'Darkroom is charcoal and amber; Night is ink blue and cream',
+        icon: <Moon />,
+        keywords: ['theme', 'colour', 'color', 'night', 'dark'],
+        control: (
+          <Select value={ui.palette} onValueChange={(v) => onUiPatch({ palette: v as Palette })}>
+            <SelectTrigger id="palette" className="w-[8.5rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="darkroom">Darkroom</SelectItem>
+              <SelectItem value="night">Night</SelectItem>
+            </SelectContent>
+          </Select>
+        ),
+      },
       {
         id: 'canvas-background',
         category: 'interface',
@@ -382,6 +400,7 @@ export function AppSettingsPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="right">Right</SelectItem>
+              <SelectItem value="left">Left</SelectItem>
               <SelectItem value="bottom">Bottom</SelectItem>
               <SelectItem value="hidden">Hidden</SelectItem>
             </SelectContent>
@@ -970,6 +989,19 @@ export function AppSettingsPanel({
     ui,
   ]);
 
+  return entries;
+}
+
+/**
+ * Photoshop-style Preferences: category list + searchable settings.
+ * Changes apply instantly (localStorage / server PATCH).
+ */
+export function AppSettingsPanel(props: PreferenceProps) {
+  const { serverLoading } = props;
+  const [category, setCategory] = useState<PrefCategory>('general');
+  const [query, setQuery] = useState('');
+  const entries = usePreferenceEntries(props);
+
   const searching = query.trim().length > 0;
   const visible = useMemo(() => {
     if (searching) return entries.filter((e) => matchesQuery(e, query));
@@ -1006,7 +1038,7 @@ export function AppSettingsPanel({
 
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-[9.5rem] shrink-0 flex-col gap-0.5 overflow-y-auto border-r bg-muted/20 p-2">
-          {CATEGORIES.map((c) => {
+          {PREF_CATEGORIES.map((c) => {
             const count = categoryCounts?.[c.id];
             const active = !searching && category === c.id;
             return (
@@ -1050,7 +1082,7 @@ export function AppSettingsPanel({
               ))}
             </div>
           ) : (
-            <SettingsGroup label={CATEGORIES.find((c) => c.id === category)?.label ?? ''}>
+            <SettingsGroup label={PREF_CATEGORIES.find((c) => c.id === category)?.label ?? ''}>
               {visible.map((e) => (
                 <SettingRow key={e.id} entry={e} />
               ))}

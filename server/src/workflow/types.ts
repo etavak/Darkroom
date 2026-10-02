@@ -79,6 +79,8 @@ export type GenerationSettings = {
   styleId?: string;
   dismissedPositive?: string[];
   dismissedNegative?: string[];
+  qualityPreset?: string;
+  negativePreset?: string;
   checkpoint: string;
   modelMode?: ModelLoadMode;
   unet?: string;

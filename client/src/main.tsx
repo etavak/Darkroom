@@ -7,7 +7,8 @@ import './index.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate>
-      <App />
+      {/* The redesigned studio lives at /; the previous layout stays at /classic during the rebuild */}
+      <App variant={window.location.pathname.startsWith('/classic') ? 'classic' : 'studio'} />
     </AuthGate>
   </StrictMode>,
 );

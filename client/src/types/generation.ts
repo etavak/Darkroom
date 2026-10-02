@@ -2,6 +2,8 @@ export type LoraSettings = {
   name: string;
   strength_model: number;
   strength_clip: number;
+  /** Studio on/off switch; off LoRAs stay listed but aren't sent */
+  enabled?: boolean;
 };
 
 export type ControlNetSettings = {
@@ -71,6 +73,8 @@ export type GenerationSettings = {
   styleId?: string;
   dismissedPositive?: string[];
   dismissedNegative?: string[];
+  qualityPreset?: string;
+  negativePreset?: string;
   checkpoint: string;
   modelMode?: ModelLoadMode;
   unet?: string;

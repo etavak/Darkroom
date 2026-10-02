@@ -265,6 +265,20 @@ export function tagExistsInFamily(familyId: string, tag: string): boolean {
   return false;
 }
 
+/** Category of a tag in the family's dictionaries (null when it isn't in any of them). */
+export function tagCategoryInFamily(familyId: string, tag: string): TagCategory | null {
+  loadAllTagDictionaries();
+  const sources = getFamily(familyId)?.tagSources ?? [];
+  const key = dictionaryKey(tag);
+  if (!key) return null;
+  for (const source of sources) {
+    const dict = dictionaries.get(source);
+    const idx = dict?.index.get(key);
+    if (dict && idx !== undefined) return dict.tags[idx]?.category ?? 'general';
+  }
+  return null;
+}
+
 export function getFamilyTagMeta(familyId: string): {
   enabled: boolean;
   tagFormat: 'spaces' | 'underscores';

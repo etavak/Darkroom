@@ -185,6 +185,8 @@ export function validateSettings(body: unknown): GenerationSettings {
     styleId: optString(b.styleId),
     dismissedPositive: optStrings(b.dismissedPositive),
     dismissedNegative: optStrings(b.dismissedNegative),
+    qualityPreset: optString(b.qualityPreset),
+    negativePreset: optString(b.negativePreset),
     checkpoint,
     modelMode,
     unet,

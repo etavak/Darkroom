@@ -22,6 +22,13 @@ export type TagLayer = {
   settings?: LayerSettings;
 };
 
+/** One selectable level of preset tags (Quality: None/Light/Standard…, Negative: None/Heavy…) */
+export type PresetLevel = {
+  id: string;
+  name: string;
+  tags: string[];
+};
+
 export type StyleDef = TagLayer & {
   name: string;
 };
@@ -76,6 +83,12 @@ export type FamilyDef = TagLayer & {
   modelSampling?: { sampling: 'eps' | 'v_prediction'; zsnr?: boolean };
   /** Preferred inpaint / fill model filename hint for outpaint */
   preferredInpaintModel?: string;
+  /** Quality levels; the chosen one replaces the family's own positive tags */
+  qualityPresets?: PresetLevel[];
+  /** Negative levels; the chosen one replaces the family's own negative tags */
+  negativePresets?: PresetLevel[];
+  defaultQuality?: string;
+  defaultNegative?: string;
   styles: Record<string, StyleDef>;
 };
 
@@ -107,6 +120,11 @@ export type ResolvedPresets = {
   tagSources: string[];
   tagFormat: 'spaces' | 'underscores';
   tagsEnabled: boolean;
+  qualityPresets: PresetLevel[];
+  negativePresets: PresetLevel[];
+  /** Chosen level ids (null when the family has none) */
+  qualityPreset: string | null;
+  negativePreset: string | null;
 };
 
 export type ResolveInput = {
@@ -114,6 +132,8 @@ export type ResolveInput = {
   styleId: string | null;
   dismissedPositive: string[];
   dismissedNegative: string[];
+  qualityPreset?: string | null;
+  negativePreset?: string | null;
   userPositive: string;
   userNegative: string;
 };

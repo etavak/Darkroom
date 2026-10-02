@@ -23,6 +23,19 @@
     "blurry",
     "deformed"
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "standard", "name": "Standard", "tags": ["high detail", "sharp focus"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["high detail", "sharp focus", "8k", "professional photography"] }
+  ],
+  "defaultQuality": "none",
+  "negativePresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["blurry", "lowres"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["blurry", "lowres", "deformed", "watermark", "oversaturated"] },
+    { "id": "photo", "name": "No illustration", "tags": ["cartoon", "anime", "illustration", "painting", "cgi", "lowres", "blurry", "deformed"] }
+  ],
+  "defaultNegative": "photo",
   "defaultStyle": "photo",
   "styles": {
     "photo": {

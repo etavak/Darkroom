@@ -23,6 +23,21 @@
     "score_5",
     "score_6"
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["score_9"] },
+    { "id": "standard", "name": "Standard", "tags": ["score_9", "score_8_up", "score_7_up"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["score_9", "score_8_up", "score_7_up", "score_6_up", "score_5_up", "score_4_up"] }
+  ],
+  "defaultQuality": "standard",
+  "negativePresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["score_4"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["score_4", "score_5", "score_6"] },
+    { "id": "human", "name": "Human focus", "tags": ["score_4", "score_5", "score_6", "bad anatomy", "bad hands", "extra digits", "fused fingers", "bad proportions"] },
+    { "id": "furry", "name": "Furry focus", "tags": ["score_4", "score_5", "score_6", "human", "bad anatomy", "extra limbs"] }
+  ],
+  "defaultNegative": "heavy",
   "defaultStyle": "anime",
   "styles": {
     "anime": {

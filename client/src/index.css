@@ -214,3 +214,28 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Prompt highlighting (overlay behind the prompt textarea). Colours come from prompt prefs. */
+.hl-root .hl-w {
+  color: var(--hl-weights, #f2b544);
+  background: color-mix(in srgb, var(--hl-weights, #f2b544) 15%, transparent);
+  border-radius: 3px;
+}
+.hl-root .hl-alt { color: var(--hl-choices, #5fbcbf); }
+.hl-root .hl-wc { color: var(--hl-wildcards, #c08cf0); }
+.hl-root .hl-cat-character { color: #7fcf7a; }
+.hl-root .hl-cat-copyright { color: #d27bd6; }
+.hl-root .hl-cat-artist { color: #f0857f; }
+.hl-root .hl-cat-meta { color: #e2b44f; }
+.hl-root .hl-unk {
+  text-decoration: underline wavy #e5534b;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+.hl-root .hl-new { background: rgba(91, 209, 139, 0.16); border-radius: 3px; }
+.hl-root.hl-no-w .hl-w { color: inherit; background: none; }
+.hl-root.hl-no-alt .hl-alt,
+.hl-root.hl-no-wc .hl-wc,
+.hl-root.hl-no-cat [class*='hl-cat-'] { color: inherit; }
+.hl-root.hl-no-unk .hl-unk { text-decoration: none; }
+.hl-root.hl-no-new .hl-new { background: none; }

@@ -28,6 +28,21 @@
     "username",
     "logo"
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["best quality", "newest"] },
+    { "id": "standard", "name": "Standard", "tags": ["masterpiece", "best quality", "newest", "absurdres"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["masterpiece", "best quality", "very aesthetic", "newest", "absurdres", "highres"] }
+  ],
+  "defaultQuality": "standard",
+  "negativePresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["worst quality", "low quality"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["worst quality", "old", "early", "low quality", "lowres", "signature", "username", "logo"] },
+    { "id": "human", "name": "Human focus", "tags": ["worst quality", "low quality", "bad anatomy", "bad hands", "extra digits", "fused fingers", "bad proportions"] },
+    { "id": "furry", "name": "Furry focus", "tags": ["worst quality", "low quality", "human", "bad anatomy", "extra limbs"] }
+  ],
+  "defaultNegative": "heavy",
   "defaultStyle": "anime",
   "styles": {
     "anime": {

@@ -2,6 +2,7 @@ import type {
   FamilyDef,
   InjectedTag,
   LayerSettings,
+  PresetLevel,
   ResolveInput,
   ResolvedPresets,
   TagLayer,
@@ -85,6 +86,30 @@ function pickStyleId(family: FamilyDef, requested: string | null): string {
   return Object.keys(family.styles)[0] ?? family.defaultStyle;
 }
 
+/** The family's levels, or None + Standard built from its fixed tag list */
+export function familyLevels(family: FamilyDef): { quality: PresetLevel[]; negative: PresetLevel[] } {
+  const fallback = (tags: string[] | undefined, name: string): PresetLevel[] =>
+    tags?.length ? [{ id: 'none', name: 'None', tags: [] }, { id: 'standard', name, tags }] : [];
+  return {
+    quality: family.qualityPresets?.length ? family.qualityPresets : fallback(family.positive, 'Standard'),
+    negative: family.disableNegative
+      ? []
+      : family.negativePresets?.length
+        ? family.negativePresets
+        : fallback(family.negative, 'Standard'),
+  };
+}
+
+function pickLevel(levels: PresetLevel[], requested: string | null | undefined, fallbackId: string | undefined): PresetLevel | null {
+  if (!levels.length) return null;
+  return (
+    levels.find((l) => l.id === requested) ??
+    levels.find((l) => l.id === fallbackId) ??
+    levels.find((l) => l.id === 'standard') ??
+    levels[levels.length - 1]
+  );
+}
+
 /**
  * Resolve order: family → style → checkpoint override → user text.
  */
@@ -95,6 +120,10 @@ export function resolvePresets(input: ResolveInput): ResolvedPresets {
 
   if (!family) {
     return {
+      qualityPresets: [],
+      negativePresets: [],
+      qualityPreset: null,
+      negativePreset: null,
       familyId: null,
       familyName: null,
       styleId: null,
@@ -116,7 +145,16 @@ export function resolvePresets(input: ResolveInput): ResolvedPresets {
   let negative: InjectedTag[] = [];
   let settings: LayerSettings = { ...(family.settings ?? {}) };
 
-  ({ positive, negative, settings } = applyLayer(positive, negative, family, 'FAMILY', settings));
+  // The chosen Quality / Negative levels stand in for the family's own tag lists
+  const levels = familyLevels(family);
+  const quality = pickLevel(levels.quality, input.qualityPreset, family.defaultQuality);
+  const negLevel = pickLevel(levels.negative, input.negativePreset, family.defaultNegative);
+  const familyLayer: TagLayer = {
+    ...family,
+    positive: quality ? quality.tags : family.positive,
+    negative: negLevel ? negLevel.tags : family.negative,
+  };
+  ({ positive, negative, settings } = applyLayer(positive, negative, familyLayer, 'FAMILY', settings));
 
   const styleId = pickStyleId(family, input.styleId);
   const style = family.styles[styleId];
@@ -165,6 +203,10 @@ export function resolvePresets(input: ResolveInput): ResolvedPresets {
     tagSources,
     tagFormat,
     tagsEnabled: tagSources.length > 0,
+    qualityPresets: levels.quality,
+    negativePresets: levels.negative,
+    qualityPreset: quality?.id ?? null,
+    negativePreset: negLevel?.id ?? null,
   };
 }
 

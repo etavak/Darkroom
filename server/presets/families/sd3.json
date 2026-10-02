@@ -39,6 +39,17 @@
       "recommend": { "vramUnderGB": 12, "pick": "t5xxl_fp8_e4m3fn" }
     }
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "standard", "name": "Standard", "tags": ["highly detailed", "natural lighting"] }
+  ],
+  "defaultQuality": "none",
+  "negativePresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["blurry", "lowres"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["blurry", "lowres", "deformed", "watermark"] }
+  ],
+  "defaultNegative": "none",
   "defaultStyle": "photo",
   "styles": {
     "photo": {

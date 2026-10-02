@@ -43,6 +43,11 @@
       "recommend": { "pick": "ae" }
     }
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "standard", "name": "Standard", "tags": ["highly detailed", "natural lighting"] }
+  ],
+  "defaultQuality": "none",
   "defaultStyle": "photo",
   "styles": {
     "photo": {

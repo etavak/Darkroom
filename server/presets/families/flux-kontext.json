@@ -46,6 +46,11 @@
     }
   ],
   "defaultClipType": "flux",
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "standard", "name": "Standard", "tags": ["highly detailed", "natural lighting"] }
+  ],
+  "defaultQuality": "none",
   "defaultStyle": "edit",
   "styles": {
     "edit": {

@@ -36,7 +36,23 @@ import {
   type UpscaleRequest,
   type VaryStrength,
 } from '@/components/preview/ResultActionBar';
-import { AppSettingsPanel } from '@/components/settings/AppSettingsPanel';
+import { AppSettingsPanel, type PreferenceProps } from '@/components/settings/AppSettingsPanel';
+import { StudioShell } from '@/components/studio/StudioShell';
+import { AvoidCard, PromptCard } from '@/components/studio/controls/PromptCards';
+import { ExtrasCard, LoraCard, LoraPicker } from '@/components/studio/controls/EnhanceCards';
+import { ImageSettings } from '@/components/studio/controls/ImageSettings';
+import { ControlNetCard, ImageToImageCard } from '@/components/studio/controls/ReferenceCards';
+import { PromptPopout } from '@/components/studio/controls/PromptPopout';
+import { SamplingFooter } from '@/components/studio/controls/SamplingFooter';
+import {
+  StCard,
+  StChipFace,
+  StMenuButton,
+  StMenuItem,
+  StScrollArea,
+  StSection,
+} from '@/components/studio/controls/primitives';
+import { usePromptPrefs } from '@/lib/promptPrefs';
 import { UndoToast } from '@/components/ui/UndoToast';
 import { scaleAspectPresets } from '@/constants/aspectRatios';
 import { useFamilies } from '@/hooks/useFamilies';
@@ -111,9 +127,31 @@ const emptyResolved: ResolvedPresets = {
   tagSources: [],
   tagFormat: 'underscores',
   tagsEnabled: false,
+  qualityPresets: [],
+  negativePresets: [],
+  qualityPreset: null,
+  negativePreset: null,
 };
 
-export default function App() {
+/** True while the viewport is narrower than the studio layout supports (phones get the classic layout until the phone pass). */
+function useNarrowViewport(maxWidth = 899) {
+  const query = `(max-width: ${maxWidth}px)`;
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return narrow;
+}
+
+export default function App({ variant = 'studio' }: { variant?: 'studio' | 'classic' }) {
+  const narrow = useNarrowViewport();
+  const [promptPrefs, setPromptPrefs] = usePromptPrefs();
+  const [promptPanelOpen, setPromptPanelOpen] = useState(false);
+  const [loraPickerOpen, setLoraPickerOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const { catalog, loading: modelsLoading, reload: reloadModels } = useModels();
   const { families } = useFamilies();
   const {
@@ -184,6 +222,9 @@ export default function App() {
   const [styleId, setStyleId] = useState<string | null>(null);
   const [dismissedPositive, setDismissedPositive] = useState<string[]>([]);
   const [dismissedNegative, setDismissedNegative] = useState<string[]>([]);
+  /** Chosen Quality / Negative preset levels (null = the family's default) */
+  const [qualityPreset, setQualityPreset] = useState<string | null>(null);
+  const [negativePreset, setNegativePreset] = useState<string | null>(null);
   const [resolved, setResolved] = useState<ResolvedPresets>(emptyResolved);
 
   const [prompt, setPrompt] = useState('');
@@ -337,12 +378,14 @@ export default function App() {
           styleId,
           dismissedPositive,
           dismissedNegative,
+          qualityPreset,
+          negativePreset,
           userPositive: prompt,
           userNegative: negativePrompt,
         });
         if (!cancelled) {
           resolveSeq.current += 1;
-          setResolved(next);
+          setResolved({ ...emptyResolved, ...next });
         }
       } catch {
         if (!cancelled) {
@@ -355,9 +398,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [primaryModel, styleId, dismissedPositive, dismissedNegative, prompt, negativePrompt]);
+  }, [primaryModel, styleId, dismissedPositive, dismissedNegative, qualityPreset, negativePreset, prompt, negativePrompt]);
 
   // When family or style identity changes: apply settings + scale aspect
+  /** Current size, read by the family-change effect without re-running it */
+  const sizeRef = useRef({ width, height });
+  sizeRef.current = { width, height };
   const identityKey = `${resolved.familyId ?? ''}|${resolved.styleId ?? ''}|${resolved.mapped}`;
   const prevIdentity = useRef('');
   const prevFamily = useRef<string | null>(null);
@@ -386,6 +432,8 @@ export default function App() {
       prevFamily.current = resolved.familyId;
       setDismissedPositive([]);
       setDismissedNegative([]);
+      setQualityPreset(null);
+      setNegativePreset(null);
       const def = familyMeta?.defaultStyle ?? resolved.styleId;
       if (def && def !== styleId) setStyleId(def);
     } else if (!styleId && resolved.styleId) {
@@ -405,8 +453,10 @@ export default function App() {
     const match =
       resolved.aspectPresets.find((p) => p.id === aspectId) ?? resolved.aspectPresets[0];
     if (match) {
-      setWidth(match.width);
-      setHeight(match.height);
+      // Presets are landscape; keep a portrait choice portrait
+      const portrait = sizeRef.current.height > sizeRef.current.width;
+      setWidth(portrait ? match.height : match.width);
+      setHeight(portrait ? match.width : match.height);
     }
   }, [identityKey, resolved, familyMeta, styleId, aspectId]);
 
@@ -523,6 +573,9 @@ export default function App() {
               ? 'outpaint'
               : 'edit';
 
+      const activeLoras = loras
+        .filter((l) => l.enabled !== false)
+        .map((l) => ({ name: l.name, strength_model: l.strength_model, strength_clip: l.strength_clip }));
       const base: GenerationSettings = {
         prompt: resolved.finalPositive,
         negative_prompt: resolved.finalNegative,
@@ -533,6 +586,8 @@ export default function App() {
         styleId: resolved.styleId ?? undefined,
         dismissedPositive: dismissedPositive.length ? dismissedPositive : undefined,
         dismissedNegative: dismissedNegative.length ? dismissedNegative : undefined,
+        qualityPreset: resolved.qualityPreset ?? undefined,
+        negativePreset: resolved.negativePreset ?? undefined,
         checkpoint: modelMode === 'split' ? unet || checkpoint : checkpoint,
         modelMode,
         width: w,
@@ -545,7 +600,7 @@ export default function App() {
         batch_size: batchSize,
         clipSkip,
         guidance,
-        loras: loras.length ? loras : undefined,
+        loras: activeLoras.length ? activeLoras : undefined,
         hiresFix: hiresFix.enabled && workMode === 'generate' ? hiresFix : undefined,
         controlnet: controlNetPayload(controlNet) ?? undefined,
         detailer: detailer.enabled ? detailer : undefined,
@@ -943,6 +998,8 @@ export default function App() {
       setStyleId(str(s?.styleId));
       setDismissedPositive(strList(s?.dismissedPositive));
       setDismissedNegative(strList(s?.dismissedNegative));
+      setQualityPreset(str(s?.qualityPreset));
+      setNegativePreset(str(s?.negativePreset));
     } else {
       const promptTemplate = str(s?.promptTemplate);
       const negativeTemplate = str(s?.negativeTemplate);
@@ -1159,6 +1216,8 @@ export default function App() {
     setStyleId(s.styleId ?? null);
     setDismissedPositive(s.dismissedPositive ?? []);
     setDismissedNegative(s.dismissedNegative ?? []);
+    setQualityPreset(s.qualityPreset ?? null);
+    setNegativePreset(s.negativePreset ?? null);
     setAspectId('custom');
     setModelMode(s.modelMode === 'split' ? 'split' : 'checkpoint');
     setCheckpoint(s.checkpoint);
@@ -1277,6 +1336,8 @@ export default function App() {
     styleId: parent.styleId,
     dismissedPositive: parent.dismissedPositive,
     dismissedNegative: parent.dismissedNegative,
+    qualityPreset: parent.qualityPreset,
+    negativePreset: parent.negativePreset,
   });
 
   const handleVary = useCallback(
@@ -1704,94 +1765,495 @@ export default function App() {
     </SettingsPanel>
   );
 
+  const modelPanel = (
+    <>
+      <ModelStackPanel
+        catalog={catalog}
+        mode={modelMode}
+        onModeChange={(mode) => {
+          setModelMode(mode);
+          setStyleId(null);
+          setDismissedPositive([]);
+          setDismissedNegative([]);
+          prevFamily.current = null;
+        }}
+        checkpoint={checkpoint}
+        onCheckpointChange={(v) => {
+          setCheckpoint(v);
+          setStyleId(null);
+          setDismissedPositive([]);
+          setDismissedNegative([]);
+          prevFamily.current = null;
+        }}
+        unet={unet}
+        onUnetChange={(v) => {
+          setUnet(v);
+          lastAutopickUnet.current = '';
+          setStyleId(null);
+          setDismissedPositive([]);
+          setDismissedNegative([]);
+          prevFamily.current = null;
+        }}
+        clipName={clipName}
+        onClipNameChange={setClipName}
+        clipName2={clipName2}
+        onClipName2Change={setClipName2}
+        clipType={clipType}
+        onClipTypeChange={setClipType}
+        clipTypeOverride={clipTypeOverride}
+        onClipTypeOverrideChange={setClipTypeOverride}
+        vaeName={vaeName}
+        onVaeNameChange={setVaeName}
+        loras={loras}
+        onLorasChange={setLoras}
+        loading={modelsLoading}
+        offline={comfyOk === false}
+        familyName={resolved.familyName}
+        mapped={resolved.mapped}
+        textEncoderCount={teCount || (modelMode === 'split' ? 1 : 0)}
+        te1Hint={teKeys[0] ? `Hint: ${(teHints[teKeys[0]] || []).join(', ') || teKeys[0]}` : null}
+        te2Hint={teKeys[1] ? `Hint: ${(teHints[teKeys[1]] || []).join(', ') || teKeys[1]}` : null}
+        vaeHint={vaeKeys[0] ? `Hint: ${(teHints[vaeKeys[0]] || []).join(', ') || 'models/vae'}` : null}
+        disabled={runtime.running}
+        missing={readiness.missing}
+        needsGguf={readiness.needsGguf}
+        offerGguf={Boolean(familyMeta?.supportsGguf) && !catalog.available.ggufUnet && !readiness.needsGguf}
+        onAddModel={(t) => {
+          setModelMenuOpen(false);
+          openAddModel(t);
+        }}
+      />
+    </>
+  );
+
+  const activeStyleId = styleId ?? resolved.styleId;
+  const activeStyleName = styles.find((st) => st.id === activeStyleId)?.name ?? null;
+  const modelMissing = readiness.missing.length > 0;
+  const insertIntoPrompt = (text: string, mode: 'append' | 'replace') => {
+    if (mode === 'replace') return setPrompt(text);
+    const base = prompt.trim().replace(/,\s*$/, '');
+    setPrompt(base ? `${base}, ${text}` : text);
+  };
+  const stopCurrent = () => {
+    if (activeQueueId) void cancelQueueJob(activeQueueId);
+    else void handleCancel();
+  };
+  const usingGuidance = typeof guidance === 'number';
+  const workVerb = workMode === 'edit' ? 'Edit' : workMode === 'outpaint' ? 'Extend' : 'Generate';
+
+  /** The studio's controls column (phase 2 of the rebuild). */
+  const renderStudioControls = () => (
+    <>
+      <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2 px-3.5 pb-3">
+        <StMenuButton
+          label="Model"
+          tip={modelMissing ? 'Some model files are missing — click to fix' : 'Choose the model. Presets, tags and defaults follow it.'}
+          open={modelMenuOpen}
+          onOpenChange={setModelMenuOpen}
+          menuStyle={{ width: 'calc(var(--st-left-w, 360px) - 28px)', padding: 12, gap: 12 }}
+          button={
+            <StChipFace
+              label={resolved.familyName ? `Model · ${resolved.familyName}` : 'Model'}
+              value={primaryModel ? shortModelName(primaryModel) : 'Choose a model'}
+              dot={modelMissing ? '#e2b44f' : undefined}
+            />
+          }
+        >
+          {modelPanel}
+        </StMenuButton>
+        <StMenuButton
+          label="Style"
+          tip={resolved.mapped ? 'Style for this model — sets preset tags and defaults' : 'Pick a model family first'}
+          disabled={runtime.running || !resolved.mapped || styles.length === 0}
+          menuStyle={{ left: 'auto', right: 0, minWidth: 200 }}
+          button={<StChipFace label="Style" value={activeStyleName ?? (styles.length ? 'Default' : 'None')} />}
+        >
+          {(close) =>
+            styles.map((st) => (
+              <StMenuItem
+                key={st.id}
+                title={st.name}
+                selected={st.id === activeStyleId}
+                onClick={() => {
+                  setStyleId(st.id);
+                  setDismissedPositive([]);
+                  setDismissedNegative([]);
+                  close();
+                }}
+              />
+            ))
+          }
+        </StMenuButton>
+      </div>
+
+      <StScrollArea>
+        {modelMissing && !modelMenuOpen ? (
+          <button
+            type="button"
+            onClick={() => setModelMenuOpen(true)}
+            className="flex items-center gap-2.5 rounded-xl p-3 text-left"
+            style={{ background: 'rgba(226,180,79,.08)', border: '1px solid rgba(226,180,79,.4)', color: 'var(--s-text)' }}
+          >
+            <span className="st-dot" style={{ background: '#e2b44f' }} />
+            <span className="min-w-0 flex-1 text-[13px]">
+              Missing: {readiness.missing.map((m) => m.label).join(', ')}. Open Model to fix.
+            </span>
+          </button>
+        ) : null}
+
+        <PromptCard
+          value={prompt}
+          onChange={setPrompt}
+          familyId={resolved.familyId}
+          tagsEnabled={resolved.tagsEnabled}
+          placeholder={workMode === 'edit' ? 'Describe the change…' : 'Describe your image…'}
+          disabled={runtime.running}
+          tokenMode={familyMeta?.promptTokenMode ?? 'clip'}
+          tokenMax={familyMeta?.promptMaxTokens ?? 75}
+          injected={resolved.positiveTags}
+          qualityLevels={resolved.qualityPresets}
+          quality={resolved.qualityPreset}
+          onQuality={setQualityPreset}
+          prefs={promptPrefs}
+          enhanceConfigured={Boolean(serverSettings.enhanceApiUrl.trim() && serverSettings.enhanceModel.trim())}
+          onOpenPreferences={() => setUiSettingsOpen(true)}
+          onShowFinal={() => setFinalOpen((o) => !o)}
+          panelOpen={promptPanelOpen}
+          onTogglePanel={() => {
+            setLoraPickerOpen(false);
+            setPromptPanelOpen((o) => !o);
+          }}
+        />
+        <AvoidCard
+          value={negativePrompt}
+          onChange={setNegativePrompt}
+          familyId={resolved.familyId}
+          tagsEnabled={resolved.tagsEnabled}
+          disabled={runtime.running}
+          locked={resolved.disableNegative}
+          lockedReason={
+            resolved.familyName ? `${resolved.familyName} doesn’t use a negative prompt.` : 'This model doesn’t use a negative prompt.'
+          }
+          levels={resolved.negativePresets}
+          preset={resolved.negativePreset}
+          onPreset={setNegativePreset}
+          prefs={promptPrefs}
+          onSwap={() => {
+            const p = prompt;
+            setPrompt(negativePrompt);
+            setNegativePrompt(p);
+          }}
+        />
+
+        {finalOpen ? (
+          <StCard>
+            <div className="st-card-body st-embedded pt-3.5">
+              <FinalPromptPreview
+                open
+                onOpenChange={setFinalOpen}
+                positive={resolved.finalPositive}
+                negative={resolved.finalNegative}
+                cfg={cfg}
+                clipSkip={clipSkip}
+                guidance={guidance}
+                sampler={sampler}
+                checkpoint={primaryModel}
+              />
+            </div>
+          </StCard>
+        ) : null}
+
+        <StSection>Reference images</StSection>
+        <ImageToImageCard
+          source={source}
+          mode={workMode}
+          supportsEdit={Boolean(familyMeta?.supportsEdit)}
+          denoise={imgDenoise}
+          onDenoise={setImgDenoise}
+          sizeMode={sourceSizeMode}
+          onSizeMode={(v) => {
+            setSourceSizeMode(v);
+            if (v === 'match' && source?.width && source.height) {
+              const matched = matchSourceSize(source.width, source.height, sizeMultiple);
+              setWidth(matched.width);
+              setHeight(matched.height);
+              setAspectId('custom');
+            }
+          }}
+          fit={sourceFit}
+          onFit={setSourceFit}
+          outpaint={outpaint}
+          onOutpaint={setOutpaint}
+          outputW={width}
+          outputH={height}
+          disabled={runtime.running}
+          canUseSelected={Boolean(selectedRecord)}
+          onUseSelected={() => {
+            if (selectedRecord) void setSourceFromGallery(selectedRecord);
+          }}
+          onUpload={(f) => void setSourceFromFile(f)}
+          onClear={clearSource}
+          onMode={(m) => {
+            if (m === 'edit' && !familyMeta?.supportsEdit) return;
+            setWorkMode(m);
+          }}
+        />
+        <ControlNetCard
+          value={controlNet}
+          onChange={setControlNet}
+          models={catalog.controlnet}
+          available={Boolean(catalog.available.controlnet)}
+          auxAvailable={Boolean(catalog.available.controlnetAux)}
+          disabled={runtime.running}
+          canUseSelected={Boolean(selectedRecord?.images[0])}
+          onUseSelected={async () => {
+            const img = selectedRecord?.images[0];
+            if (!img || !selectedRecord) return null;
+            const src = await useGalleryAsSource(img, selectedRecord.id);
+            return { comfyName: src.comfyName, previewUrl: src.previewUrl };
+          }}
+          onUpload={async (file) => {
+            const src = await uploadFileAsSource(file);
+            return { comfyName: src.comfyName, previewUrl: src.previewUrl };
+          }}
+          onAddModel={() => openAddModel('controlnet')}
+        />
+
+        <StSection>Image settings</StSection>
+        <ImageSettings
+          presets={resolved.aspectPresets}
+          width={width}
+          height={height}
+          aspectId={aspectId}
+          onSize={(w, h, id) => {
+            setWidth(w);
+            setHeight(h);
+            setAspectId(id);
+          }}
+          batch={batchSize}
+          onBatch={setBatchSize}
+          sizeMultiple={sizeMultiple}
+          disabled={runtime.running}
+        />
+
+        <StSection>Enhance</StSection>
+        <LoraCard
+          loras={loras}
+          onChange={setLoras}
+          pickerOpen={loraPickerOpen}
+          onPickerOpen={(o) => {
+            if (o) setPromptPanelOpen(false);
+            setLoraPickerOpen(o);
+          }}
+          disabled={runtime.running}
+        />
+        <ExtrasCard
+          hires={hiresFix}
+          onHires={setHiresFix}
+          hiresApplies={workMode === 'generate'}
+          detailer={detailer}
+          onDetailer={setDetailer}
+          detectors={catalog.detailer_detectors ?? []}
+          detailerAvailable={Boolean(catalog.available.faceDetailer)}
+          disabled={runtime.running}
+        />
+      </StScrollArea>
+
+      <SamplingFooter
+        steps={steps}
+        cfgLabel={usingGuidance ? 'Guidance' : 'CFG'}
+        cfgValue={usingGuidance ? (guidance as number) : cfg}
+        seedLocked={seedLocked}
+        seed={seed}
+        onToggleSeedLock={() => setSeedLocked((l) => !l)}
+        sampler={sampler}
+        expanded={
+          <div className="st-embedded flex flex-col gap-3">
+            <SamplerControls
+              steps={steps}
+              cfg={cfg}
+              sampler={sampler}
+              scheduler={scheduler}
+              guidance={guidance}
+              clipSkip={clipSkip}
+              defaults={{
+                steps: familyMeta?.settings.steps ?? 25,
+                cfg: familyMeta?.settings.cfg ?? 7,
+                sampler: familyMeta?.settings.sampler ?? 'euler',
+                scheduler: familyMeta?.settings.scheduler ?? 'normal',
+                guidance: familyMeta?.settings.guidance,
+                clipSkip: familyMeta?.settings.clipSkip,
+              }}
+              samplerOptions={catalog.samplers}
+              schedulerOptions={catalog.schedulers}
+              showGuidance={usingGuidance}
+              showClipSkip={typeof clipSkip === 'number'}
+              onStepsChange={setSteps}
+              onCfgChange={setCfg}
+              onSamplerChange={setSampler}
+              onSchedulerChange={setScheduler}
+              onGuidanceChange={setGuidance}
+              onClipSkipChange={setClipSkip}
+              disabled={runtime.running}
+            />
+            <SeedControl seed={seed} locked={seedLocked} onSeedChange={setSeed} onLockedChange={setSeedLocked} disabled={runtime.running} />
+          </div>
+        }
+        generateLabel={`${workVerb} ${batchSize} image${batchSize > 1 ? 's' : ''}`}
+        onGenerate={() => void handleGenerate()}
+        generateDisabled={Boolean(generateBlockedReason) || !readiness.ready}
+        disabledReason={generateBlockedReason}
+        running={runtime.running}
+        progressStep={runtime.progressStep}
+        progressMax={runtime.progressMax}
+        onStop={stopCurrent}
+        queue={queue}
+        activeQueueId={activeQueueId}
+        onRemoveJob={(id) => void cancelQueueJob(id)}
+        onClearQueue={() => syncQueue(queueRef.current.filter((j) => j.id === activeQueueId))}
+        error={runtime.error}
+        notice={copyFlash}
+      />
+
+      {promptPanelOpen && !uiSettings.studioLeftCollapsed ? (
+        <PromptPopout
+          prompt={prompt}
+          onInsert={insertIntoPrompt}
+          embeddings={catalog.embeddings}
+          prefs={promptPrefs}
+          onPrefs={setPromptPrefs}
+          onClose={() => setPromptPanelOpen(false)}
+        />
+      ) : null}
+      {loraPickerOpen && !uiSettings.studioLeftCollapsed ? (
+        <LoraPicker
+          options={catalog.loras}
+          loras={loras}
+          loading={modelsLoading}
+          onAdd={(name) => setLoras((prev) => (prev.some((l) => l.name === name) ? prev : [...prev, { name, strength_model: 1, strength_clip: 1, enabled: true }]))}
+          onAddModel={() => openAddModel('lora')}
+          onClose={() => setLoraPickerOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+
+  const preferenceProps: PreferenceProps = {
+    ui: uiSettings,
+    onUiPatch: updateUiSettings,
+    onLivePreviewChange: handleLivePreviewChange,
+    onPreviewQualityChange: (q) => void handlePreviewQualityChange(q),
+    perPromptPreview,
+    server: serverSettings,
+    serverHints,
+    diskUsage,
+    serverLoading: serverSettingsLoading,
+    onServerPatch: (p) => patchServerSettings(p),
+    onCopyDiagnostics: async () => {
+      await copyDiagnostics();
+    },
+    onBackupNow: async () => {
+      await backupNow();
+    },
+  };
+
+  const stageNode = (
+    <MainStage>
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <PreviewCanvas
+            previewUrl={runtime.previewUrl}
+            resultImages={displayImages}
+            compareImage={previousImage}
+            running={runtime.running}
+            width={width}
+            height={height}
+            progressStep={runtime.progressStep}
+            progressMax={runtime.progressMax}
+            offline={comfyOk === false}
+            remoteMode={remoteMode}
+            onStartComfy={() => void handleStartComfy()}
+            startingComfy={startingComfy}
+            onDropSettingsFile={(file) => void applyDroppedSettings(file)}
+            canvasBackground={uiSettings.canvasBackground}
+            emptyModelState={readiness.nothingInstalled}
+            onAddModel={() => openAddModel()}
+          />
+        </div>
+        <div className="mt-4 shrink-0 space-y-2">
+          <ResultActionBar
+            record={selectedRecord}
+            upscaleModels={catalog.upscale_models}
+            defaultUpscaler={serverSettings.defaultUpscaler}
+            defaultUpscaleScale={serverSettings.defaultUpscaleScale}
+            visible={!runtime.running && Boolean(selectedRecord?.images[0])}
+            busy={runtime.running}
+            onReuse={() => {
+              if (selectedRecord) reuseSettings(selectedRecord);
+            }}
+            onDelete={deleteCurrent}
+            onCopySeed={() => void copySeed()}
+            onUpscale={handleUpscale}
+            onVary={handleVary}
+            onUseAsSource={
+              selectedRecord ? () => void setSourceFromGallery(selectedRecord) : undefined
+            }
+          />
+          {copyFlash && (
+            <p className="text-center text-[11px] text-muted-foreground">{copyFlash}</p>
+          )}
+        </div>
+      </div>
+    </MainStage>
+  );
+
+  const studio = variant === 'studio' && !narrow;
+
   return (
     <>
-      <AppShell
-        comfyOk={comfyOk}
-        controlsDimmed={comfyOk === false}
-        historyPosition={uiSettings.historyPosition}
-        resizablePanels={uiSettings.resizablePanels}
-        systemLabel={systemStats?.ok ? systemStats.label : null}
-        vramTooltip={systemStats?.vramTooltip}
-        queueCount={queue.length}
-        settingsOpen={settingsOpen}
-        onSettingsOpenChange={setSettingsOpen}
-        uiSettingsOpen={uiSettingsOpen}
-        onUiSettingsOpenChange={setUiSettingsOpen}
-        settings={renderSettings()}
-        settingsDrawer={renderSettings()}
-        uiSettings={
-          <AppSettingsPanel
-            ui={uiSettings}
-            onUiPatch={updateUiSettings}
-            onLivePreviewChange={handleLivePreviewChange}
-            onPreviewQualityChange={(q) => void handlePreviewQualityChange(q)}
-            perPromptPreview={perPromptPreview}
-            server={serverSettings}
-            serverHints={serverHints}
-            diskUsage={diskUsage}
-            serverLoading={serverSettingsLoading}
-            onServerPatch={(p) => patchServerSettings(p)}
-            onCopyDiagnostics={async () => {
-              await copyDiagnostics();
-            }}
-            onBackupNow={async () => {
-              await backupNow();
-            }}
-          />
-        }
-        stage={
-          <MainStage>
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <PreviewCanvas
-                  previewUrl={runtime.previewUrl}
-                  resultImages={displayImages}
-                  compareImage={previousImage}
-                  running={runtime.running}
-                  width={width}
-                  height={height}
-                  progressStep={runtime.progressStep}
-                  progressMax={runtime.progressMax}
-                  offline={comfyOk === false}
-                  remoteMode={remoteMode}
-                  onStartComfy={() => void handleStartComfy()}
-                  startingComfy={startingComfy}
-                  onDropSettingsFile={(file) => void applyDroppedSettings(file)}
-                  canvasBackground={uiSettings.canvasBackground}
-                  emptyModelState={readiness.nothingInstalled}
-                  onAddModel={() => openAddModel()}
-                />
-              </div>
-              <div className="mt-4 shrink-0 space-y-2">
-                <ResultActionBar
-                  record={selectedRecord}
-                  upscaleModels={catalog.upscale_models}
-                  defaultUpscaler={serverSettings.defaultUpscaler}
-                  defaultUpscaleScale={serverSettings.defaultUpscaleScale}
-                  visible={!runtime.running && Boolean(selectedRecord?.images[0])}
-                  busy={runtime.running}
-                  onReuse={() => {
-                    if (selectedRecord) reuseSettings(selectedRecord);
-                  }}
-                  onDelete={deleteCurrent}
-                  onCopySeed={() => void copySeed()}
-                  onUpscale={handleUpscale}
-                  onVary={handleVary}
-                  onUseAsSource={
-                    selectedRecord ? () => void setSourceFromGallery(selectedRecord) : undefined
-                  }
-                />
-                {copyFlash && (
-                  <p className="text-center text-[11px] text-muted-foreground">{copyFlash}</p>
-                )}
-              </div>
-            </div>
-          </MainStage>
-        }
-        history={<Gallery {...historyShared} orientation="vertical" showInfo />}
-        historyMobile={<Gallery {...historyShared} orientation="horizontal" showInfo={false} />}
-      />
+      {studio ? (
+        <StudioShell
+          controls={renderStudioControls()}
+          stage={stageNode}
+          history={<Gallery {...historyShared} orientation="vertical" showInfo={false} showHeader={false} />}
+          historyCount={items.length}
+          comfyOk={comfyOk}
+          systemLabel={systemStats?.ok ? systemStats.label : null}
+          vramTooltip={systemStats?.vramTooltip}
+          running={runtime.running}
+          progressLabel={
+            runtime.running && runtime.progressMax
+              ? `Step ${runtime.progressStep} / ${runtime.progressMax} · ${Math.round((runtime.progressStep / runtime.progressMax) * 100)}%`
+              : null
+          }
+          onGenerate={() => void handleGenerate()}
+          ui={uiSettings}
+          onUiPatch={updateUiSettings}
+          prefsOpen={uiSettingsOpen}
+          onPrefsOpenChange={setUiSettingsOpen}
+          preferences={preferenceProps}
+        />
+      ) : (
+        <AppShell
+          comfyOk={comfyOk}
+          controlsDimmed={comfyOk === false}
+          historyPosition={uiSettings.historyPosition}
+          resizablePanels={uiSettings.resizablePanels}
+          systemLabel={systemStats?.ok ? systemStats.label : null}
+          vramTooltip={systemStats?.vramTooltip}
+          queueCount={queue.length}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
+          uiSettingsOpen={uiSettingsOpen}
+          onUiSettingsOpenChange={setUiSettingsOpen}
+          settings={renderSettings()}
+          settingsDrawer={renderSettings()}
+          uiSettings={<AppSettingsPanel {...preferenceProps} />}
+          stage={stageNode}
+          history={<Gallery {...historyShared} orientation="vertical" showInfo />}
+          historyMobile={<Gallery {...historyShared} orientation="horizontal" showInfo={false} />}
+        />
+      )}
       <UndoToast
         open={Boolean(pendingDelete)}
         message="Generation deleted"
@@ -1826,7 +2288,7 @@ export default function App() {
             userPositive: prompt,
             userNegative: negativePrompt,
           });
-          setResolved(next);
+          setResolved({ ...emptyResolved, ...next });
           if (next.styleId) setStyleId(next.styleId);
           // Offer GGUF component hint for transformer families
           if ((family === 'flux' || family === 'sd3') && !catalog.available.ggufUnet) {
@@ -1885,7 +2347,7 @@ export default function App() {
                   userPositive: prompt,
                   userNegative: negativePrompt,
                 });
-                setResolved(next);
+                setResolved({ ...emptyResolved, ...next });
               });
             }
           });

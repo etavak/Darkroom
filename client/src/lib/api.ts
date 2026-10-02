@@ -8,7 +8,7 @@ import type {
   ModelInstallJob,
   SystemStatsSummary,
 } from '../types/generation';
-import type { FamilySummary, ResolvedPresets, TagSuggestion } from '../types/presets';
+import type { FamilySummary, ResolvedPresets, TagCategory, TagSuggestion } from '../types/presets';
 
 /** Fired when the server wants the LAN PIN (another device, or the PIN was regenerated). */
 export const AUTH_REQUIRED_EVENT = 'darkroom:auth-required';
@@ -293,6 +293,8 @@ export function resolvePresetsApi(body: {
   styleId: string | null;
   dismissedPositive: string[];
   dismissedNegative: string[];
+  qualityPreset?: string | null;
+  negativePreset?: string | null;
   userPositive: string;
   userNegative: string;
 }): Promise<ResolvedPresets> {
@@ -332,7 +334,7 @@ export function searchTagsApi(params: {
 export function validateTagsApi(body: {
   family: string;
   tags: string[];
-}): Promise<{ unknown: string[]; enabled: boolean }> {
+}): Promise<{ unknown: string[]; categories?: Record<string, TagCategory>; enabled: boolean }> {
   return request('/api/tags/validate', {
     method: 'POST',
     body: JSON.stringify(body),

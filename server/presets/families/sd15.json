@@ -24,6 +24,20 @@
     "lowres",
     "bad hands"
   ],
+  "qualityPresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["best quality"] },
+    { "id": "standard", "name": "Standard", "tags": ["masterpiece", "best quality"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["masterpiece", "best quality", "highres", "ultra-detailed"] }
+  ],
+  "defaultQuality": "standard",
+  "negativePresets": [
+    { "id": "none", "name": "None", "tags": [] },
+    { "id": "light", "name": "Light", "tags": ["worst quality", "low quality"] },
+    { "id": "heavy", "name": "Heavy", "tags": ["worst quality", "low quality", "lowres", "bad hands"] },
+    { "id": "human", "name": "Human focus", "tags": ["worst quality", "low quality", "bad anatomy", "bad hands", "extra digits", "fused fingers", "bad proportions"] }
+  ],
+  "defaultNegative": "heavy",
   "defaultStyle": "anime",
   "styles": {
     "anime": {

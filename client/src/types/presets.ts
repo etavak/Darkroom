@@ -80,7 +80,14 @@ export type ResolvedPresets = {
   tagSources: string[];
   tagFormat: 'spaces' | 'underscores';
   tagsEnabled: boolean;
+  qualityPresets: PresetLevel[];
+  negativePresets: PresetLevel[];
+  qualityPreset: string | null;
+  negativePreset: string | null;
 };
+
+/** One Quality or Negative preset level */
+export type PresetLevel = { id: string; name: string; tags: string[] };
 
 export type TagCategory = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 
