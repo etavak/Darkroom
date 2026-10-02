@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as p from '@clack/prompts';
+import { civitaiAutoFetchEnabled, fetchCivitaiSidecarsByHash } from '../lib/download.js';
 import { defaultInstallMode } from '../lib/linkInstall.js';
 import {
   installModelFile,
@@ -209,5 +210,18 @@ export async function installModelFromFile() {
     p.log.warn(`Unusual extension ${ext || '(none)'} — continuing anyway`);
   }
 
-  await confirmAndInstallModel(filePath, { allowLink: true });
+  await confirmAndInstallModel(filePath, {
+    allowLink: true,
+    afterInstall: async (dest) => {
+      if (!civitaiAutoFetchEnabled()) return;
+      const s = p.spinner();
+      s.start('Looking up this file on Civitai…');
+      try {
+        const found = await fetchCivitaiSidecarsByHash(dest);
+        s.stop(found ? 'Saved Civitai trigger words + preview' : 'Not found on Civitai');
+      } catch (err) {
+        s.stop(`Civitai lookup skipped: ${err instanceof Error ? err.message : err}`);
+      }
+    },
+  });
 }

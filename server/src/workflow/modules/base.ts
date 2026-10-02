@@ -12,6 +12,9 @@ function isGguf(name: string | undefined): boolean {
  */
 export const baseModule: WorkflowModule & {
   load: (ctx: PipelineContext) => void;
+  loadModels: (ctx: PipelineContext) => void;
+  encodePrompts: (ctx: PipelineContext) => void;
+  emptyLatent: (ctx: PipelineContext) => void;
   sample: (ctx: PipelineContext) => void;
   loadSourceLatent: (ctx: PipelineContext) => Promise<void>;
   loadSourceImage: (ctx: PipelineContext) => void;
@@ -23,7 +26,14 @@ export const baseModule: WorkflowModule & {
     baseModule.load(ctx);
   },
 
+  /** Models → prompt encode → empty latent. Builder splits these to chain LoRAs in between. */
   load(ctx) {
+    baseModule.loadModels(ctx);
+    baseModule.encodePrompts(ctx);
+    baseModule.emptyLatent(ctx);
+  },
+
+  loadModels(ctx) {
     const { graph, settings } = ctx;
     const mode = settings.modelMode === 'split' ? 'split' : 'checkpoint';
 
@@ -83,6 +93,11 @@ export const baseModule: WorkflowModule & {
         ctx.vae = [vae, 0];
       }
     }
+  },
+
+  /** CLIP skip + positive/negative encode (+ FluxGuidance) from the current clip port. */
+  encodePrompts(ctx) {
+    const { graph, settings } = ctx;
 
     if (typeof settings.clipSkip === 'number' && settings.clipSkip > 1) {
       const clipSkip = graph.add('CLIPSetLastLayer', {
@@ -114,7 +129,10 @@ export const baseModule: WorkflowModule & {
       clip: ctx.clip,
     });
     ctx.negative = [neg, 0];
+  },
 
+  emptyLatent(ctx) {
+    const { graph, settings } = ctx;
     const latent = graph.add('EmptyLatentImage', {
       width: settings.width,
       height: settings.height,

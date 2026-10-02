@@ -76,6 +76,7 @@ export async function loadDownloadModule(): Promise<{
     },
   ) => Promise<void>;
   formatBytes: (n: number) => string;
+  fetchCivitaiSidecarsByHash: (modelDest: string) => Promise<boolean>;
 }> {
   return import(cliUrl('lib/download.js')) as Promise<{
     resolveModelUrl: (pageUrl: string) => Promise<{
@@ -121,6 +122,7 @@ export async function loadDownloadModule(): Promise<{
       },
     ) => Promise<void>;
     formatBytes: (n: number) => string;
+    fetchCivitaiSidecarsByHash: (modelDest: string) => Promise<boolean>;
   }>;
 }
 
@@ -183,6 +185,14 @@ export async function loadLinkInstallModule(): Promise<{
   return import(cliUrl('lib/linkInstall.js')) as Promise<{
     defaultInstallMode: (src: string) => 'link' | 'copy' | 'move';
     isOutsideComfyModels: (src: string) => boolean;
+  }>;
+}
+
+export async function loadComfyLauncherModule(): Promise<{
+  startComfyProcess: () => { pid: number; logFile: string };
+}> {
+  return import(cliUrl('lib/comfy.js')) as Promise<{
+    startComfyProcess: () => { pid: number; logFile: string };
   }>;
 }
 

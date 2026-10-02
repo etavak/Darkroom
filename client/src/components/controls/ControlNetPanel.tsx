@@ -85,7 +85,6 @@ export function ControlNetPanel({
       }
     },
     // patch closes over value — intentional
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [onUploadImage, value],
   );
 

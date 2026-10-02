@@ -61,6 +61,16 @@ export type WorkMode = 'generate' | 'img2img' | 'outpaint' | 'edit';
 export type GenerationSettings = {
   prompt: string;
   negative_prompt: string;
+  /** Server-set: pre-expansion prompt when it contained wildcards */
+  promptTemplate?: string;
+  negativeTemplate?: string;
+  /** Prompt-box text and preset state at generate time (prompt = preset tags + this) */
+  userPrompt?: string;
+  userNegative?: string;
+  familyId?: string;
+  styleId?: string;
+  dismissedPositive?: string[];
+  dismissedNegative?: string[];
   checkpoint: string;
   modelMode?: ModelLoadMode;
   unet?: string;

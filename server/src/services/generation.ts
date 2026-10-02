@@ -3,8 +3,9 @@ import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config.js';
 import { buildPngMetadataTexts, injectPngText } from '../lib/pngMeta.js';
+import { expandWildcards } from '../lib/wildcards.js';
 import * as comfy from './comfyClient.js';
-import { loadServerSettings } from './appSettings.js';
+import { loadServerSettings, processPromptText, touchActivity } from './appSettings.js';
 import { supportsPerPromptPreviewMethod } from './envSettings.js';
 import { buildWorkflow, type GenerationSettings } from '../workflow/index.js';
 import * as history from './history.js';
@@ -176,9 +177,19 @@ export function validateSettings(body: unknown): GenerationSettings {
       }
     : undefined;
 
+  const optString = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  const optStrings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
+
   return {
     prompt: typeof b.prompt === 'string' ? b.prompt : '',
     negative_prompt: typeof b.negative_prompt === 'string' ? b.negative_prompt : '',
+    userPrompt: optString(b.userPrompt),
+    userNegative: optString(b.userNegative),
+    familyId: optString(b.familyId),
+    styleId: optString(b.styleId),
+    dismissedPositive: optStrings(b.dismissedPositive),
+    dismissedNegative: optStrings(b.dismissedNegative),
     checkpoint,
     modelMode,
     unet,
@@ -210,6 +221,30 @@ export function validateSettings(body: unknown): GenerationSettings {
   };
 }
 
+/**
+ * Final prompt text sent to ComfyUI: expand {a|b} / __file__ wildcards, then apply
+ * Settings cleanup (normalize, dedupe, Safe mode on the positive only — negatives
+ * often list NSFW terms on purpose). Templates are kept for Reuse of older records.
+ */
+function preparePrompts(settings: GenerationSettings): GenerationSettings {
+  const folder = loadServerSettings().wildcardsFolder.trim();
+  const prompt = processPromptText(
+    expandWildcards(settings.prompt, { seed: settings.seed, folder }),
+  );
+  // Different stream for the negative so it doesn't mirror positive picks
+  const negative = processPromptText(
+    expandWildcards(settings.negative_prompt, { seed: settings.seed ^ 0x5bd1e995, folder }),
+    { safeMode: false },
+  );
+  return {
+    ...settings,
+    prompt,
+    negative_prompt: negative,
+    promptTemplate: prompt !== settings.prompt ? settings.prompt : undefined,
+    negativeTemplate: negative !== settings.negative_prompt ? settings.negative_prompt : undefined,
+  };
+}
+
 /** If sourceImage is a Darkroom gallery file, upload it into Comfy input. */
 async function resolveSourceImage(settings: GenerationSettings): Promise<GenerationSettings> {
   if (!settings.sourceImage) return settings;
@@ -228,7 +263,8 @@ export async function startGeneration(
   settings: GenerationSettings,
   opts?: { previewMethod?: PreviewMethod },
 ): Promise<GenerateResult> {
-  const resolved = await resolveSourceImage(settings);
+  touchActivity();
+  const resolved = await resolveSourceImage(preparePrompts(settings));
   const clientId = uuidv4();
   const workflow = await buildWorkflow(resolved);
   const previewMethod =
@@ -262,22 +298,77 @@ type ComfyImageRef = {
   type?: string;
 };
 
+/** Seconds a prompt may be absent from both /queue and /history before we call it lost. */
+const LOST_PROMPT_GRACE_S = 30;
+/** Seconds ComfyUI may be unreachable before the job is failed. */
+const UNREACHABLE_LIMIT_S = 600;
+/** Consecutive non-network failures (e.g. fetching outputs) before giving up. */
+const MAX_PERSIST_ERRORS = 30;
+
+type ComfyStatus = {
+  completed?: boolean;
+  status_str?: string;
+  messages?: Array<[string, Record<string, unknown>]>;
+};
+
+/** Human-readable reason from a ComfyUI history status, if it failed. */
+function comfyFailureReason(status: ComfyStatus | undefined): string | null {
+  if (status?.status_str !== 'error') return null;
+  for (const [type, data] of status.messages ?? []) {
+    if (type === 'execution_interrupted') return 'Cancelled';
+    if (type === 'execution_error') {
+      const node = typeof data?.node_type === 'string' ? `${data.node_type}: ` : '';
+      const msg = typeof data?.exception_message === 'string' ? data.exception_message.trim() : '';
+      if (msg) return `ComfyUI error — ${node}${msg}`;
+    }
+  }
+  return 'ComfyUI reported an error';
+}
+
+/**
+ * Poll until ComfyUI finishes the prompt, then copy outputs into Darkroom.
+ * No wall-clock cap: waits as long as the prompt is still queued or running.
+ */
 async function watchAndPersist(
   jobId: string,
   promptId: string,
   settings: GenerationSettings,
 ): Promise<void> {
-  const maxAttempts = 600;
-  for (let i = 0; i < maxAttempts; i++) {
+  let missingFor = 0;
+  let unreachableFor = 0;
+  let persistErrors = 0;
+  const fail = (message: string) => {
+    history.markFailed(jobId, message);
+    pendingJobs.delete(promptId);
+  };
+
+  for (;;) {
     await sleep(1000);
+    // A job in flight counts as activity for Settings → Unload after idle
+    touchActivity();
+    // Cancelled (or otherwise finalized) elsewhere — stop watching
+    if (history.getGeneration(jobId)?.status !== 'pending') {
+      pendingJobs.delete(promptId);
+      return;
+    }
     try {
       const entry = await comfy.getHistory(promptId);
-      if (!entry) continue;
+      unreachableFor = 0;
+      if (!entry) {
+        const queued = await comfy.getQueuedPromptIds();
+        missingFor = queued.has(promptId) ? 0 : missingFor + 1;
+        if (missingFor >= LOST_PROMPT_GRACE_S) {
+          fail('ComfyUI no longer has this job (was it restarted?)');
+          return;
+        }
+        continue;
+      }
+      missingFor = 0;
 
-      const status = entry.status as { completed?: boolean; status_str?: string } | undefined;
-      if (status?.status_str === 'error') {
-        history.markFailed(jobId, 'ComfyUI reported an error');
-        pendingJobs.delete(promptId);
+      const status = entry.status as ComfyStatus | undefined;
+      const failure = comfyFailureReason(status);
+      if (failure) {
+        fail(failure);
         return;
       }
 
@@ -294,8 +385,7 @@ async function watchAndPersist(
       }
       if (refs.length === 0) {
         if (status?.completed) {
-          history.markFailed(jobId, 'No images in ComfyUI output');
-          pendingJobs.delete(promptId);
+          fail('No images in ComfyUI output');
           return;
         }
         continue;
@@ -319,17 +409,33 @@ async function watchAndPersist(
       pendingJobs.delete(promptId);
       return;
     } catch (err) {
-      if (i === maxAttempts - 1) {
-        history.markFailed(
-          jobId,
-          err instanceof Error ? err.message : 'Failed to persist generation',
-        );
-        pendingJobs.delete(promptId);
+      const message = err instanceof Error ? err.message : 'Failed to persist generation';
+      // Network-level failure: ComfyUI down or restarting — tolerate for a while
+      if (err instanceof comfy.ComfyError && err.status === undefined) {
+        if (++unreachableFor >= UNREACHABLE_LIMIT_S) {
+          fail(message);
+          return;
+        }
+        continue;
+      }
+      if (++persistErrors >= MAX_PERSIST_ERRORS) {
+        fail(message);
+        return;
       }
     }
   }
-  history.markFailed(jobId, 'Timed out waiting for ComfyUI');
-  pendingJobs.delete(promptId);
+}
+
+/** Re-attach watchers to jobs left pending by a previous server process. */
+export function resumePendingJobs(): void {
+  for (const job of history.listPendingGenerations()) {
+    pendingJobs.set(job.promptId, {
+      jobId: job.id,
+      clientId: job.clientId,
+      settings: job.settings,
+    });
+    void watchAndPersist(job.id, job.promptId, job.settings);
+  }
 }
 
 function sleep(ms: number): Promise<void> {

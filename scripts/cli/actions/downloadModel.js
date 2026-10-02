@@ -6,6 +6,7 @@ import {
   downloadsCacheDir,
   formatBytes,
   resolveModelUrl,
+  civitaiAutoFetchEnabled,
   saveModelSidecars,
 } from '../lib/download.js';
 import { getConfig } from '../lib/env.js';
@@ -127,6 +128,7 @@ export async function downloadModelFromUrl() {
     allowLink: false,
     companionComponents,
     afterInstall: async (dest) => {
+      if (!civitaiAutoFetchEnabled()) return;
       await saveModelSidecars(dest, {
         triggerWords: meta.triggerWords,
         previewUrl: meta.previewUrl,

@@ -2,6 +2,7 @@ import * as p from '@clack/prompts';
 import { handleCancel } from '../lib/prompt.js';
 import { listComponents, componentMenuLabel, getComponent } from '../components/registry.js';
 import { installEverything, runDoctor } from '../components/orchestrator.js';
+import { exitForRelaunch } from './update.js';
 
 export async function componentsMenu() {
   while (true) {
@@ -41,13 +42,16 @@ export async function componentsMenu() {
     if (handleCancel(action) || !action) continue;
 
     try {
+      /** @type {{ restartRequired?: boolean } | void} */
+      let result;
       if (action === 'install') await comp.install({ channel: 'tested' });
-      else if (action === 'update_tested') await comp.update({ channel: 'tested' });
-      else if (action === 'update_latest') await comp.update({ channel: 'latest' });
+      else if (action === 'update_tested') result = await comp.update({ channel: 'tested' });
+      else if (action === 'update_latest') result = await comp.update({ channel: 'latest' });
       else if (action === 'repair') await comp.repair({});
       else if (action === 'reinstall') await comp.reinstall({});
       else if (action === 'uninstall') await comp.uninstall({});
       p.log.success('Done');
+      if (result?.restartRequired) exitForRelaunch();
     } catch (err) {
       p.log.error(err instanceof Error ? err.message : String(err));
     }

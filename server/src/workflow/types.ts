@@ -69,6 +69,16 @@ export type ModelLoadMode = 'checkpoint' | 'split';
 export type GenerationSettings = {
   prompt: string;
   negative_prompt: string;
+  /** Pre-expansion prompt when it contained wildcards (prompt holds the resolved text) */
+  promptTemplate?: string;
+  negativeTemplate?: string;
+  /** Client prompt-box text and preset state (for Reuse); not used to build the graph */
+  userPrompt?: string;
+  userNegative?: string;
+  familyId?: string;
+  styleId?: string;
+  dismissedPositive?: string[];
+  dismissedNegative?: string[];
   checkpoint: string;
   modelMode?: ModelLoadMode;
   unet?: string;

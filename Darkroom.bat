@@ -1,6 +1,13 @@
 @echo off
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
+REM Apply a launcher update staged by Update (a running .bat cannot be overwritten safely).
+REM The block is parsed before it runs, so re-entering the replaced file is safe.
+if exist "%~dp0Darkroom.bat.new" (
+  move /y "%~dp0Darkroom.bat.new" "%~f0" >nul
+  "%~f0" %*
+  exit /b
+)
 set "ROOT=%CD%"
 set "PIN_NODE=22.14.0"
 set "RUNTIME_NODE=%ROOT%\runtime\node"

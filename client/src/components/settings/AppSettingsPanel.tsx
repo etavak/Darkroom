@@ -487,6 +487,7 @@ export function AppSettingsPanel({
         category: 'generation',
         scope: 'server',
         label: 'Default upscale scale',
+        description: 'Preselected in the Upscale menu',
         icon: <ImageIcon />,
         control: (
           <CompactNumber
@@ -639,7 +640,7 @@ export function AppSettingsPanel({
         category: 'models',
         scope: 'server',
         label: 'Civitai auto-fetch',
-        description: 'Download metadata / previews when installing models',
+        description: 'Save trigger words + preview next to installed models (local files are matched by hash)',
         icon: <Database />,
         control: (
           <Switch
@@ -759,21 +760,6 @@ export function AppSettingsPanel({
               <SelectItem value="debug">Debug</SelectItem>
             </SelectContent>
           </Select>
-        ),
-      },
-      {
-        id: 'experimental',
-        category: 'advanced',
-        scope: 'server',
-        label: 'Experimental features',
-        description: 'Enable unfinished UI / workflow experiments',
-        icon: <Sparkles />,
-        control: (
-          <Switch
-            id="experimental"
-            checked={server.experimentalFeatures}
-            onCheckedChange={(v) => void onServerPatch({ experimentalFeatures: v })}
-          />
         ),
       },
       {

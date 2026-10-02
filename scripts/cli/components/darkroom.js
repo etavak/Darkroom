@@ -3,9 +3,73 @@ import path from 'node:path';
 import * as p from '@clack/prompts';
 import { withOpLog } from '../lib/opLog.js';
 import { getGitBin, root } from '../lib/paths.js';
-import { runCommand, runNpm } from '../lib/process.js';
+import { clearPid, isPidAlive, killTree, readPids, runCommand, runNpm } from '../lib/process.js';
+import {
+  readInstalledVersion,
+  rollbackOverlay,
+  updateFromZip,
+  writeInstalledVersion,
+} from '../lib/zipUpdate.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
 import { defaultConfirm } from './types.js';
+
+/**
+ * ZIP install update: stop the server we own, overlay the latest release,
+ * reinstall deps only if the lockfile changed, roll back on failure.
+ * @param {typeof darkroomComponent} comp
+ * @param {import('./types.js').ComponentContext} ctx
+ * @param {{ info: (m: string) => void }} log
+ */
+async function updateZipInstall(comp, ctx, log) {
+  const pids = readPids();
+  if (pids.server?.owned && isPidAlive(pids.server.pid)) {
+    p.log.step('Stopping the Darkroom server for the update…');
+    killTree(pids.server.pid);
+    clearPid('server');
+  }
+
+  const s = p.spinner();
+  s.start('Checking for updates…');
+  /** @type {Awaited<ReturnType<typeof updateFromZip>>} */
+  let result;
+  try {
+    result = await updateFromZip({ log, onStep: (m) => s.message(m) });
+  } catch (err) {
+    s.stop('Update failed — nothing was changed');
+    throw err;
+  }
+  if (!result.updated) {
+    s.stop(`Already up to date (${result.sha.slice(0, 7)})`);
+    return { restartRequired: false };
+  }
+  const { change } = result;
+  s.stop(
+    `Applied update ${result.sha.slice(0, 7)} — ${change.replaced.length} updated, ${change.added.length} added, ${change.deleted.length} removed`,
+  );
+
+  if (result.lockChanged) {
+    try {
+      await comp.install(ctx);
+    } catch (err) {
+      p.log.error('Dependency install failed — restoring the previous version…');
+      const failed = rollbackOverlay(change);
+      if (failed.length) p.log.warn(`Could not restore ${failed.length} file(s); copies are in ${change.backupDir}`);
+      try {
+        await comp.install(ctx);
+      } catch {
+        p.log.warn('Could not reinstall previous dependencies — run Components → Darkroom → Repair.');
+      }
+      throw err;
+    }
+  }
+
+  writeInstalledVersion(result.sha);
+  if (change.staged.length) {
+    p.log.info('The Windows launcher was updated too — it switches over next time you open Darkroom.bat.');
+  }
+  p.log.info(`Backup of replaced files: ${change.backupDir}`);
+  return { restartRequired: true };
+}
 
 /** @type {import('./types.js').Component} */
 export const darkroomComponent = {
@@ -30,6 +94,8 @@ export const darkroomComponent = {
         windowsHide: true,
       });
       if (r.status === 0) gitHash = r.stdout.trim();
+    } else {
+      gitHash = readInstalledVersion()?.sha?.slice(0, 7) ?? null;
     }
     /** @type {string[]} */
     const problems = [];
@@ -64,19 +130,23 @@ export const darkroomComponent = {
     });
   },
 
+  /**
+   * git checkout → git pull; ZIP install → overlay the latest GitHub ZIP.
+   * @returns {Promise<{ restartRequired: boolean }>}
+   */
   async update(ctx = {}) {
-    await withOpLog('darkroom', 'update', async (log) => {
-      await withRestorePoint('darkroom', {}, async () => {
-        if (fs.existsSync(path.join(root, '.git'))) {
+    if (fs.existsSync(path.join(root, '.git'))) {
+      await withOpLog('darkroom', 'update', async (log) => {
+        await withRestorePoint('darkroom', {}, async () => {
           p.log.step('git pull…');
           await runCommand(getGitBin(), ['pull', '--ff-only'], { cwd: root, stdio: 'inherit' });
-        } else {
-          p.log.warn('Not a git checkout — skipping pull');
-        }
-        await this.install(ctx);
-        log.info('Darkroom updated');
+          await this.install(ctx);
+          log.info('Darkroom updated');
+        });
       });
-    });
+      return { restartRequired: true };
+    }
+    return withOpLog('darkroom', 'update', (log) => updateZipInstall(this, ctx, log));
   },
 
   async repair(ctx = {}) {

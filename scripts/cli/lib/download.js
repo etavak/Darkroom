@@ -1,9 +1,10 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { URL } from 'node:url';
-import { getConfig } from './env.js';
+import { getConfig, loadEnvFile } from './env.js';
 import { httpGetJson } from './http.js';
 import { ensureLogsDir, logsDir } from './paths.js';
 
@@ -391,6 +392,51 @@ export async function saveModelSidecars(modelDest, meta) {
       // preview is best-effort
     }
   }
+}
+
+/** Settings → Models → Civitai auto-fetch (mirrored to .env as CIVITAI_AUTO_FETCH). */
+export function civitaiAutoFetchEnabled() {
+  const value = loadEnvFile().CIVITAI_AUTO_FETCH ?? process.env.CIVITAI_AUTO_FETCH ?? '';
+  return value.toLowerCase() === 'true';
+}
+
+/** @param {string} filePath */
+function sha256OfFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    fs.createReadStream(filePath)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('error', reject)
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+/**
+ * Identify a local model file on Civitai by its SHA256 and save sidecars
+ * (trigger words + preview). Returns false when Civitai doesn't know the file.
+ * @param {string} modelDest installed model path (symlinks are followed)
+ */
+export async function fetchCivitaiSidecarsByHash(modelDest) {
+  const cfg = getConfig();
+  const sha = await sha256OfFile(modelDest);
+  const res = await httpGetJson(`https://civitai.com/api/v1/model-versions/by-hash/${sha}`, {
+    headers: {
+      'User-Agent': 'Darkroom/1.0',
+      ...(cfg.civitaiToken ? { Authorization: `Bearer ${cfg.civitaiToken}` } : {}),
+    },
+  });
+  if (res.status === 404 || !res.json?.id) return false;
+  if (res.status !== 200) throw new Error(`Civitai lookup failed (${res.status})`);
+  const version = res.json;
+  const preview =
+    (version.images || []).find((img) => img.url && !/\.mp4$/i.test(img.url))?.url || null;
+  await saveModelSidecars(modelDest, {
+    triggerWords: Array.isArray(version.trainedWords) ? version.trainedWords : [],
+    previewUrl: preview,
+    sourceUrl: `https://civitai.com/models/${version.modelId}?modelVersionId=${version.id}`,
+    modelName: version.model?.name || version.name,
+  });
+  return true;
 }
 
 export function downloadsCacheDir() {

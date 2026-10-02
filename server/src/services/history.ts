@@ -95,6 +95,13 @@ export function listGenerations(limit = 100): GenerationDto[] {
   return rows.map(rowToDto);
 }
 
+export function listPendingGenerations(): GenerationDto[] {
+  const rows = db
+    .prepare(`SELECT * FROM generations WHERE status = 'pending' ORDER BY created_at ASC`)
+    .all() as GenerationRow[];
+  return rows.map(rowToDto);
+}
+
 export function getGeneration(id: string): GenerationDto | null {
   const row = db.prepare(`SELECT * FROM generations WHERE id = ?`).get(id) as
     | GenerationRow

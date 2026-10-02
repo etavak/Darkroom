@@ -23,7 +23,7 @@ import type { GenerationRecord } from '@/types/generation';
 
 export type UpscaleRequest = {
   model: string;
-  scale: 2 | 4;
+  scale: number;
   refine: boolean;
 };
 
@@ -34,6 +34,8 @@ type Props = {
   record: GenerationRecord | null;
   upscaleModels: string[];
   defaultUpscaler?: string;
+  /** Settings → Generation → Default upscale scale */
+  defaultUpscaleScale?: number;
   visible: boolean;
   onReuse: () => void;
   onDelete: () => void;
@@ -48,6 +50,7 @@ export function ResultActionBar({
   record,
   upscaleModels,
   defaultUpscaler,
+  defaultUpscaleScale = 2,
   visible,
   onReuse,
   onDelete,
@@ -59,7 +62,14 @@ export function ResultActionBar({
 }: Props) {
   const [menu, setMenu] = useState<'upscale' | 'vary' | null>(null);
   const [upModel, setUpModel] = useState('');
-  const [upScale, setUpScale] = useState<2 | 4>(2);
+  const scaleOptions = [...new Set([defaultUpscaleScale, 2, 4])]
+    .filter((n) => Number.isFinite(n) && n > 1)
+    .sort((a, b) => a - b);
+  const [upScale, setUpScale] = useState<number>(defaultUpscaleScale > 1 ? defaultUpscaleScale : 2);
+  // Server settings load after mount — follow the default when it arrives / changes
+  useEffect(() => {
+    if (defaultUpscaleScale > 1) setUpScale(defaultUpscaleScale);
+  }, [defaultUpscaleScale]);
   const [upRefine, setUpRefine] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -153,7 +163,7 @@ export function ResultActionBar({
               </SelectContent>
             </Select>
             <div className="flex gap-1">
-              {([2, 4] as const).map((s) => (
+              {scaleOptions.map((s) => (
                 <button
                   key={s}
                   type="button"

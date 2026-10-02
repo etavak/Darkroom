@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ComfyError, interrupt } from '../services/comfyClient.js';
+import { ComfyError, cancelPrompt } from '../services/comfyClient.js';
 import { startGeneration, validateSettings } from '../services/generation.js';
 import * as history from '../services/history.js';
 
@@ -31,11 +31,20 @@ generateRouter.post('/', async (req, res) => {
 generateRouter.post('/cancel', async (req, res) => {
   try {
     const jobId = typeof req.body?.jobId === 'string' ? req.body.jobId : null;
-    await interrupt();
-    if (jobId) {
-      history.markFailed(jobId, 'Cancelled');
+    const job = jobId ? history.getGeneration(jobId) : null;
+    if (!job) {
+      // Nothing of ours to cancel — never interrupt another device's job blindly
+      res.json({ ok: true, result: 'not_found' });
+      return;
     }
-    res.json({ ok: true });
+    if (job.status !== 'pending') {
+      res.json({ ok: true, result: job.status });
+      return;
+    }
+    // Mark first so the watcher stops even if ComfyUI is slow to respond
+    history.markFailed(job.id, 'Cancelled');
+    const result = await cancelPrompt(job.promptId);
+    res.json({ ok: true, result });
   } catch (err) {
     if (err instanceof ComfyError) {
       res.status(502).json({ error: err.message });

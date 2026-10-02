@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bookmark, Clock, Dices, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
-import { enhancePromptApi, fetchWildcardContent, fetchWildcards } from '@/lib/api';
+import { enhancePromptApi, fetchWildcards } from '@/lib/api';
 import {
   deleteSnippet,
   loadRecentPrompts,
@@ -55,17 +55,9 @@ export function PromptToolbar({ prompt, onInsert, enhanceConfigured, disabled }:
       .catch(() => setWildcards([]));
   };
 
-  const insertWildcardFile = async (relative: string) => {
-    try {
-      const { options } = await fetchWildcardContent(relative);
-      if (options.length === 0) {
-        onInsert('{option1|option2}', 'append');
-      } else {
-        onInsert(`{${options.slice(0, 24).join('|')}}`, 'append');
-      }
-    } catch {
-      onInsert('{option1|option2}', 'append');
-    }
+  /** Insert a `__name__` reference; the server picks a line from the file at generate time. */
+  const insertWildcardFile = (relative: string) => {
+    onInsert(`__${relative.replace(/\.(txt|wildcards?)$/i, '')}__`, 'append');
     setMenu(null);
   };
 
@@ -218,7 +210,7 @@ export function PromptToolbar({ prompt, onInsert, enhanceConfigured, disabled }:
             <Empty>Set a wildcards folder in Settings to pick files</Empty>
           ) : (
             wildcards.map((w) => (
-              <MenuButton key={w.relative} onClick={() => void insertWildcardFile(w.relative)}>
+              <MenuButton key={w.relative} onClick={() => insertWildcardFile(w.relative)}>
                 {w.relative}
               </MenuButton>
             ))

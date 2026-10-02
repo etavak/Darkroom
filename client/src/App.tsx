@@ -67,6 +67,7 @@ import {
   type PanelSectionId,
   type PanelSectionState,
 } from '@/lib/panelSections';
+import { stripInjectedTags } from '@/lib/presetPrompt';
 import { pushRecentPrompt } from '@/lib/promptLibrary';
 import {
   matchSourceSize,
@@ -339,9 +340,15 @@ export default function App() {
           userPositive: prompt,
           userNegative: negativePrompt,
         });
-        if (!cancelled) setResolved(next);
+        if (!cancelled) {
+          resolveSeq.current += 1;
+          setResolved(next);
+        }
       } catch {
-        if (!cancelled) setResolved(emptyResolved);
+        if (!cancelled) {
+          resolveSeq.current += 1;
+          setResolved(emptyResolved);
+        }
       }
     };
     void run();
@@ -354,9 +361,23 @@ export default function App() {
   const identityKey = `${resolved.familyId ?? ''}|${resolved.styleId ?? ''}|${resolved.mapped}`;
   const prevIdentity = useRef('');
   const prevFamily = useRef<string | null>(null);
+  /** Count of completed preset resolves; lets Reuse claim the identity change it causes. */
+  const resolveSeq = useRef(0);
+  /** resolveSeq at the moment Reuse ran (null = no Reuse pending). */
+  const reuseHoldSeq = useRef<number | null>(null);
   useEffect(() => {
     if (identityKey === prevIdentity.current) return;
     prevIdentity.current = identityKey;
+
+    // Identity changed by Reuse: keep the restored style / dismissed tags / sampler / size
+    // instead of re-applying family defaults over them.
+    const fromReuse =
+      reuseHoldSeq.current !== null && resolveSeq.current === reuseHoldSeq.current + 1;
+    reuseHoldSeq.current = null;
+    if (fromReuse) {
+      if (resolved.familyId) prevFamily.current = resolved.familyId;
+      return;
+    }
 
     if (!resolved.mapped || !resolved.familyId) return;
 
@@ -505,6 +526,13 @@ export default function App() {
       const base: GenerationSettings = {
         prompt: resolved.finalPositive,
         negative_prompt: resolved.finalNegative,
+        // Prompt-box text + preset state, so Reuse doesn't re-inject preset tags
+        userPrompt: prompt,
+        userNegative: negativePrompt,
+        familyId: resolved.familyId ?? undefined,
+        styleId: resolved.styleId ?? undefined,
+        dismissedPositive: dismissedPositive.length ? dismissedPositive : undefined,
+        dismissedNegative: dismissedNegative.length ? dismissedNegative : undefined,
         checkpoint: modelMode === 'split' ? unet || checkpoint : checkpoint,
         modelMode,
         width: w,
@@ -554,6 +582,8 @@ export default function App() {
       clipType,
       controlNet,
       detailer,
+      dismissedNegative,
+      dismissedPositive,
       familyMeta?.editStrategy,
       familyMeta?.preferredInpaintModel,
       guidance,
@@ -562,7 +592,9 @@ export default function App() {
       imgDenoise,
       loras,
       modelMode,
+      negativePrompt,
       outpaint,
+      prompt,
       resolved,
       sampler,
       scheduler,
@@ -900,8 +932,24 @@ export default function App() {
       return;
     }
     const s = meta.settings;
-    if (meta.prompt) setPrompt(meta.prompt);
-    if (meta.negative_prompt != null) setNegativePrompt(meta.negative_prompt);
+    const str = (v: unknown) => (typeof v === 'string' ? v : null);
+    const strList = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    if (str(s?.userPrompt) != null) {
+      // Darkroom PNG: restore the prompt box + preset state exactly
+      reuseHoldSeq.current = resolveSeq.current;
+      setPrompt(str(s?.userPrompt) ?? '');
+      setNegativePrompt(str(s?.userNegative) ?? '');
+      setStyleId(str(s?.styleId));
+      setDismissedPositive(strList(s?.dismissedPositive));
+      setDismissedNegative(strList(s?.dismissedNegative));
+    } else {
+      const promptTemplate = str(s?.promptTemplate);
+      const negativeTemplate = str(s?.negativeTemplate);
+      if (promptTemplate ?? meta.prompt) setPrompt(promptTemplate ?? meta.prompt ?? '');
+      if (negativeTemplate != null) setNegativePrompt(negativeTemplate);
+      else if (meta.negative_prompt != null) setNegativePrompt(meta.negative_prompt);
+    }
     if (meta.checkpoint) {
       if (s && s.modelMode === 'split') {
         setModelMode('split');
@@ -1078,8 +1126,40 @@ export default function App() {
 
   const reuseSettings = (item: GenerationRecord) => {
     const s = item.settings;
-    setPrompt(s.prompt);
-    setNegativePrompt(s.negative_prompt);
+    // Let the preset-identity effect know this change came from Reuse
+    reuseHoldSeq.current = resolveSeq.current;
+    if (typeof s.userPrompt === 'string') {
+      setPrompt(s.userPrompt);
+      setNegativePrompt(s.userNegative ?? '');
+    } else {
+      // Older records only have the final prompt (preset tags + user text):
+      // show it now, then strip the preset tags so they aren't injected twice.
+      const legacyPositive = s.promptTemplate ?? s.prompt;
+      const legacyNegative = s.negativeTemplate ?? s.negative_prompt;
+      setPrompt(legacyPositive);
+      setNegativePrompt(legacyNegative);
+      void resolvePresetsApi({
+        checkpoint: s.modelMode === 'split' ? s.unet || s.checkpoint : s.checkpoint,
+        styleId: s.styleId ?? null,
+        dismissedPositive: [],
+        dismissedNegative: [],
+        userPositive: '',
+        userNegative: '',
+      })
+        .then((presets) => {
+          setPrompt((cur) =>
+            cur === legacyPositive ? stripInjectedTags(cur, presets.positiveTags) : cur,
+          );
+          setNegativePrompt((cur) =>
+            cur === legacyNegative ? stripInjectedTags(cur, presets.negativeTags) : cur,
+          );
+        })
+        .catch(() => {});
+    }
+    setStyleId(s.styleId ?? null);
+    setDismissedPositive(s.dismissedPositive ?? []);
+    setDismissedNegative(s.dismissedNegative ?? []);
+    setAspectId('custom');
     setModelMode(s.modelMode === 'split' ? 'split' : 'checkpoint');
     setCheckpoint(s.checkpoint);
     setUnet(s.unet ?? '');
@@ -1140,10 +1220,9 @@ export default function App() {
     } else {
       setDetailer(DEFAULT_DETAILER);
     }
-    setDismissedPositive([]);
-    setDismissedNegative([]);
     setPanelOpen((prev) => ({ ...prev, sampling: true, model: true, image: true }));
-    setSettingsOpen(true);
+    // The controls drawer is the mobile layout; on desktop (lg+) they're already visible
+    if (window.matchMedia('(max-width: 1023.98px)').matches) setSettingsOpen(true);
   };
 
   const selectItem = (item: GenerationRecord) => {
@@ -1172,17 +1251,33 @@ export default function App() {
 
   const deleteHistoryItem = useCallback(
     (item: GenerationRecord) => {
+      if (uiSettings.confirmDelete && !window.confirm('Delete this generation?')) return;
       const remaining = items.filter((i) => i.id !== item.id);
       softDelete(item);
       selectNeighborAfterDelete(item.id, remaining);
     },
-    [items, selectNeighborAfterDelete, softDelete],
+    [items, selectNeighborAfterDelete, softDelete, uiSettings.confirmDelete],
   );
 
   const deleteCurrent = () => {
     if (!selectedRecord || selectedRecord.status !== 'completed') return;
     deleteHistoryItem(selectedRecord);
   };
+
+  /** Prompt + preset-state fields carried from a parent record (Vary / Upscale). */
+  const parentPromptFields = (
+    parent: GenerationSettings,
+    fallback: GenerationSettings,
+  ): Partial<GenerationSettings> => ({
+    prompt: parent.prompt || fallback.prompt,
+    negative_prompt: parent.negative_prompt ?? fallback.negative_prompt,
+    userPrompt: parent.userPrompt,
+    userNegative: parent.userNegative,
+    familyId: parent.familyId,
+    styleId: parent.styleId,
+    dismissedPositive: parent.dismissedPositive,
+    dismissedNegative: parent.dismissedNegative,
+  });
 
   const handleVary = useCallback(
     (strength: VaryStrength) => {
@@ -1193,8 +1288,7 @@ export default function App() {
       enqueueJob(
         {
           ...base,
-          prompt: selectedRecord.settings.prompt || base.prompt,
-          negative_prompt: selectedRecord.settings.negative_prompt ?? base.negative_prompt,
+          ...parentPromptFields(selectedRecord.settings, base),
           width: selectedRecord.settings.width,
           height: selectedRecord.settings.height,
           seed: nextSeed,
@@ -1219,8 +1313,7 @@ export default function App() {
       enqueueJob(
         {
           ...base,
-          prompt: selectedRecord.settings.prompt || base.prompt,
-          negative_prompt: selectedRecord.settings.negative_prompt ?? base.negative_prompt,
+          ...parentPromptFields(selectedRecord.settings, base),
           width: selectedRecord.settings.width,
           height: selectedRecord.settings.height,
           seed: nextSeed,
@@ -1673,6 +1766,7 @@ export default function App() {
                   record={selectedRecord}
                   upscaleModels={catalog.upscale_models}
                   defaultUpscaler={serverSettings.defaultUpscaler}
+                  defaultUpscaleScale={serverSettings.defaultUpscaleScale}
                   visible={!runtime.running && Boolean(selectedRecord?.images[0])}
                   busy={runtime.running}
                   onReuse={() => {

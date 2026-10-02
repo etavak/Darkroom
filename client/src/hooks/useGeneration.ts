@@ -114,7 +114,11 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
         ...settings,
         ...(opts?.previewMethod ? { previewMethod: opts.previewMethod } : {}),
       });
-      if (cancelledRef.current) throw new CancelledError();
+      if (cancelledRef.current) {
+        // Cancel was pressed before we had a job id — drop the prompt we just queued
+        void cancelGenerate(jobId).catch(() => {});
+        throw new CancelledError();
+      }
 
       activePromptId.current = promptId;
       activeJobId.current = jobId;
@@ -190,21 +194,34 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
   return { runtime, generate, cancel, setLivePreviewEnabled };
 }
 
+/**
+ * Poll the history record until the server marks it completed or failed.
+ * No wall-clock cap — the server watcher decides when a job is lost.
+ */
 async function pollJob(
   jobId: string,
   isCancelled: () => boolean,
-  timeoutMs = 600_000,
+  maxConsecutiveErrors = 60,
 ): Promise<GenerationRecord> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+  let errors = 0;
+  for (;;) {
     if (isCancelled()) throw new CancelledError();
-    const item = await fetchHistoryItem(jobId);
-    if (item.status === 'completed' && item.images.length > 0) return item;
-    if (item.status === 'failed') {
-      if (item.error === 'Cancelled') throw new CancelledError();
-      throw new Error(item.error ?? 'Generation failed');
+    try {
+      const item = await fetchHistoryItem(jobId);
+      errors = 0;
+      if (item.status === 'completed' && item.images.length > 0) return item;
+      if (item.status === 'failed') {
+        if (item.error === 'Cancelled') throw new CancelledError();
+        throw new Error(item.error ?? 'Generation failed');
+      }
+    } catch (err) {
+      // fetch() rejects with TypeError on network failure (server restarting) — retry.
+      // Anything else is a real outcome (failed / cancelled / error response).
+      if (!(err instanceof TypeError)) throw err;
+      if (++errors >= maxConsecutiveErrors) {
+        throw new Error('Lost connection to the Darkroom server');
+      }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error('Timed out waiting for images');
 }

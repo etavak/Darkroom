@@ -1,4 +1,8 @@
 {
+  "darkroom": {
+    "githubRepo": "etavak/Darkroom",
+    "branch": "main"
+  },
   "node": {
     "tested": "22.14.0",
     "distBase": "https://nodejs.org/dist"

@@ -7,7 +7,7 @@ Flow: **UI state → `buildWorkflow(settings)` → POST ComfyUI `/prompt`**
 | Module | When | Notes |
 |--------|------|--------|
 | `base` | always | Checkpoint, CLIP encode, EmptyLatent, KSampler, VAEDecode, SaveImage |
-| `loras` | `loras[]` non-empty | Chains `LoraLoader`, re-encodes prompts |
+| `loras` | `loras[]` non-empty | Chains `LoraLoader` between model load and prompt encode |
 | `controlnet` | `controlnet.name` + `image` | `ControlNetLoader` + `ControlNetApplyAdvanced` |
 | `hiresFix` | `hiresFix.enabled` | `LatentUpscaleBy` + 2nd `KSampler` |
 | `detailer` | `detailer.enabled` | Impact Pack `FaceDetailer` (custom nodes required) |

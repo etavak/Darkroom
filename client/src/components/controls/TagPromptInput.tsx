@@ -199,7 +199,8 @@ export function TagPromptInput({
     const tags = splitTagSegments(value)
       .filter((p) => !p.isSep)
       .map((p) => p.text.trim())
-      .filter(Boolean);
+      // Wildcard segments resolve server-side; don't flag them as unknown tags
+      .filter((t) => t && !/[{}|]|__[\w\-./ ]+?__/.test(t));
     if (tags.length === 0) {
       setUnknown(new Set());
       return;

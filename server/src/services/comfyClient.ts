@@ -69,6 +69,61 @@ export async function queuePrompt(
   return (await res.json()) as { prompt_id: string; number: number };
 }
 
+/** prompt_ids ComfyUI is running now vs. still waiting to run. */
+export async function getQueueState(): Promise<{ running: Set<string>; pending: Set<string> }> {
+  const res = await comfyFetch('/queue');
+  if (!res.ok) {
+    throw new ComfyError(`queue failed: ${res.status}`, res.status);
+  }
+  const data = (await res.json()) as {
+    queue_running?: unknown[][];
+    queue_pending?: unknown[][];
+  };
+  // Entries are [number, prompt_id, prompt, extra_data, outputs]
+  const ids = (entries: unknown[][] | undefined) =>
+    new Set(
+      (entries ?? [])
+        .map((e) => (Array.isArray(e) ? e[1] : undefined))
+        .filter((id): id is string => typeof id === 'string'),
+    );
+  return { running: ids(data.queue_running), pending: ids(data.queue_pending) };
+}
+
+/** prompt_ids currently running or waiting in ComfyUI's queue. */
+export async function getQueuedPromptIds(): Promise<Set<string>> {
+  const { running, pending } = await getQueueState();
+  return new Set([...running, ...pending]);
+}
+
+/** Remove not-yet-started prompts from ComfyUI's queue. */
+export async function deleteQueuedPrompts(promptIds: string[]): Promise<void> {
+  const res = await comfyFetch('/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delete: promptIds }),
+  });
+  if (!res.ok) {
+    throw new ComfyError(`queue delete failed: ${res.status}`, res.status);
+  }
+}
+
+/**
+ * Cancel one prompt without touching other jobs: interrupt only if it is the one
+ * running, otherwise drop it from the pending queue.
+ */
+export async function cancelPrompt(promptId: string): Promise<'interrupted' | 'dequeued' | 'not_queued'> {
+  const { running, pending } = await getQueueState();
+  if (running.has(promptId)) {
+    await interrupt();
+    return 'interrupted';
+  }
+  if (pending.has(promptId)) {
+    await deleteQueuedPrompts([promptId]);
+    return 'dequeued';
+  }
+  return 'not_queued';
+}
+
 export async function getHistory(promptId: string): Promise<Record<string, unknown> | null> {
   const res = await comfyFetch(`/history/${promptId}`);
   if (!res.ok) {

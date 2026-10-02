@@ -1,8 +1,12 @@
+import fs from 'node:fs';
+import { Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { Router } from 'express';
 import { ComfyError } from '../services/comfyClient.js';
 import { listModelCatalog } from '../services/modelLists.js';
 import {
   confirmInstall,
+  createUploadTarget,
   detectLocalPath,
   detectUploadedFile,
   getInstallJob,
@@ -21,6 +25,8 @@ import {
 import { fetchSystemStatsSummary } from '../services/systemStats.js';
 
 export const modelsRouter = Router();
+
+const MAX_UPLOAD_BYTES = 40 * 1024 ** 3; // 40 GB hard cap
 
 modelsRouter.get('/', async (_req, res) => {
   try {
@@ -95,15 +101,43 @@ modelsRouter.get('/jobs/:id', (req, res) => {
   res.json(job);
 });
 
-modelsRouter.post('/upload', expressRawUpload, async (req, res) => {
+/** Raw binary body with ?name= — streamed straight to disk (multi-GB safe). */
+modelsRouter.post('/upload', async (req, res) => {
+  if (req.headers['content-type']?.includes('application/json')) {
+    res.status(415).json({ error: 'Send raw binary with ?name=' });
+    return;
+  }
+  const target = createUploadTarget(String(req.query.name || 'model.safetensors'));
+  let size = 0;
+  const counter = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      size += chunk.length;
+      if (size > MAX_UPLOAD_BYTES) {
+        cb(new Error('File too large'));
+        return;
+      }
+      cb(null, chunk);
+    },
+  });
   try {
-    const name = String(req.query.name || 'model.safetensors');
-    const buf = req.body as Buffer;
-    if (!Buffer.isBuffer(buf) || buf.length === 0) {
-      res.status(400).json({ error: 'Empty upload' });
-      return;
+    await pipeline(req, counter, fs.createWriteStream(target.tempPath));
+  } catch (err) {
+    fs.rmSync(target.tempPath, { force: true });
+    const tooLarge = err instanceof Error && err.message === 'File too large';
+    if (!res.headersSent) {
+      res
+        .status(tooLarge ? 413 : 400)
+        .json({ error: tooLarge ? 'File too large' : 'Upload interrupted' });
     }
-    const job = await detectUploadedFile(buf, name);
+    return;
+  }
+  if (size === 0) {
+    fs.rmSync(target.tempPath, { force: true });
+    res.status(400).json({ error: 'Empty upload' });
+    return;
+  }
+  try {
+    const job = await detectUploadedFile({ ...target, size });
     res.json(job);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Upload failed' });
@@ -218,28 +252,3 @@ modelsRouter.post('/hf-token', (req, res) => {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Save failed' });
   }
 });
-
-/** Raw binary body for model uploads (up to ~30GB theoretical; practical limit lower). */
-function expressRawUpload(req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) {
-  if (req.headers['content-type']?.includes('application/json')) {
-    res.status(415).json({ error: 'Send raw binary with ?name=' });
-    return;
-  }
-  const chunks: Buffer[] = [];
-  let size = 0;
-  const max = 40 * 1024 * 1024 * 1024; // 40 GB hard cap
-  req.on('data', (c: Buffer) => {
-    size += c.length;
-    if (size > max) {
-      res.status(413).json({ error: 'File too large' });
-      req.destroy();
-      return;
-    }
-    chunks.push(c);
-  });
-  req.on('end', () => {
-    req.body = Buffer.concat(chunks);
-    next();
-  });
-  req.on('error', next);
-}

@@ -18,11 +18,13 @@ export async function buildWorkflow(settings: GenerationSettings): Promise<Comfy
   const ctx = createEmptyContext(settings);
   const mode = settings.generationMode ?? 'txt2img';
 
-  baseModule.load(ctx);
-
+  // LoRAs patch model + clip, so they go between loading and prompt encoding.
+  baseModule.loadModels(ctx);
   if (lorasModule.shouldApply(settings)) {
     lorasModule.apply(ctx);
   }
+  baseModule.encodePrompts(ctx);
+  baseModule.emptyLatent(ctx);
   if (controlnetModule.shouldApply(settings)) {
     await applyControlNet(ctx);
   }

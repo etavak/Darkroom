@@ -6,6 +6,7 @@ import express from 'express';
 import { config } from './config.js';
 import './db/index.js';
 import { pingComfy } from './services/comfyClient.js';
+import { resumePendingJobs } from './services/generation.js';
 import { checkpointsRouter } from './routes/checkpoints.js';
 import { generateRouter } from './routes/generate.js';
 import { historyRouter } from './routes/history.js';
@@ -63,6 +64,7 @@ const server = http.createServer(app);
 attachComfyWsProxy(server);
 
 loadAllTagDictionaries();
+resumePendingJobs();
 
 server.listen(config.port, () => {
   console.log(`Darkroom server listening on http://127.0.0.1:${config.port}`);

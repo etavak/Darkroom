@@ -11,6 +11,7 @@ import {
 } from './cliShared.js';
 import { invalidateModelCatalog } from './modelLists.js';
 import { invalidatePresetCache } from '../presets/catalog.js';
+import { loadServerSettings } from './appSettings.js';
 
 export type InstallMode = 'copy' | 'move' | 'link';
 
@@ -159,22 +160,32 @@ export async function startDownloadJob(
   return job;
 }
 
-export async function detectUploadedFile(
-  buffer: Buffer,
-  originalName: string,
-): Promise<InstallJob> {
+/** Reserve a temp path for a streamed upload (the route writes the file). */
+export function createUploadTarget(originalName: string): {
+  id: string;
+  filename: string;
+  tempPath: string;
+} {
   ensureUploadDir();
   const id = randomUUID();
-  const safe = path.basename(originalName).replace(/[^\w.\-()+ ]+/g, '_');
-  const tempPath = path.join(uploadDir, `${id}-${safe}`);
-  fs.writeFileSync(tempPath, buffer);
+  const filename = path.basename(originalName).replace(/[^\w.\-()+ ]+/g, '_') || 'model.safetensors';
+  return { id, filename, tempPath: path.join(uploadDir, `${id}-${filename}`) };
+}
 
+/** Detect the model type of an upload already written to its temp path. */
+export async function detectUploadedFile(target: {
+  id: string;
+  filename: string;
+  tempPath: string;
+  size: number;
+}): Promise<InstallJob> {
+  const { id, filename: safe, tempPath, size } = target;
   const job: InstallJob = {
     id,
     status: 'detecting',
     progress: 100,
-    transferred: buffer.length,
-    total: buffer.length,
+    transferred: size,
+    total: size,
     filename: safe,
     tempPath,
     allowLink: false,
@@ -270,18 +281,24 @@ export async function confirmInstall(opts: {
       invalidatePresetCache();
     }
 
-    if (job.sourceUrl) {
-      try {
-        const dl = await loadDownloadModule();
-        await dl.saveModelSidecars(result.dest, {
-          triggerWords: job.triggerWords,
-          previewUrl: job.previewUrl,
-          sourceUrl: job.sourceUrl,
-          modelName: job.modelName,
-          headers: job.headers,
-        });
-      } catch {
-        // sidecars are best-effort
+    // Settings → Models → Civitai auto-fetch: trigger words + preview sidecars
+    if (loadServerSettings().civitaiAutoFetch) {
+      const dl = await loadDownloadModule();
+      if (job.sourceUrl) {
+        try {
+          await dl.saveModelSidecars(result.dest, {
+            triggerWords: job.triggerWords,
+            previewUrl: job.previewUrl,
+            sourceUrl: job.sourceUrl,
+            modelName: job.modelName,
+            headers: job.headers,
+          });
+        } catch {
+          // sidecars are best-effort
+        }
+      } else {
+        // Local file / upload: identify by hash in the background (hashing GBs takes a while)
+        void dl.fetchCivitaiSidecarsByHash(result.dest).catch(() => {});
       }
     }
 

@@ -73,6 +73,8 @@ export const backupsDir = path.join(config.dataDir, 'backups');
 
 let cached: ServerSettings | null = null;
 let lastActivityAt = Date.now();
+/** True once models were freed for the current idle stretch (reset by activity). */
+let unloadedSinceActivity = false;
 let unloadTimer: ReturnType<typeof setInterval> | null = null;
 
 function ensureDirs() {
@@ -136,6 +138,26 @@ function sanitize(raw: Partial<ServerSettings> | null | undefined): ServerSettin
   };
 }
 
+const LOG_RANK: Record<LogLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 };
+const rawConsole = {
+  error: console.error.bind(console),
+  warn: console.warn.bind(console),
+  info: console.info.bind(console),
+  log: console.log.bind(console),
+  debug: console.debug.bind(console),
+};
+const noop = () => {};
+
+/** Settings → Advanced → Log level: silence server console output below the level. */
+export function applyLogLevel(level: LogLevel): void {
+  const rank = LOG_RANK[level];
+  console.error = rawConsole.error;
+  console.warn = rank >= LOG_RANK.warn ? rawConsole.warn : noop;
+  console.info = rank >= LOG_RANK.info ? rawConsole.info : noop;
+  console.log = rank >= LOG_RANK.info ? rawConsole.log : noop;
+  console.debug = rank >= LOG_RANK.debug ? rawConsole.debug : noop;
+}
+
 export function loadServerSettings(): ServerSettings {
   ensureDirs();
   if (cached) return cached;
@@ -157,40 +179,55 @@ export function loadServerSettings(): ServerSettings {
   return seeded;
 }
 
+const EXTRA_PATHS_BEGIN = '# >>> darkroom managed — edits inside this block are overwritten >>>';
+const EXTRA_PATHS_END = '# <<< darkroom managed <<<';
+/** Header of files older Darkroom builds wrote wholesale (safe to replace entirely). */
+const LEGACY_EXTRA_PATHS_HEADER = '# Managed by Darkroom';
+
+/**
+ * Sync Darkroom's extra model folders into ComfyUI's extra_model_paths.yaml.
+ * Only the delimited Darkroom block is rewritten; anything the user wrote is kept.
+ */
 function writeExtraModelPaths(folders: string[]) {
   const uiRoot = getComfyUiRoot();
   if (!uiRoot) return;
   const dest = path.join(uiRoot, 'extra_model_paths.yaml');
-  if (folders.length === 0) {
-    // Leave existing file alone if we have nothing to write — only overwrite when set
-    if (fs.existsSync(dest)) {
-      const stamp = `# Managed by Darkroom — cleared ${new Date().toISOString()}\n# (no extra folders configured)\n`;
-      fs.writeFileSync(dest, stamp, 'utf8');
-    }
+
+  let existing = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
+  if (existing.startsWith(LEGACY_EXTRA_PATHS_HEADER)) existing = '';
+
+  const begin = existing.indexOf(EXTRA_PATHS_BEGIN);
+  const end = existing.indexOf(EXTRA_PATHS_END);
+  let userContent = existing;
+  if (begin >= 0 && end > begin) {
+    userContent =
+      existing.slice(0, begin) + existing.slice(end + EXTRA_PATHS_END.length);
+  }
+  userContent = userContent.replace(/\n{3,}/g, '\n\n').trim();
+
+  const block: string[] = [];
+  if (folders.length > 0) {
+    block.push(EXTRA_PATHS_BEGIN);
+    folders.forEach((folder, i) => {
+      block.push(`darkroom_${i}:`);
+      // JSON string syntax is valid YAML double-quoted — safe for Windows paths, colons, #
+      block.push(`  base_path: ${JSON.stringify(path.resolve(folder))}`);
+      block.push(`  checkpoints: checkpoints`);
+      block.push(`  loras: loras`);
+      block.push(`  vae: vae`);
+      block.push(`  upscale_models: upscale_models`);
+      block.push(`  embeddings: embeddings`);
+      block.push(`  controlnet: controlnet`);
+    });
+    block.push(EXTRA_PATHS_END);
+  }
+
+  const next = [userContent, block.join('\n')].filter(Boolean).join('\n\n');
+  if (!next) {
+    if (fs.existsSync(dest)) fs.rmSync(dest, { force: true });
     return;
   }
-  const lines = [
-    `# Managed by Darkroom — updated ${new Date().toISOString()}`,
-    'darkroom_extra:',
-    '  base_path: |',
-  ];
-  // ComfyUI expects a base_path; use first folder as base and list others as checkpoints etc.
-  // Simpler approach: each folder as a named section pointing at that path for checkpoints/loras/etc.
-  const yaml: string[] = [`# Managed by Darkroom — updated ${new Date().toISOString()}`];
-  folders.forEach((folder, i) => {
-    const abs = path.resolve(folder);
-    yaml.push(`darkroom_${i}:`);
-    yaml.push(`  base_path: ${abs}`);
-    yaml.push(`  checkpoints: checkpoints`);
-    yaml.push(`  loras: loras`);
-    yaml.push(`  vae: vae`);
-    yaml.push(`  upscale_models: upscale_models`);
-    yaml.push(`  embeddings: embeddings`);
-    yaml.push(`  controlnet: controlnet`);
-    yaml.push('');
-  });
-  fs.writeFileSync(dest, yaml.join('\n'), 'utf8');
-  void lines;
+  fs.writeFileSync(dest, `${next}\n`, 'utf8');
 }
 
 export function saveServerSettings(partial: Partial<ServerSettings>): ServerSettings {
@@ -199,13 +236,18 @@ export function saveServerSettings(partial: Partial<ServerSettings>): ServerSett
   const next = sanitize({ ...prev, ...partial });
   fs.writeFileSync(settingsPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
   cached = next;
+  applyLogLevel(next.logLevel);
 
   // Launch-flag mirrors for the ComfyUI launcher
   upsertEnvValue('COMFY_VRAM_MODE', next.vramMode);
   upsertEnvValue('CIVITAI_AUTO_FETCH', next.civitaiAutoFetch ? 'true' : 'false');
   upsertEnvValue('DARKROOM_LOG_LEVEL', next.logLevel);
 
-  writeExtraModelPaths(next.extraModelFolders);
+  if (
+    JSON.stringify(prev.extraModelFolders) !== JSON.stringify(next.extraModelFolders)
+  ) {
+    writeExtraModelPaths(next.extraModelFolders);
+  }
   restartUnloadWatcher(next);
 
   if (next.autoBackup) {
@@ -215,8 +257,10 @@ export function saveServerSettings(partial: Partial<ServerSettings>): ServerSett
   return next;
 }
 
+/** Generation started / in progress — postpones Unload after idle. */
 export function touchActivity() {
   lastActivityAt = Date.now();
+  unloadedSinceActivity = false;
 }
 
 export function getLastActivityAt() {
@@ -244,10 +288,10 @@ export function restartUnloadWatcher(settings = loadServerSettings()) {
   if (settings.unloadIdleMinutes <= 0) return;
   const ms = settings.unloadIdleMinutes * 60_000;
   unloadTimer = setInterval(() => {
-    if (Date.now() - lastActivityAt >= ms) {
+    // Free once per idle stretch; the next generation re-arms it
+    if (!unloadedSinceActivity && Date.now() - lastActivityAt >= ms) {
+      unloadedSinceActivity = true;
       void freeComfyMemory();
-      // Don't spam: reset activity so we wait another full idle window
-      lastActivityAt = Date.now();
     }
   }, Math.min(60_000, Math.max(15_000, ms / 4)));
 }
@@ -337,22 +381,42 @@ export function disposeFile(filename: string): void {
   }
 }
 
-const RATING_TAGS = new Set([
-  'explicit',
-  'nsfw',
-  'nude',
-  'nudity',
-  'sex',
-  'sexual',
-  'porn',
-  'hentai',
-  'rape',
-  'guro',
-  'loli',
-  'shota',
-]);
+/** Matched as whole words (underscores count as spaces) for Safe mode. */
+const RATING_TAG_RE =
+  /\b(explicit|nsfw|nude|nudity|naked|sex|sexual|porn|hentai|rape|guro|loli|shota)\b/i;
 
-/** Cleanup + optional safe-mode filtering for prompts. */
+/**
+ * Split on commas that are not inside (), [] or {} — so weighted groups like
+ * "(red hair, blue eyes:1.2)" stay one tag. Backslash escapes are respected.
+ */
+export function splitTopLevelTags(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\\' && i + 1 < text.length) {
+      cur += ch + text[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if ((ch === ')' || ch === ']' || ch === '}') && depth > 0) depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  parts.push(cur);
+  return parts;
+}
+
+/**
+ * Prompt cleanup from Settings → Generation, applied right before queueing:
+ * normalize spacing, drop duplicate tags, and (positive prompt only) Safe mode.
+ */
 export function processPromptText(
   text: string,
   opts?: { dedupe?: boolean; normalize?: boolean; safeMode?: boolean },
@@ -361,31 +425,20 @@ export function processPromptText(
   const dedupe = opts?.dedupe ?? settings.promptCleanupDedupe;
   const normalize = opts?.normalize ?? settings.promptCleanupNormalize;
   const safe = opts?.safeMode ?? settings.safeMode;
+  if (!text || (!dedupe && !normalize && !safe)) return text ?? '';
 
-  let s = text ?? '';
-  if (normalize) {
-    s = s.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ', ').trim();
-  }
+  let tags = splitTopLevelTags(text).map((t) =>
+    normalize ? t.replace(/\s+/g, ' ').trim() : t.trim(),
+  );
+  tags = tags.filter(Boolean);
 
-  const parts = s
-    .split(',')
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  let tags = parts;
   if (safe) {
-    tags = tags.filter((t) => {
-      const lower = t.toLowerCase().replace(/_/g, ' ');
-      for (const bad of RATING_TAGS) {
-        if (lower === bad || lower.includes(bad)) return false;
-      }
-      return true;
-    });
+    tags = tags.filter((t) => !RATING_TAG_RE.test(t.replace(/_/g, ' ')));
   }
   if (dedupe) {
     const seen = new Set<string>();
     tags = tags.filter((t) => {
-      const key = t.toLowerCase();
+      const key = t.toLowerCase().replace(/\s+/g, ' ');
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -408,5 +461,6 @@ export function settingsHints(settings: ServerSettings): Partial<Record<keyof Se
   return hints;
 }
 
-// Start watcher on import when settings already ask for it
+// Apply persisted runtime settings on import
+applyLogLevel(loadServerSettings().logLevel);
 restartUnloadWatcher(loadServerSettings());

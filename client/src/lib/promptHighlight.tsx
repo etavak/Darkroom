@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 
-/** Highlight (tag:1.2) weights and {a|b} wildcards for the prompt overlay. */
+/** Highlight (tag:1.2) weights and {a|b} / __file__ wildcards for the prompt overlay. */
 export function highlightPromptSyntax(text: string): ReactNode[] {
   if (!text) return [];
   const nodes: ReactNode[] = [];
   // Weights: (foo:1.2) or ((foo)) — emphasize colon-weight form; also bare (...) groups lightly
-  const re = /(\([^)]*:\s*[\d.]+\))|(\{[^{}]*\|[^{}]*\})/g;
+  const re = /(\([^)]*:\s*[\d.]+\))|(\{[^{}]*\|[^{}]*\}|__[\w\-./ ]+?__)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;

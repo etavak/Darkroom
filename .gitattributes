@@ -1,0 +1,6 @@
+# Windows batch files must be CRLF — cmd.exe can mis-parse labels/goto in LF files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Unix launchers must stay LF or bash fails on \r.
+*.sh text eol=lf
+*.command text eol=lf

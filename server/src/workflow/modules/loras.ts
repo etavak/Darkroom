@@ -25,18 +25,6 @@ export const lorasModule: WorkflowModule = {
       ctx.model = [id, 0];
       ctx.clip = [id, 1];
     }
-
-    // CLIP encodes were created with the pre-LoRA clip — rebuild them
-    // so prompts use the LoRA-modified CLIP.
-    const pos = ctx.graph.add('CLIPTextEncode', {
-      text: ctx.settings.prompt,
-      clip: ctx.clip,
-    });
-    const neg = ctx.graph.add('CLIPTextEncode', {
-      text: ctx.settings.negative_prompt,
-      clip: ctx.clip,
-    });
-    ctx.positive = [pos, 0];
-    ctx.negative = [neg, 0];
+    // Runs before baseModule.encodePrompts, so prompts encode with the LoRA-patched clip.
   },
 };

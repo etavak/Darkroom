@@ -28,7 +28,7 @@
  *   gpus?: GpuProfile[],
  *   status: () => Promise<ComponentStatus>,
  *   install: (ctx?: ComponentContext) => Promise<void>,
- *   update: (ctx?: ComponentContext) => Promise<void>,
+ *   update: (ctx?: ComponentContext) => Promise<void | { restartRequired?: boolean }>,
  *   repair: (ctx?: ComponentContext) => Promise<void>,
  *   reinstall: (ctx?: ComponentContext) => Promise<void>,
  *   uninstall: (ctx?: ComponentContext) => Promise<void>,
