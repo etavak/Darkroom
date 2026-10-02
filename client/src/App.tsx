@@ -6,6 +6,16 @@ import { CollapsibleSection } from '@/components/controls/CollapsibleSection';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
 import { GenerateButton } from '@/components/controls/GenerateButton';
 import { HiresFixControls } from '@/components/controls/HiresFixControls';
+import {
+  ControlNetPanel,
+  DEFAULT_CONTROLNET_UI,
+  controlNetPayload,
+  type ControlNetUiState,
+} from '@/components/controls/ControlNetPanel';
+import {
+  DEFAULT_DETAILER,
+  DetailerControls,
+} from '@/components/controls/DetailerControls';
 import { JobQueue, type QueuedJob } from '@/components/controls/JobQueue';
 import { LoraPanel } from '@/components/controls/LoraPanel';
 import { DependencyResolver } from '@/components/controls/DependencyResolver';
@@ -65,6 +75,8 @@ import {
 } from '@/lib/sourceImage';
 import { eventMatchesShortcut, qualityToPreviewMethod } from '@/lib/uiSettings';
 import type {
+  ControlNetSettings,
+  DetailerSettings,
   GenerationRecord,
   GenerationSettings,
   HiresFixSettings,
@@ -160,6 +172,14 @@ export default function App() {
   foreverRef.current = serverSettings.generateForever;
   const haltForeverRef = useRef(false);
 
+  useEffect(() => {
+    if (detailerDefaultApplied.current || serverSettingsLoading) return;
+    detailerDefaultApplied.current = true;
+    if (serverSettings.detailerDefault) {
+      setDetailer((prev) => ({ ...prev, enabled: true }));
+    }
+  }, [serverSettings.detailerDefault, serverSettingsLoading]);
+
   const [styleId, setStyleId] = useState<string | null>(null);
   const [dismissedPositive, setDismissedPositive] = useState<string[]>([]);
   const [dismissedNegative, setDismissedNegative] = useState<string[]>([]);
@@ -194,6 +214,9 @@ export default function App() {
     steps: 15,
     denoise: 0.45,
   });
+  const [controlNet, setControlNet] = useState<ControlNetUiState>(DEFAULT_CONTROLNET_UI);
+  const [detailer, setDetailer] = useState<DetailerSettings>(DEFAULT_DETAILER);
+  const detailerDefaultApplied = useRef(false);
   const [source, setSource] = useState<SourceImageState | null>(null);
   const [workMode, setWorkMode] = useState<WorkMode>('generate');
   const [imgDenoise, setImgDenoise] = useState(0.55);
@@ -496,6 +519,8 @@ export default function App() {
         guidance,
         loras: loras.length ? loras : undefined,
         hiresFix: hiresFix.enabled && workMode === 'generate' ? hiresFix : undefined,
+        controlnet: controlNetPayload(controlNet) ?? undefined,
+        detailer: detailer.enabled ? detailer : undefined,
         generationMode,
         sourceImage: workMode === 'generate' ? undefined : source?.comfyName,
         parentId: workMode === 'generate' ? undefined : source?.parentId || undefined,
@@ -527,6 +552,8 @@ export default function App() {
       clipName2,
       clipSkip,
       clipType,
+      controlNet,
+      detailer,
       familyMeta?.editStrategy,
       familyMeta?.preferredInpaintModel,
       guidance,
@@ -742,6 +769,8 @@ export default function App() {
 
   const imageSummary = `${width}×${height} · seed ${seed}${seedLocked ? ' · locked' : ''}${
     hiresFix.enabled ? ` · hires ${hiresFix.scale}×` : ''
+  }${controlNet.enabled && controlNet.name ? ' · CN' : ''}${
+    detailer.enabled ? ' · detailer' : ''
   }`;
   const loraSummary =
     loras.length === 0
@@ -909,6 +938,31 @@ export default function App() {
         scheduler: hf.scheduler,
       });
     }
+    if (s?.controlnet && typeof s.controlnet === 'object') {
+      const cn = s.controlnet as ControlNetSettings;
+      setControlNet({
+        enabled: Boolean(cn.name && cn.image),
+        name: typeof cn.name === 'string' ? cn.name : '',
+        image: typeof cn.image === 'string' ? cn.image : '',
+        previewUrl: null,
+        strength: typeof cn.strength === 'number' ? cn.strength : 1,
+        start_percent: typeof cn.start_percent === 'number' ? cn.start_percent : 0,
+        end_percent: typeof cn.end_percent === 'number' ? cn.end_percent : 1,
+        preprocessor: cn.preprocessor === 'canny' || cn.preprocessor === 'depth' || cn.preprocessor === 'openpose'
+          ? cn.preprocessor
+          : 'none',
+      });
+    }
+    if (s?.detailer && typeof s.detailer === 'object') {
+      const d = s.detailer as DetailerSettings;
+      setDetailer({
+        enabled: Boolean(d.enabled),
+        guide_size: typeof d.guide_size === 'number' ? d.guide_size : 512,
+        steps: typeof d.steps === 'number' ? d.steps : 12,
+        denoise: typeof d.denoise === 'number' ? d.denoise : 0.4,
+        detector: typeof d.detector === 'string' ? d.detector : 'bbox/face_yolov8m.pt',
+      });
+    }
     if (Array.isArray(s?.loras)) {
       setLoras(
         s.loras.filter(
@@ -1055,6 +1109,36 @@ export default function App() {
         sampler: s.hiresFix.sampler,
         scheduler: s.hiresFix.scheduler,
       });
+    }
+    if (s.controlnet) {
+      setControlNet({
+        enabled: Boolean(s.controlnet.name && s.controlnet.image),
+        name: s.controlnet.name,
+        image: s.controlnet.image,
+        previewUrl: null,
+        strength: s.controlnet.strength ?? 1,
+        start_percent: s.controlnet.start_percent ?? 0,
+        end_percent: s.controlnet.end_percent ?? 1,
+        preprocessor:
+          s.controlnet.preprocessor === 'canny' ||
+          s.controlnet.preprocessor === 'depth' ||
+          s.controlnet.preprocessor === 'openpose'
+            ? s.controlnet.preprocessor
+            : 'none',
+      });
+    } else {
+      setControlNet(DEFAULT_CONTROLNET_UI);
+    }
+    if (s.detailer) {
+      setDetailer({
+        enabled: Boolean(s.detailer.enabled),
+        guide_size: s.detailer.guide_size ?? 512,
+        steps: s.detailer.steps ?? 12,
+        denoise: s.detailer.denoise ?? 0.4,
+        detector: s.detailer.detector ?? 'bbox/face_yolov8m.pt',
+      });
+    } else {
+      setDetailer(DEFAULT_DETAILER);
     }
     setDismissedPositive([]);
     setDismissedNegative([]);
@@ -1446,6 +1530,25 @@ export default function App() {
         <HiresFixControls
           value={hiresFix}
           onChange={setHiresFix}
+          disabled={runtime.running}
+        />
+        <ControlNetPanel
+          value={controlNet}
+          onChange={setControlNet}
+          models={catalog.controlnet}
+          controlnetAvailable={Boolean(catalog.available.controlnet)}
+          auxAvailable={Boolean(catalog.available.controlnetAux)}
+          disabled={runtime.running}
+          onUploadImage={async (file) => {
+            const src = await uploadFileAsSource(file);
+            return { comfyName: src.comfyName, previewUrl: src.previewUrl };
+          }}
+        />
+        <DetailerControls
+          value={detailer}
+          onChange={setDetailer}
+          detectors={catalog.detailer_detectors ?? []}
+          available={Boolean(catalog.available.faceDetailer)}
           disabled={runtime.running}
         />
       </CollapsibleSection>

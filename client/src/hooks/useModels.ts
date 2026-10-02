@@ -13,6 +13,7 @@ const EMPTY: ModelCatalog = {
   embeddings: [],
   clip_types: [],
   dual_clip_types: [],
+  detailer_detectors: [],
   available: {
     checkpoint: false,
     unet: false,
@@ -25,6 +26,8 @@ const EMPTY: ModelCatalog = {
     ggufUnet: false,
     ggufClip: false,
     ggufDualClip: false,
+    faceDetailer: false,
+    controlnetAux: false,
   },
 };
 

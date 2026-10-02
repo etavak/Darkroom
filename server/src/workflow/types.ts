@@ -20,6 +20,7 @@ export type ControlNetSettings = {
   strength: number;
   start_percent?: number;
   end_percent?: number;
+  preprocessor?: 'none' | 'canny' | 'depth' | 'openpose';
 };
 
 export type HiresFixSettings = {

@@ -1,6 +1,6 @@
 import { applyEditModule } from './edit/index.js';
 import { baseModule, createEmptyContext } from './modules/base.js';
-import { controlnetModule } from './modules/controlnet.js';
+import { applyControlNet, controlnetModule } from './modules/controlnet.js';
 import { detailerModule } from './modules/detailer.js';
 import { hiresFixModule } from './modules/hiresFix.js';
 import { lorasModule } from './modules/loras.js';
@@ -24,7 +24,7 @@ export async function buildWorkflow(settings: GenerationSettings): Promise<Comfy
     lorasModule.apply(ctx);
   }
   if (controlnetModule.shouldApply(settings)) {
-    controlnetModule.apply(ctx);
+    await applyControlNet(ctx);
   }
 
   if (mode === 'edit' && settings.sourceImage) {

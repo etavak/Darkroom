@@ -10,6 +10,8 @@ export type ControlNetSettings = {
   strength: number;
   start_percent?: number;
   end_percent?: number;
+  /** Optional aux preprocessor (requires controlnet_aux). */
+  preprocessor?: 'none' | 'canny' | 'depth' | 'openpose';
 };
 
 export type HiresFixSettings = {
@@ -128,6 +130,7 @@ export type ModelCatalog = {
   embeddings: string[];
   clip_types: string[];
   dual_clip_types: string[];
+  detailer_detectors?: string[];
   available: {
     checkpoint: boolean;
     unet: boolean;
@@ -140,6 +143,8 @@ export type ModelCatalog = {
     ggufUnet?: boolean;
     ggufClip?: boolean;
     ggufDualClip?: boolean;
+    faceDetailer?: boolean;
+    controlnetAux?: boolean;
   };
 };
 

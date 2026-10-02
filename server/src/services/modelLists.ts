@@ -12,6 +12,8 @@ export type ModelCatalog = {
   /** DualCLIPLoader / CLIPLoader `type` combo values when available */
   clip_types: string[];
   dual_clip_types: string[];
+  /** Ultralytics / Impact Pack detector model names when available */
+  detailer_detectors: string[];
   available: {
     checkpoint: boolean;
     unet: boolean;
@@ -25,6 +27,10 @@ export type ModelCatalog = {
     ggufUnet: boolean;
     ggufClip: boolean;
     ggufDualClip: boolean;
+    /** Impact Pack FaceDetailer */
+    faceDetailer: boolean;
+    /** comfyui_controlnet_aux preprocessors */
+    controlnetAux: boolean;
   };
 };
 
@@ -89,6 +95,10 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
     embeddings: comboList(info, 'EmbeddingToText', 'embedding_name'),
     clip_types: comboList(info, 'CLIPLoader', 'type'),
     dual_clip_types: comboList(info, 'DualCLIPLoader', 'type'),
+    detailer_detectors: uniqueSorted([
+      ...comboList(info, 'UltralyticsDetectorProvider', 'model_name'),
+      ...comboList(info, 'ONNXDetectorProvider', 'model_name'),
+    ]),
     available: {
       checkpoint: hasNode(info, 'CheckpointLoaderSimple'),
       unet: hasNode(info, 'UNETLoader'),
@@ -101,6 +111,12 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
       ggufUnet: hasNode(info, 'UnetLoaderGGUF'),
       ggufClip: hasNode(info, 'CLIPLoaderGGUF'),
       ggufDualClip: hasNode(info, 'DualCLIPLoaderGGUF'),
+      faceDetailer: hasNode(info, 'FaceDetailer'),
+      controlnetAux:
+        hasNode(info, 'AIO_Preprocessor') ||
+        hasNode(info, 'CannyEdgePreprocessor') ||
+        hasNode(info, 'DepthAnythingPreprocessor') ||
+        hasNode(info, 'OpenposePreprocessor'),
     },
   };
 

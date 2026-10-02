@@ -52,12 +52,20 @@ function parseOptionalModules(
 
   const cn = asObject(b.controlnet);
   if (cn && typeof cn.name === 'string' && typeof cn.image === 'string') {
+    const pre =
+      cn.preprocessor === 'canny' ||
+      cn.preprocessor === 'depth' ||
+      cn.preprocessor === 'openpose' ||
+      cn.preprocessor === 'none'
+        ? cn.preprocessor
+        : undefined;
     out.controlnet = {
       name: cn.name,
       image: cn.image,
       strength: typeof cn.strength === 'number' ? cn.strength : 1,
       start_percent: typeof cn.start_percent === 'number' ? cn.start_percent : undefined,
       end_percent: typeof cn.end_percent === 'number' ? cn.end_percent : undefined,
+      preprocessor: pre === 'none' ? undefined : pre,
     };
   }
 

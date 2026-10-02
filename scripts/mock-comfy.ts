@@ -115,6 +115,17 @@ const server = http.createServer(async (req, res) => {
             },
           },
         },
+        ControlNetApplyAdvanced: { input: { required: {} } },
+        AIO_Preprocessor: { input: { required: {} } },
+        CannyEdgePreprocessor: { input: { required: {} } },
+        FaceDetailer: { input: { required: {} } },
+        UltralyticsDetectorProvider: {
+          input: {
+            required: {
+              model_name: [['bbox/face_yolov8m.pt']],
+            },
+          },
+        },
         UpscaleModelLoader: {
           input: {
             required: {
