@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import sevenBin from '7zip-bin';
 import { downloadFile } from './download.js';
 import { httpGetJson } from './http.js';
+import { migrateUserMappings } from './models.js';
 import { loadPins } from './pins.js';
 import { ensureLogsDir, logsDir, restorePointsDir, root, runtimeDir } from './paths.js';
 
@@ -39,7 +40,6 @@ export function isPreserved(rel) {
   if (PRESERVED_TOP.has(parts[0])) return true;
   if (parts.includes('node_modules') || parts.includes('.git')) return true;
   if (rel.startsWith('server/data/')) return true;
-  if (rel === 'server/presets/checkpoints.json') return true; // user family mappings
   if (rel.startsWith('server/tags/') && rel !== 'server/tags/.gitkeep') return true;
   if (rel.startsWith('client/dist/') || rel.startsWith('server/dist/')) return true;
   return false;
@@ -298,6 +298,9 @@ export async function updateFromZip({ log, onStep = () => {} }) {
 
   const lockPath = path.join(root, 'package-lock.json');
   const lockBefore = fs.existsSync(lockPath) ? fs.readFileSync(lockPath, 'utf8') : '';
+
+  // Older installs kept user mappings in presets/ — move them to server/data first
+  migrateUserMappings();
 
   onStep('Applying update…');
   const change = overlay(newRoot, log);

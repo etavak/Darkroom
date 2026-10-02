@@ -1,23 +1,10 @@
 import { ensureSave } from '../graph.js';
 import { loadObjectInfo, requireNodeClass } from '../objectInfo.js';
-import type { WorkflowModule } from '../types.js';
 
 /**
  * Pad source image for outpainting, encode, apply noise mask, then sample.
  * Uses only class names present in /object_info.
  */
-export const outpaintModule: WorkflowModule = {
-  name: 'outpaint',
-
-  shouldApply(settings) {
-    return settings.generationMode === 'outpaint' && Boolean(settings.sourceImage);
-  },
-
-  apply() {
-    /* Applied via applyOutpaint() in builder (async /object_info resolve). */
-  },
-};
-
 export async function applyOutpaint(ctx: import('../graph.js').PipelineContext): Promise<void> {
   const { graph, settings } = ctx;
   if (!settings.sourceImage) throw new Error('outpaint requires sourceImage');

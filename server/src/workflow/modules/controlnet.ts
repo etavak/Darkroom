@@ -1,4 +1,4 @@
-import type { NodeRef, GenerationSettings, WorkflowModule } from '../types.js';
+import type { NodeRef, WorkflowModule } from '../types.js';
 import type { PipelineContext } from '../graph.js';
 import { loadObjectInfo, resolveNodeClass } from '../objectInfo.js';
 
@@ -99,8 +99,4 @@ function applyControlNetSync(
   });
   ctx.positive = [applied, 0];
   ctx.negative = [applied, 1];
-}
-
-export function controlnetShouldApply(settings: GenerationSettings): boolean {
-  return controlnetModule.shouldApply(settings);
 }

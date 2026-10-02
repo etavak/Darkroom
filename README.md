@@ -1,8 +1,8 @@
 # Darkroom
 
-Local image generation UI inspired by NovelAI / SeaArt, backed by a headless [ComfyUI](https://github.com/comfyanonymous/ComfyUI) instance.
+A local image-generation studio inspired by NovelAI / SeaArt, running on a headless [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Darkroom installs and manages ComfyUI for you, so you never touch a node graph.
 
-Works on **Windows**, **macOS**, and **Linux**.
+Works on **Windows**, **macOS** (Apple Silicon recommended), and **Linux**.
 
 <p align="center">
   <img src="docs/screenshots/menu.svg" alt="Darkroom terminal menu" width="720" />
@@ -11,146 +11,90 @@ Works on **Windows**, **macOS**, and **Linux**.
   <img src="docs/screenshots/generate.svg" alt="Darkroom generate UI" width="720" />
 </p>
 
-## Requirements
+## Install
 
-- **Node.js 22+** ([download](https://nodejs.org/))
-- A ComfyUI install **or** a remote ComfyUI URL (setup wizard handles both)
+You don't need Node or Python beforehand — the launcher downloads what it needs into the Darkroom folder. On macOS, **Install everything** may ask to install Apple's Command Line Tools (for git); on Linux, install `git` from your package manager first.
 
-## Quick start
+1. **Download** the ZIP: **Code → Download ZIP** on GitHub, then unzip it anywhere (e.g. your Documents folder).
+2. **Open the launcher** for your system:
+   - **Windows:** double-click `Darkroom.bat`.
+   - **macOS:** double-click `Darkroom.command`. If macOS blocks it, open **System Settings → Privacy & Security**, scroll to the message about Darkroom, and click **Open Anyway**. (Or run `xattr -dr com.apple.quarantine` on the folder in Terminal.)
+   - **Linux:** run `./Darkroom.sh` (`chmod +x Darkroom.sh` first if needed).
+3. **First run** opens the setup menu. Pick one:
+   - **Install everything** — downloads ComfyUI and PyTorch for your hardware (NVIDIA CUDA, Apple Silicon MPS, or CPU) into the Darkroom folder.
+   - **Use existing ComfyUI** — point at a ComfyUI you already have (source, Windows portable, or the Desktop app).
+   - **Remote ComfyUI** — use ComfyUI running on another machine (it must be started with `--listen`).
+4. Choose **Start Darkroom**. ComfyUI and the Darkroom server start and your browser opens.
 
-### Windows
+Next time, just open the launcher again and choose **Start Darkroom**.
 
-1. Install [Node.js 22 LTS](https://nodejs.org/).
-2. Clone this repo and double-click **`Darkroom.bat`**.
-3. On first run, the setup wizard asks you to:
-   - use an existing ComfyUI folder,
-   - download the Windows portable build, or
-   - point at a remote ComfyUI URL.
-4. Use **Start Darkroom** from the menu.
-
-### macOS
-
-**1. Recommended — one-liner** (clones or updates `~/Darkroom`, then launches):
+<details>
+<summary>Prefer git? (macOS / Linux one-liner)</summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/etavak/Darkroom/main/install.sh | bash
 ```
 
-If git is missing, the script offers **Xcode Command Line Tools** (`xcode-select --install`), waits until git works, then continues.
+Clones (or updates) `~/Darkroom` and launches it. If git is missing on macOS, it offers the Xcode Command Line Tools and waits for them.
+</details>
 
-**2. Git clone** (if you already have git / CLT):
+## Adding models
 
-```bash
-git clone https://github.com/etavak/Darkroom.git ~/Darkroom
-cd ~/Darkroom
-bash Darkroom.command
-```
+From the launcher menu: **Install model from file** (drag a file into the terminal), **Download model from URL** (Civitai, Hugging Face, or a direct link), or **Manage models**. In the web UI, use **Add model…** in any model picker.
 
-**3. ZIP download** (when you cannot use git):
+- The model type is detected from the file. Checkpoints and diffusion models ask for their **family** (SDXL, Pony, Illustrious, NoobAI, Flux, SD3, …) so the right defaults and tags apply.
+- Families that need extra files (text encoders, VAE) offer to download them, sized to your VRAM and checksum-verified.
+- Files outside ComfyUI can be **linked** instead of copied.
+- `.gguf` quantized models are supported via the optional ComfyUI-GGUF node (offered automatically).
 
-1. Download the repo ZIP from GitHub and unzip it.
-2. If macOS blocks the app on first launch, open **System Settings → Privacy & Security**, scroll to the blocked-item message, and click **Open Anyway**. Confirm when prompted.
-3. Or clear the quarantine flag in Terminal (replace the path with your unzipped folder):
+## Features
 
-```bash
-xattr -dr com.apple.quarantine ~/Downloads/Darkroom-main
-cd ~/Downloads/Darkroom-main
-bash Darkroom.command
-```
+- **Generate** with family-aware presets — tags, sampler, CFG, and resolution follow the model family and style; injected tags are shown as chips you can dismiss.
+- **Prompting** — Danbooru / e621 tag autocomplete with unknown-tag hints, token counter, recent prompts and snippets, `{a|b}` and `__wildcard__` files, optional LLM prompt enhance.
+- **Source modes** — img2img, outpaint, and instruction edit (Flux Kontext / Qwen Image Edit).
+- **Extras** — LoRA stacks, ControlNet (with canny / depth / openpose preprocessors), hires fix, face detailer, model upscaling, Vary.
+- **Queue** — reorderable job queue, generate-forever, live previews, cancel a single job.
+- **History** — gallery with favorites, undo delete, parent / derived links, A/B compare, PNG metadata; drop a PNG on the canvas to load its settings, or **Reuse** any result.
+- **Use it from your phone** — **Start backend only** prints a LAN URL; the UI works on phones and tablets.
 
-`Darkroom.command` bootstraps portable Node 22+ into `runtime/node/` if needed, then opens the setup wizard. Complete first-run (**Install everything** / Use existing / Remote), then **Start Darkroom**.
+## Updating
 
-> Note: **right-click → Open** no longer bypasses Gatekeeper on current macOS — use Privacy & Security → Open Anyway, `xattr`, or the curl/git methods above.
+Choose **Update** in the launcher menu. Darkroom downloads the latest version from GitHub and applies it in place, keeping your settings, history, models, and ComfyUI. Anything replaced is backed up and restored automatically if the update fails. ComfyUI, PyTorch, and the other components can be updated from the same menu.
 
-### Linux
+## Troubleshooting
 
-1. Install Node.js 22+ (NodeSource, nvm, or your distro’s package).
-2. Clone this repo and run:
-
-```bash
-chmod +x Darkroom.sh
-./Darkroom.sh
-```
-
-3. First-run wizard: use existing ComfyUI, install via `git clone` + venv + PyTorch (CUDA index when NVIDIA is detected), or remote URL.
-
-## What the setup wizard does
-
-When `.env` is missing:
-
-1. **Use existing ComfyUI** — auto-detects common portable / `venv` / `.venv` paths, or accepts a pasted path. Validates `main.py` and Python.
-2. **Install ComfyUI** — Windows: latest portable `.7z` from ComfyUI’s GitHub (extracted with `7zip-bin`). macOS/Linux: clone, venv, install torch + requirements.
-3. **Remote ComfyUI** — URL only. Darkroom will **not** start ComfyUI; model install actions are hidden. The remote process must use `--listen` (e.g. `--listen 0.0.0.0`).
-
-Then it downloads **TAESD** decoders (local mode) and **tag CSVs**, and writes `.env`.
-
-## Development
-
-```bash
-npm install
-npm run dev
-```
-
-- UI (Vite): http://localhost:5173  
-- API: http://localhost:3001  
-
-```bash
-npm run build
-npm start
-```
-
-```bash
-npm run typecheck
-npm run lint
-```
-
-Mock ComfyUI for API smoke tests only:
-
-```bash
-MOCK=true npm run mock:comfy
-```
+- **Doctor** (launcher menu) checks every component and offers repairs.
+- **Diagnostics** shows your system, GPU, and paths; **Preferences → Advanced → Diagnostics** in the web UI copies a report with recent logs.
+- Logs live in `logs/` (`comfyui.log`, `server.log`, and per-operation logs in `logs/ops/`).
 
 ## Configuration
 
-Copy [`.env.example`](.env.example) or let the wizard write `.env` (never commit `.env`).
+The setup wizard writes `.env` (see [`.env.example`](.env.example)); you rarely need to edit it.
 
 | Variable | Meaning |
 |----------|---------|
 | `PORT` | Darkroom server port (default `3001`) |
 | `COMFY_URL` | ComfyUI base URL |
-| `COMFY_MODE` | `local` or `remote` |
-| `COMFY_DIR` | Local ComfyUI / portable root |
+| `COMFY_MODE` | `local` (Darkroom starts ComfyUI) or `remote` |
+| `COMFY_DIR` | Local ComfyUI / Windows portable root |
 | `COMFY_PYTHON` | Optional Python override |
-| `CIVITAI_TOKEN` | Optional Civitai downloads |
+| `CIVITAI_TOKEN` / `HF_TOKEN` | Optional tokens for gated or early-access downloads |
 
-## Features
+Most other options live in the web UI under **Preferences**.
 
-- Prompt / negative with family-aware tag autocomplete
-- Checkpoint + style presets (family → style → checkpoint → user)
-- Aspect presets, seed, batch, live progress / preview
-- History gallery
-- One-click menu: start/stop, model install & download, custom nodes, updates, diagnostics
+## Development
+
+Requires Node.js 22.
+
+```bash
+npm install
+npm run dev        # UI on http://localhost:5173, API on http://localhost:3001
+npm run typecheck
+npm run lint
+```
+
+`npm run build && npm start` serves the production build. A minimal fake ComfyUI for API smoke tests: `MOCK=true npm run mock:comfy`.
 
 ## License
 
-MIT License
-
-Copyright (c) 2026 etavak
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MIT — see [LICENSE](LICENSE).

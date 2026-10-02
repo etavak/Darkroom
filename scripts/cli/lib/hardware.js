@@ -1,5 +1,4 @@
 import { spawnSync } from 'node:child_process';
-import os from 'node:os';
 
 /**
  * @returns {'apple_silicon' | 'intel_mac' | 'nvidia' | 'cpu'}
@@ -26,9 +25,6 @@ export function isIntelMac() {
   return process.platform === 'darwin' && process.arch !== 'arm64';
 }
 
-export function isAppleSilicon() {
-  return process.platform === 'darwin' && process.arch === 'arm64';
-}
 
 /** Human-readable generation backend note for install prompts */
 export function accelInstallNote() {
@@ -43,8 +39,4 @@ export function accelInstallNote() {
     default:
       return 'No NVIDIA GPU detected — PyTorch CPU build will be installed.';
   }
-}
-
-export function hostLabel() {
-  return `${os.type()} ${os.release()} (${process.arch})`;
 }

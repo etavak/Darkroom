@@ -13,6 +13,10 @@ export const SAMPLERS = [
   'dpmpp_2m_sde',
   'ddim',
   'uni_pc',
+  'euler_cfg_pp',
+  'dpmpp_2m_sde_gpu',
+  'dpmpp_3m_sde',
+  'lcm',
 ] as const;
 
 export const SCHEDULERS = [
@@ -22,6 +26,9 @@ export const SCHEDULERS = [
   'sgm_uniform',
   'simple',
   'ddim_uniform',
+  'beta',
+  'linear_quadratic',
+  'kl_optimal',
 ] as const;
 
 export type SamplerName = (typeof SAMPLERS)[number];

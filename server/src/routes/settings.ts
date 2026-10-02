@@ -21,6 +21,11 @@ import {
 
 export const settingsRouter = Router();
 
+/** Settings as sent to browsers: secrets are write-only (a flag says one is saved). */
+function publicSettings(settings: ServerSettings) {
+  return { ...settings, enhanceApiKey: '', enhanceApiKeySet: Boolean(settings.enhanceApiKey) };
+}
+
 settingsRouter.get('/preview', (_req, res) => {
   res.json({
     supportsPerPromptPreview: supportsPerPromptPreviewMethod(),
@@ -54,7 +59,7 @@ settingsRouter.put('/preview', (req, res) => {
 settingsRouter.get('/', (_req, res) => {
   const settings = loadServerSettings();
   res.json({
-    settings,
+    settings: publicSettings(settings),
     diskUsage: getDiskUsage(),
     hints: settingsHints(settings),
   });
@@ -65,7 +70,7 @@ settingsRouter.put('/', (req, res) => {
     const body = (req.body ?? {}) as Partial<ServerSettings>;
     const settings = saveServerSettings(body);
     res.json({
-      settings,
+      settings: publicSettings(settings),
       diskUsage: getDiskUsage(),
       hints: settingsHints(settings),
     });
@@ -136,7 +141,7 @@ settingsRouter.get('/diagnostics', async (_req, res) => {
     }
   }
 
-  res.json({ text: lines.join('\n'), diskUsage: disk, settings });
+  res.json({ text: lines.join('\n'), diskUsage: disk, settings: publicSettings(settings) });
 });
 
 function formatBytes(n: number): string {

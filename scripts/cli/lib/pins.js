@@ -11,22 +11,3 @@ export function loadPins() {
   cached = JSON.parse(raw);
   return /** @type {Record<string, any>} */ (cached);
 }
-
-export function reloadPins() {
-  cached = null;
-  return loadPins();
-}
-
-/**
- * @param {string} key dotted path e.g. "node.tested"
- */
-export function getPin(key) {
-  const pins = loadPins();
-  const parts = key.split('.');
-  let cur = pins;
-  for (const p of parts) {
-    if (cur == null || typeof cur !== 'object') return undefined;
-    cur = cur[p];
-  }
-  return cur;
-}

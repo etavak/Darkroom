@@ -104,14 +104,3 @@ export async function applyKontextEdit(ctx: PipelineContext): Promise<void> {
   ctx.image = [decoded, 0];
   ensureSave(ctx);
 }
-
-export async function canRunKontextEdit(): Promise<boolean> {
-  const objectInfo = await loadObjectInfo();
-  return (
-    hasNodeClass(objectInfo, ['LoadImage']) &&
-    hasNodeClass(objectInfo, ['VAEEncode']) &&
-    hasNodeClass(objectInfo, ['KSampler']) &&
-    (hasNodeClass(objectInfo, ['ReferenceLatent']) ||
-      hasNodeClass(objectInfo, ['InstructPix2PixConditioning']))
-  );
-}

@@ -9,7 +9,7 @@ import {
   configureRemote,
   installEverything,
 } from '../components/orchestrator.js';
-import { normalizeDraggedPath } from './installFlow.js';
+import { normalizeDraggedPath } from '../lib/models.js';
 
 /**
  * First-run wizard when .env is missing — thin chooser over component modules.

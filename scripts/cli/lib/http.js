@@ -6,14 +6,6 @@ export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function parseUrl(raw, fallback = 'http://127.0.0.1:8188') {
-  try {
-    return new URL(raw);
-  } catch {
-    return new URL(fallback);
-  }
-}
-
 export function httpGetOk(url, timeoutMs = 3000) {
   return new Promise((resolve) => {
     let lib;
@@ -33,15 +25,6 @@ export function httpGetOk(url, timeoutMs = 3000) {
       resolve(false);
     });
   });
-}
-
-export async function waitForUrl(url, timeoutMs, label = 'service') {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await httpGetOk(url)) return;
-    await sleep(1000);
-  }
-  throw new Error(`${label} did not become ready within ${Math.round(timeoutMs / 1000)}s (${url})`);
 }
 
 /**

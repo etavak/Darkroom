@@ -1688,6 +1688,8 @@ export default function App() {
             guidance: familyMeta?.settings.guidance,
             clipSkip: familyMeta?.settings.clipSkip,
           }}
+          samplerOptions={catalog.samplers}
+          schedulerOptions={catalog.schedulers}
           showGuidance={typeof guidance === 'number'}
           showClipSkip={typeof clipSkip === 'number'}
           onStepsChange={setSteps}

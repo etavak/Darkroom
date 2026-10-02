@@ -14,6 +14,8 @@ const EMPTY: ModelCatalog = {
   clip_types: [],
   dual_clip_types: [],
   detailer_detectors: [],
+  samplers: [],
+  schedulers: [],
   available: {
     checkpoint: false,
     unet: false,

@@ -12,7 +12,9 @@ export type ServerSettings = {
   safeMode: boolean;
   wildcardsFolder: string;
   enhanceApiUrl: string;
+  /** Write-only: the server always returns '' — see enhanceApiKeySet */
   enhanceApiKey: string;
+  enhanceApiKeySet?: boolean;
   enhanceModel: string;
   embedPngMetadata: boolean;
   vramMode: VramMode;

@@ -6,7 +6,10 @@ import type { CheckpointMapping, CheckpointsFile, FamilyDef } from './types.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const presetsRoot = path.resolve(__dirname, '../../presets');
 export const familiesDir = path.join(presetsRoot, 'families');
+/** Shipped default mappings for well-known filenames (read-only at runtime). */
 export const checkpointsPath = path.join(presetsRoot, 'checkpoints.json');
+/** The user's own filename → family mappings (survives updates). */
+export const userCheckpointsPath = path.resolve(__dirname, '../../data/checkpoints.json');
 
 function isFamilyDef(v: unknown): v is FamilyDef {
   if (!v || typeof v !== 'object') return false;
@@ -22,6 +25,7 @@ function isFamilyDef(v: unknown): v is FamilyDef {
 
 let familyCache: FamilyDef[] | null = null;
 let mappingCache: CheckpointsFile | null = null;
+let mappingCacheKey = '';
 
 export function invalidatePresetCache(): void {
   familyCache = null;
@@ -56,18 +60,40 @@ export function getFamily(id: string): FamilyDef | null {
   return listFamilies().find((f) => f.id === id) ?? null;
 }
 
-function readCheckpointsFile(): CheckpointsFile {
-  if (mappingCache) return mappingCache;
-  if (!fs.existsSync(checkpointsPath)) {
-    mappingCache = { mappings: {} };
-    return mappingCache;
-  }
+function readMappingsAt(file: string): CheckpointsFile['mappings'] {
   try {
-    const raw = JSON.parse(fs.readFileSync(checkpointsPath, 'utf8')) as CheckpointsFile;
-    mappingCache = { mappings: raw.mappings ?? {} };
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as CheckpointsFile;
+    return raw.mappings ?? {};
   } catch {
-    mappingCache = { mappings: {} };
+    return {};
   }
+}
+
+/**
+ * Older builds wrote user mappings into the shipped presets file. Copy it once
+ * into server/data so those mappings survive updates that replace presets/.
+ */
+function migrateUserMappings(): void {
+  if (fs.existsSync(userCheckpointsPath) || !fs.existsSync(checkpointsPath)) return;
+  fs.mkdirSync(path.dirname(userCheckpointsPath), { recursive: true });
+  fs.writeFileSync(
+    userCheckpointsPath,
+    JSON.stringify({ mappings: readMappingsAt(checkpointsPath) }, null, 2) + '\n',
+    'utf8',
+  );
+}
+
+/** Shipped defaults (presets/) overlaid with the user's own mappings (data/). */
+function readCheckpointsFile(): CheckpointsFile {
+  migrateUserMappings();
+  const mtime = (f: string) => (fs.existsSync(f) ? fs.statSync(f).mtimeMs : 0);
+  // The CLI edits the user file too — reload when either file changes on disk
+  const key = `${mtime(checkpointsPath)}:${mtime(userCheckpointsPath)}`;
+  if (mappingCache && mappingCacheKey === key) return mappingCache;
+  mappingCache = {
+    mappings: { ...readMappingsAt(checkpointsPath), ...readMappingsAt(userCheckpointsPath) },
+  };
+  mappingCacheKey = key;
   return mappingCache;
 }
 
@@ -88,15 +114,12 @@ export function saveCheckpointMapping(
   if (!getFamily(mapping.family)) {
     throw new Error(`Unknown family: ${mapping.family}`);
   }
-  const file = readCheckpointsFile();
+  migrateUserMappings();
   const next: CheckpointsFile = {
-    mappings: {
-      ...file.mappings,
-      [filename]: mapping,
-    },
+    mappings: { ...readMappingsAt(userCheckpointsPath), [filename]: mapping },
   };
-  fs.mkdirSync(presetsRoot, { recursive: true });
-  fs.writeFileSync(checkpointsPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
-  mappingCache = next;
+  fs.mkdirSync(path.dirname(userCheckpointsPath), { recursive: true });
+  fs.writeFileSync(userCheckpointsPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  mappingCache = null;
   return mapping;
 }

@@ -20,11 +20,6 @@ export type GenerateResult = {
 
 export type PreviewMethod = 'latent2rgb' | 'taesd' | 'none' | 'auto';
 
-const pendingJobs = new Map<
-  string,
-  { jobId: string; clientId: string; settings: GenerationSettings }
->();
-
 function asObject(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
@@ -277,12 +272,6 @@ export async function startGeneration(
     parentId: resolved.parentId,
   });
 
-  pendingJobs.set(queued.prompt_id, {
-    jobId: record.id,
-    clientId,
-    settings: resolved,
-  });
-
   void watchAndPersist(record.id, queued.prompt_id, resolved);
 
   return {
@@ -337,10 +326,7 @@ async function watchAndPersist(
   let missingFor = 0;
   let unreachableFor = 0;
   let persistErrors = 0;
-  const fail = (message: string) => {
-    history.markFailed(jobId, message);
-    pendingJobs.delete(promptId);
-  };
+  const fail = (message: string) => history.markFailed(jobId, message);
 
   for (;;) {
     await sleep(1000);
@@ -348,8 +334,7 @@ async function watchAndPersist(
     touchActivity();
     // Cancelled (or otherwise finalized) elsewhere — stop watching
     if (history.getGeneration(jobId)?.status !== 'pending') {
-      pendingJobs.delete(promptId);
-      return;
+        return;
     }
     try {
       const entry = await comfy.getHistory(promptId);
@@ -406,8 +391,7 @@ async function watchAndPersist(
       }
 
       history.markCompleted(jobId, saved);
-      pendingJobs.delete(promptId);
-      return;
+        return;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to persist generation';
       // Network-level failure: ComfyUI down or restarting — tolerate for a while
@@ -429,19 +413,10 @@ async function watchAndPersist(
 /** Re-attach watchers to jobs left pending by a previous server process. */
 export function resumePendingJobs(): void {
   for (const job of history.listPendingGenerations()) {
-    pendingJobs.set(job.promptId, {
-      jobId: job.id,
-      clientId: job.clientId,
-      settings: job.settings,
-    });
     void watchAndPersist(job.id, job.promptId, job.settings);
   }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function getPendingJob(promptId: string) {
-  return pendingJobs.get(promptId);
 }

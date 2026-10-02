@@ -1,6 +1,5 @@
 import { ensureSave, type PipelineContext } from '../graph.js';
 import {
-  hasNodeClass,
   loadObjectInfo,
   requireNodeClass,
   resolveNodeClass,
@@ -90,14 +89,4 @@ export async function applyQwenEdit(ctx: PipelineContext): Promise<void> {
   });
   ctx.image = [decoded, 0];
   ensureSave(ctx);
-}
-
-export async function canRunQwenEdit(): Promise<boolean> {
-  const objectInfo = await loadObjectInfo();
-  return (
-    hasNodeClass(objectInfo, ['LoadImage']) &&
-    hasNodeClass(objectInfo, ['TextEncodeQwenImageEdit', 'CLIPTextEncode']) &&
-    hasNodeClass(objectInfo, ['VAEEncode']) &&
-    hasNodeClass(objectInfo, ['KSampler'])
-  );
 }

@@ -72,6 +72,8 @@ export type FamilyDef = TagLayer & {
   supportsEdit?: boolean;
   /** Which edit graph strategy to use when supportsEdit */
   editStrategy?: 'kontext' | 'qwen';
+  /** Force ComfyUI ModelSamplingDiscrete (e.g. v-prediction checkpoints that lack auto-detect keys) */
+  modelSampling?: { sampling: 'eps' | 'v_prediction'; zsnr?: boolean };
   /** Preferred inpaint / fill model filename hint for outpaint */
   preferredInpaintModel?: string;
   styles: Record<string, StyleDef>;

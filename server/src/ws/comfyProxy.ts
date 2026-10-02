@@ -2,6 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket } from 'ws';
 import { config } from '../config.js';
+import { isAllowedHost, isAuthorized, isSameOrigin } from '../services/lanAuth.js';
 
 type ClientState = {
   previewEnabled: boolean;
@@ -19,6 +20,12 @@ export function attachComfyWsProxy(server: import('node:http').Server): WebSocke
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     if (url.pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    // Same checks as the HTTP API: this machine's host, same-origin page, PIN for other devices
+    if (!isAllowedHost(req.headers.host) || !isSameOrigin(req) || !isAuthorized(req)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }

@@ -10,6 +10,24 @@ import type {
 } from '../types/generation';
 import type { FamilySummary, ResolvedPresets, TagSuggestion } from '../types/presets';
 
+/** Fired when the server wants the LAN PIN (another device, or the PIN was regenerated). */
+export const AUTH_REQUIRED_EVENT = 'darkroom:auth-required';
+
+/** Throw the server's error message; signal the PIN screen on auth_required. */
+async function throwForResponse(res: Response): Promise<never> {
+  let message = res.statusText;
+  try {
+    const body = (await res.json()) as { error?: string };
+    if (body.error) message = body.error;
+  } catch {
+    // ignore
+  }
+  if (res.status === 401 && message === 'auth_required') {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+  }
+  throw new Error(message);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -18,22 +36,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) await throwForResponse(res);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
-export function fetchCheckpoints(): Promise<{ checkpoints: string[] }> {
-  return request('/api/checkpoints');
+export type AuthStatus = { local: boolean; authorized: boolean };
+
+export function fetchAuthStatus(): Promise<AuthStatus> {
+  return request('/api/auth/status');
+}
+
+export function submitLanPin(pin: string): Promise<{ ok: boolean }> {
+  return request('/api/auth/pin', { method: 'POST', body: JSON.stringify({ pin }) });
+}
+
+export type LanAccessInfo = { pin: string; urls: string[] };
+
+/** PIN + LAN URLs; only answers on the computer running Darkroom. */
+export function fetchLanAccess(): Promise<LanAccessInfo> {
+  return request('/api/auth/lan');
+}
+
+export function regenerateLanPin(): Promise<LanAccessInfo> {
+  return request('/api/auth/lan/regenerate', { method: 'POST', body: '{}' });
 }
 
 export function fetchModels(): Promise<ModelCatalog> {
@@ -75,16 +101,7 @@ export async function uploadModelFileApi(file: File): Promise<ModelInstallJob> {
     headers: { 'Content-Type': 'application/octet-stream' },
     body: file,
   });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) await throwForResponse(res);
   return (await res.json()) as ModelInstallJob;
 }
 
@@ -329,10 +346,6 @@ export function fetchWildcards(): Promise<{
   return request('/api/prompt/wildcards');
 }
 
-export function fetchWildcardContent(relative: string): Promise<{ options: string[]; text: string }> {
-  return request(`/api/prompt/wildcards/content?path=${encodeURIComponent(relative)}`);
-}
-
 export function enhancePromptApi(prompt: string): Promise<{ prompt: string }> {
   return request('/api/prompt/enhance', {
     method: 'POST',
@@ -356,16 +369,7 @@ export async function uploadSourceApi(file: File): Promise<SourceUploadResult> {
     },
     body: file,
   });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) await throwForResponse(res);
   return (await res.json()) as SourceUploadResult;
 }
 

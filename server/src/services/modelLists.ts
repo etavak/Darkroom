@@ -14,6 +14,9 @@ export type ModelCatalog = {
   dual_clip_types: string[];
   /** Ultralytics / Impact Pack detector model names when available */
   detailer_detectors: string[];
+  /** KSampler sampler_name / scheduler combos from this ComfyUI build */
+  samplers: string[];
+  schedulers: string[];
   available: {
     checkpoint: boolean;
     unet: boolean;
@@ -99,6 +102,8 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
       ...comboList(info, 'UltralyticsDetectorProvider', 'model_name'),
       ...comboList(info, 'ONNXDetectorProvider', 'model_name'),
     ]),
+    samplers: comboList(info, 'KSampler', 'sampler_name'),
+    schedulers: comboList(info, 'KSampler', 'scheduler'),
     available: {
       checkpoint: hasNode(info, 'CheckpointLoaderSimple'),
       unet: hasNode(info, 'UNETLoader'),

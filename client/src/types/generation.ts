@@ -141,6 +141,8 @@ export type ModelCatalog = {
   clip_types: string[];
   dual_clip_types: string[];
   detailer_detectors?: string[];
+  samplers?: string[];
+  schedulers?: string[];
   available: {
     checkpoint: boolean;
     unet: boolean;

@@ -1,6 +1,7 @@
 import * as p from '@clack/prompts';
 import { ensureComfyRunning } from '../lib/comfy.js';
 import { getConfig } from '../lib/env.js';
+import { httpGetJson } from '../lib/http.js';
 import { openBrowser } from '../lib/process.js';
 import { ensureServerRunning } from '../lib/server.js';
 import { listLanUrls } from '../lib/status.js';
@@ -45,16 +46,32 @@ export async function startStack(opts = {}) {
     p.log.success(`Server listening at ${cfg.appUrl}`);
   }
 
+  const lans = listLanUrls(cfg.port);
+  const pin = await fetchLanPin(cfg.appUrl);
   if (printLan) {
-    const lans = listLanUrls(cfg.port);
     if (lans.length === 0) {
       p.log.warn('No LAN IPv4 addresses found');
     } else {
-      p.note(lans.join('\n'), 'LAN URL (other devices)');
+      p.note(
+        [...lans, '', pin ? `PIN: ${pin}` : 'PIN: see Preferences → Network'].join('\n'),
+        'Other devices on your network',
+      );
     }
+  } else if (lans.length && pin) {
+    p.log.info(`Phone / tablet: ${lans[0]} · PIN ${pin}`);
   }
 
   p.log.info('Processes keep running in the background. Use “Stop everything” to shut them down.');
+}
+
+/** The server only reveals the LAN PIN to requests from this computer. */
+async function fetchLanPin(appUrl) {
+  try {
+    const res = await httpGetJson(`${appUrl}/api/auth/lan`, { timeoutMs: 5000 });
+    return res.status === 200 && typeof res.json?.pin === 'string' ? res.json.pin : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function startDarkroom() {

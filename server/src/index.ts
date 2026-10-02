@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
 import './db/index.js';
 import { pingComfy } from './services/comfyClient.js';
 import { resumePendingJobs } from './services/generation.js';
-import { checkpointsRouter } from './routes/checkpoints.js';
+import { isAllowedHost, isAuthorized, isSameOrigin } from './services/lanAuth.js';
+import { authRouter } from './routes/auth.js';
 import { generateRouter } from './routes/generate.js';
 import { historyRouter } from './routes/history.js';
 import { imagesRouter } from './routes/images.js';
@@ -22,8 +22,34 @@ import { loadAllTagDictionaries } from './tags/dictionary.js';
 import { attachComfyWsProxy } from './ws/comfyProxy.js';
 
 const app = express();
-app.use(cors());
+
+// Only answer to this machine's names/IPs (blocks DNS-rebinding pages)
+app.use((req, res, next) => {
+  if (!isAllowedHost(req.headers.host)) {
+    res.status(403).send('Forbidden host');
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '2mb' }));
+
+// Same-origin writes only; other devices need the LAN PIN (see services/lanAuth.ts)
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !isSameOrigin(req)) {
+    res.status(403).json({ error: 'Cross-site request blocked' });
+    return;
+  }
+  if (req.path === '/health' || req.path.startsWith('/auth/')) {
+    next();
+    return;
+  }
+  if (!isAuthorized(req)) {
+    res.status(401).json({ error: 'auth_required' });
+    return;
+  }
+  next();
+});
 
 app.get('/api/health', async (_req, res) => {
   const comfyOk = await pingComfy();
@@ -36,7 +62,7 @@ app.get('/api/health', async (_req, res) => {
   });
 });
 
-app.use('/api/checkpoints', checkpointsRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/models', modelsRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/history', historyRouter);

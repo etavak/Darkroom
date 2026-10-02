@@ -13,9 +13,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Keep the browser's Host so the server's same-origin check sees localhost:5173 on both sides
       '/api': {
         target: 'http://127.0.0.1:3001',
-        changeOrigin: true,
+        changeOrigin: false,
       },
       '/ws': {
         target: 'ws://127.0.0.1:3001',

@@ -109,13 +109,6 @@ export function getGeneration(id: string): GenerationDto | null {
   return row ? rowToDto(row) : null;
 }
 
-export function getGenerationByPromptId(promptId: string): GenerationDto | null {
-  const row = db.prepare(`SELECT * FROM generations WHERE prompt_id = ?`).get(promptId) as
-    | GenerationRow
-    | undefined;
-  return row ? rowToDto(row) : null;
-}
-
 export function markCompleted(id: string, imagePaths: string[]): GenerationDto | null {
   const completedAt = Date.now();
   db.prepare(

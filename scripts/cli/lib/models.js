@@ -1,7 +1,9 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   checkpointsPath,
+  userCheckpointsPath,
   familiesDir,
   MODEL_SUBDIRS,
   modelDirForType,
@@ -39,13 +41,36 @@ export function listFamilies() {
     .filter(Boolean);
 }
 
-export function readCheckpointMappings() {
+/** @param {string} file */
+function readMappingsAt(file) {
   try {
-    if (!fs.existsSync(checkpointsPath)) return { mappings: {} };
-    return JSON.parse(fs.readFileSync(checkpointsPath, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8')).mappings || {};
   } catch {
-    return { mappings: {} };
+    return {};
   }
+}
+
+/** @param {Record<string, unknown>} mappings */
+function writeUserMappings(mappings) {
+  fs.mkdirSync(path.dirname(userCheckpointsPath), { recursive: true });
+  fs.writeFileSync(userCheckpointsPath, JSON.stringify({ mappings }, null, 2) + '\n', 'utf8');
+}
+
+/**
+ * Older builds wrote user mappings into the shipped presets file. Copy it once
+ * into server/data so those mappings survive updates that replace presets/.
+ */
+export function migrateUserMappings() {
+  if (fs.existsSync(userCheckpointsPath) || !fs.existsSync(checkpointsPath)) return;
+  writeUserMappings(readMappingsAt(checkpointsPath));
+}
+
+/** Shipped defaults (presets/) overlaid with the user's own mappings (data/). */
+export function readCheckpointMappings() {
+  migrateUserMappings();
+  return {
+    mappings: { ...readMappingsAt(checkpointsPath), ...readMappingsAt(userCheckpointsPath) },
+  };
 }
 
 /**
@@ -53,22 +78,25 @@ export function readCheckpointMappings() {
  * @param {string} family
  */
 export function saveCheckpointFamily(filename, family) {
-  const data = readCheckpointMappings();
-  data.mappings = data.mappings || {};
-  const prev = data.mappings[filename] || {};
-  data.mappings[filename] = { ...prev, family };
-  fs.mkdirSync(path.dirname(checkpointsPath), { recursive: true });
-  fs.writeFileSync(checkpointsPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+  migrateUserMappings();
+  const user = readMappingsAt(userCheckpointsPath);
+  const prev = readCheckpointMappings().mappings[filename] || {};
+  writeUserMappings({ ...user, [filename]: { ...prev, family } });
 }
 
 /**
- * Strip quotes / file:// from dragged paths.
+ * Strip quotes / file:// from dragged paths, expand ~, and resolve to absolute.
  * @param {string} raw
  */
 export function normalizeDraggedPath(raw) {
-  let p = raw.trim();
+  let p = String(raw).trim();
   if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
     p = p.slice(1, -1);
+  }
+  // path.resolve('') would be the cwd — keep "no path" distinguishable
+  if (!p) return '';
+  if (p.startsWith('~')) {
+    p = path.join(os.homedir(), p.slice(1).replace(/^[\\/]/, ''));
   }
   if (p.startsWith('file://')) {
     try {
@@ -80,7 +108,7 @@ export function normalizeDraggedPath(raw) {
       p = p.replace(/^file:\/\//, '');
     }
   }
-  return p;
+  return path.resolve(p);
 }
 
 /**
@@ -219,12 +247,12 @@ export function renameModel(filePath, newName) {
     throw new Error(`Already exists: ${newName}`);
   }
   fs.renameSync(filePath, dest);
-  const mappings = readCheckpointMappings();
   const oldBase = path.basename(filePath);
-  if (mappings.mappings?.[oldBase]) {
-    mappings.mappings[newName] = mappings.mappings[oldBase];
-    delete mappings.mappings[oldBase];
-    fs.writeFileSync(checkpointsPath, JSON.stringify(mappings, null, 2) + '\n', 'utf8');
+  const mapping = readCheckpointMappings().mappings[oldBase];
+  if (mapping) {
+    const user = readMappingsAt(userCheckpointsPath);
+    delete user[oldBase];
+    writeUserMappings({ ...user, [newName]: mapping });
   }
   try {
     renameModelLink(filePath, dest, newName);
@@ -264,11 +292,12 @@ export function deleteModel(filePath) {
     }
   }
 
-  const mappings = readCheckpointMappings();
+  // Shipped defaults for well-known filenames stay; only the user's own mapping is removed
   const base = path.basename(filePath);
-  if (mappings.mappings?.[base]) {
-    delete mappings.mappings[base];
-    fs.writeFileSync(checkpointsPath, JSON.stringify(mappings, null, 2) + '\n', 'utf8');
+  const user = readMappingsAt(userCheckpointsPath);
+  if (user[base]) {
+    delete user[base];
+    writeUserMappings(user);
   }
 
   return { removedLinkOnly: Boolean(recorded || isLink) };

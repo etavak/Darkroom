@@ -12,7 +12,10 @@ export const opsLogDir = path.join(logsDir, 'ops');
 export const pidPath = path.join(logsDir, 'pids.json');
 export const clientDist = path.join(root, 'client', 'dist');
 export const serverEntry = path.join(root, 'server', 'dist', 'index.js');
+/** Shipped default filename → family mappings (read-only at runtime) */
 export const checkpointsPath = path.join(root, 'server', 'presets', 'checkpoints.json');
+/** The user's own mappings — kept under server/data so updates never touch them */
+export const userCheckpointsPath = path.join(root, 'server', 'data', 'checkpoints.json');
 export const familiesDir = path.join(root, 'server', 'presets', 'families');
 export const modelComponentsPath = path.join(root, 'server', 'presets', 'components.json');
 export const tagsDir = path.join(root, 'server', 'tags');
@@ -141,25 +144,6 @@ export function getPortableNodeBin() {
     }
   }
   return null;
-}
-
-/** npm next to portable node, or null */
-export function getPortableNpmBin() {
-  const nodeBin = getPortableNodeBin();
-  if (!nodeBin) return null;
-  if (process.platform === 'win32') {
-    const npmCmd = path.join(path.dirname(nodeBin), 'npm.cmd');
-    return fs.existsSync(npmCmd) ? npmCmd : null;
-  }
-  const npm = path.join(path.dirname(nodeBin), 'npm');
-  return fs.existsSync(npm) ? npm : null;
-}
-
-/** Best node to use: current process if >=22, else portable */
-export function getPreferredNodeBin() {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (major >= 22) return process.execPath;
-  return getPortableNodeBin() || process.execPath;
 }
 
 /**

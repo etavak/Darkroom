@@ -24,6 +24,9 @@ type Props = {
     guidance?: number;
     clipSkip?: number;
   };
+  /** Live KSampler lists from ComfyUI (fallback: built-in constants) */
+  samplerOptions?: string[];
+  schedulerOptions?: string[];
   showGuidance?: boolean;
   showClipSkip?: boolean;
   onStepsChange: (v: number) => void;
@@ -43,6 +46,8 @@ export function SamplerControls({
   guidance,
   clipSkip,
   defaults,
+  samplerOptions,
+  schedulerOptions,
   showGuidance,
   showClipSkip,
   onStepsChange,
@@ -53,6 +58,8 @@ export function SamplerControls({
   onClipSkipChange,
   disabled,
 }: Props) {
+  const samplers = withCurrent(samplerOptions?.length ? samplerOptions : SAMPLERS, sampler);
+  const schedulers = withCurrent(schedulerOptions?.length ? schedulerOptions : SCHEDULERS, scheduler);
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-2">
@@ -132,7 +139,7 @@ export function SamplerControls({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SAMPLERS.map((s) => (
+            {samplers.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}
               </SelectItem>
@@ -160,7 +167,7 @@ export function SamplerControls({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SCHEDULERS.map((s) => (
+            {schedulers.map((s) => (
               <SelectItem key={s} value={s}>
                 {s}
               </SelectItem>
@@ -170,4 +177,9 @@ export function SamplerControls({
       </div>
     </div>
   );
+}
+
+/** Keep the current value selectable even if this ComfyUI build doesn't list it. */
+function withCurrent(options: readonly string[], current: string): string[] {
+  return current && !options.includes(current) ? [...options, current] : [...options];
 }

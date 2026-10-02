@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import * as p from '@clack/prompts';
 import { getConfig } from '../lib/env.js';
 import { getServiceStatus } from '../lib/status.js';
-import { readNvidiaSmi, readSystemSummary } from '../lib/update.js';
+import { readNvidiaSmi, readSystemSummary } from '../lib/sysinfo.js';
 import { getComfyPython, getComfyUiRoot, getModelsRoot } from '../lib/paths.js';
 
 function readAppleSiliconInfo() {

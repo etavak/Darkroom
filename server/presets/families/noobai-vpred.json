@@ -12,6 +12,10 @@
   "promptMaxTokens": 75,
   "supportsGguf": false,
   "loaderKind": "checkpoint",
+  "modelSampling": {
+    "sampling": "v_prediction",
+    "zsnr": true
+  },
   "requiredComponents": {},
   "filenameHints": {},
   "positive": [

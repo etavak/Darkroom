@@ -36,36 +36,6 @@ promptRouter.get('/wildcards', (_req, res) => {
   res.json({ folder, items: listWildcardFiles(folder) });
 });
 
-promptRouter.get('/wildcards/content', (req, res) => {
-  const settings = loadServerSettings();
-  const folder = settings.wildcardsFolder?.trim() ?? '';
-  const rel = typeof req.query.path === 'string' ? req.query.path : '';
-  if (!folder || !rel || rel.includes('..') || path.isAbsolute(rel)) {
-    res.status(400).json({ error: 'Invalid wildcard path' });
-    return;
-  }
-  const full = path.join(folder, rel);
-  const resolved = path.resolve(full);
-  if (!resolved.startsWith(path.resolve(folder))) {
-    res.status(400).json({ error: 'Invalid wildcard path' });
-    return;
-  }
-  try {
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
-      res.status(404).json({ error: 'Not found' });
-      return;
-    }
-    const text = fs.readFileSync(resolved, 'utf8');
-    const options = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
-    res.json({ options, text });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Read failed' });
-  }
-});
-
 promptRouter.post('/enhance', async (req, res) => {
   const settings = loadServerSettings();
   const endpoint = settings.enhanceApiUrl?.trim() ?? '';

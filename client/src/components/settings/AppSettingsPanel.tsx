@@ -51,6 +51,7 @@ import type {
   VramMode,
 } from '@/types/serverSettings';
 import { cn } from '@/lib/utils';
+import { fetchLanAccess, regenerateLanPin, type LanAccessInfo } from '@/lib/api';
 
 export type PrefCategory =
   | 'general'
@@ -184,6 +185,15 @@ export function AppSettingsPanel({
   const [diagFlash, setDiagFlash] = useState<string | null>(null);
   const [backupFlash, setBackupFlash] = useState<string | null>(null);
   const [foldersText, setFoldersText] = useState(server.extraModelFolders.join('\n'));
+  const [keyDraft, setKeyDraft] = useState('');
+  const [lan, setLan] = useState<LanAccessInfo | null>(null);
+
+  // PIN + URLs only answer on the computer running Darkroom (403 elsewhere)
+  useEffect(() => {
+    fetchLanAccess()
+      .then(setLan)
+      .catch(() => setLan(null));
+  }, []);
 
   useEffect(() => {
     setFoldersText(server.extraModelFolders.join('\n'));
@@ -694,14 +704,33 @@ export function AppSettingsPanel({
         keywords: ['openai', 'llm', 'prompt'],
         icon: <Shield />,
         control: (
-          <Input
-            id="enhance-api-key"
-            type="password"
-            className="h-8 w-[12rem] text-xs"
-            placeholder="sk-…"
-            value={server.enhanceApiKey}
-            onChange={(e) => void onServerPatch({ enhanceApiKey: e.target.value })}
-          />
+          <div className="flex items-center gap-1">
+            {/* Write-only: the saved key never comes back to the browser */}
+            <Input
+              id="enhance-api-key"
+              type="password"
+              className="h-8 w-[12rem] text-xs"
+              placeholder={server.enhanceApiKeySet ? 'Saved — type to replace' : 'sk-…'}
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              onBlur={() => {
+                if (!keyDraft.trim()) return;
+                void onServerPatch({ enhanceApiKey: keyDraft.trim() });
+                setKeyDraft('');
+              }}
+            />
+            {server.enhanceApiKeySet ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs"
+                onClick={() => void onServerPatch({ enhanceApiKey: '' })}
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
         ),
       },
       {
@@ -735,6 +764,38 @@ export function AppSettingsPanel({
         icon: <Network />,
         control: (
           <span className="text-[11px] text-muted-foreground">Configured at launch</span>
+        ),
+      },
+
+      {
+        id: 'lan-access',
+        category: 'network',
+        scope: 'server',
+        label: 'Other devices',
+        description: lan
+          ? `Open ${lan.urls[0] ?? 'this computer\'s address'} on your phone or tablet and enter this PIN. Regenerating signs every device out.`
+          : 'Shown only on the computer running Darkroom.',
+        keywords: ['pin', 'phone', 'tablet', 'lan', 'wifi', 'remote', 'password'],
+        icon: <Shield />,
+        control: lan ? (
+          <div className="flex items-center gap-2">
+            <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-sm tracking-[0.2em]">
+              {lan.pin}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (!window.confirm('Make a new PIN? Phones and tablets will need to enter it again.')) return;
+                void regenerateLanPin().then(setLan).catch(() => {});
+              }}
+            >
+              Regenerate
+            </Button>
+          </div>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">—</span>
         ),
       },
 
@@ -894,6 +955,8 @@ export function AppSettingsPanel({
     backupFlash,
     diagFlash,
     foldersText,
+    keyDraft,
+    lan,
     onLivePreviewChange,
     onPreviewQualityChange,
     onBackupNow,

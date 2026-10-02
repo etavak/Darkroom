@@ -1,3 +1,4 @@
+import { getCheckpointMapping, getFamily } from '../../presets/catalog.js';
 import { ensureSave, type PipelineContext, WorkflowGraph } from '../graph.js';
 import type { WorkflowModule } from '../types.js';
 
@@ -92,6 +93,19 @@ export const baseModule: WorkflowModule & {
         const vae = graph.add('VAELoader', { vae_name: settings.vaeName });
         ctx.vae = [vae, 0];
       }
+    }
+
+    // Family-declared sampling (v-pred / zsnr) for checkpoints ComfyUI can't auto-detect
+    const familyId =
+      settings.familyId ?? getCheckpointMapping(settings.unet || settings.checkpoint)?.family;
+    const sampling = familyId ? getFamily(familyId)?.modelSampling : undefined;
+    if (sampling) {
+      const node = graph.add('ModelSamplingDiscrete', {
+        model: ctx.model,
+        sampling: sampling.sampling,
+        zsnr: Boolean(sampling.zsnr),
+      });
+      ctx.model = [node, 0];
     }
   },
 
