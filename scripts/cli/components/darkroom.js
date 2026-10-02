@@ -2,13 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as p from '@clack/prompts';
 import { withOpLog } from '../lib/opLog.js';
-import {
-  getGitBin,
-  getPortableNpmBin,
-  getPreferredNodeBin,
-  root,
-} from '../lib/paths.js';
-import { runCommand } from '../lib/process.js';
+import { getGitBin, root } from '../lib/paths.js';
+import { runCommand, runNpm } from '../lib/process.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
 import { defaultConfirm } from './types.js';
 
@@ -47,19 +42,23 @@ export const darkroomComponent = {
 
   async install() {
     await withOpLog('darkroom', 'install', async (log) => {
-      const npm = getPortableNpmBin() || (process.platform === 'win32' ? 'npm.cmd' : 'npm');
+      // Always use the same Node/npm as this CLI process (portable 22), never PATH npm.
       const hasLock = fs.existsSync(path.join(root, 'package-lock.json'));
       p.log.step(hasLock ? 'npm ci…' : 'npm install…');
+      const npmEnv = { ...process.env, npm_config_engine_strict: 'false' };
       try {
-        await runCommand(npm, hasLock ? ['ci'] : ['install'], {
+        await runNpm(hasLock ? ['ci'] : ['install'], {
           cwd: root,
           stdio: 'inherit',
-          env: { ...process.env, npm_config_engine_strict: 'false' },
+          env: npmEnv,
         });
       } catch {
-        await runCommand(npm, ['install'], { cwd: root, stdio: 'inherit' });
+        await runNpm(['install'], { cwd: root, stdio: 'inherit', env: npmEnv });
       }
-      log.info(`node=${getPreferredNodeBin()}`);
+      // npm may fetch prebuilds for the wrong ABI if PATH is polluted; force local rebuild.
+      p.log.step('Rebuilding native modules…');
+      await runNpm(['rebuild', 'better-sqlite3'], { cwd: root, stdio: 'inherit' });
+      log.info(`node=${process.execPath} (${process.version})`);
     });
   },
 
