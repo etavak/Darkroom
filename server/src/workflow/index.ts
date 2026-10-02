@@ -1,6 +1,7 @@
 export { buildWorkflow } from './builder.js';
 export type {
   GenerationSettings,
+  ModelLoadMode,
   ComfyPrompt,
   LoraSettings,
   ControlNetSettings,

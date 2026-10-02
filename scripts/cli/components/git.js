@@ -89,6 +89,8 @@ async function installMinGit(log) {
 export const gitComponent = {
   id: 'git',
   name: 'Git',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     const ver = gitVersion();

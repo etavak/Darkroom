@@ -1,4 +1,13 @@
-import type { GenerationRecord, GenerationSettings, GenerateResponse } from '../types/generation';
+import type {
+  DependencyAnalysis,
+  DependencyPlan,
+  GenerationRecord,
+  GenerationSettings,
+  GenerateResponse,
+  ModelCatalog,
+  ModelInstallJob,
+  SystemStatsSummary,
+} from '../types/generation';
 import type { FamilySummary, ResolvedPresets, TagSuggestion } from '../types/presets';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -25,6 +34,145 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function fetchCheckpoints(): Promise<{ checkpoints: string[] }> {
   return request('/api/checkpoints');
+}
+
+export function fetchModels(): Promise<ModelCatalog> {
+  return request('/api/models');
+}
+
+export function fetchSystemStats(): Promise<SystemStatsSummary> {
+  return request('/api/models/system');
+}
+
+export function fetchModelTypes(): Promise<{ types: Array<{ value: string; label: string }> }> {
+  return request('/api/models/types');
+}
+
+export function resolveModelUrlApi(url: string): Promise<ModelInstallJob> {
+  return request('/api/models/resolve', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+}
+
+export function startModelDownloadApi(
+  jobId: string,
+  candidatePath?: string,
+): Promise<ModelInstallJob> {
+  return request('/api/models/download', {
+    method: 'POST',
+    body: JSON.stringify({ jobId, candidatePath }),
+  });
+}
+
+export function fetchModelJob(jobId: string): Promise<ModelInstallJob> {
+  return request(`/api/models/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function uploadModelFileApi(file: File): Promise<ModelInstallJob> {
+  const res = await fetch(`/api/models/upload?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as ModelInstallJob;
+}
+
+export function detectModelPathApi(filePath: string): Promise<ModelInstallJob> {
+  return request('/api/models/from-path', {
+    method: 'POST',
+    body: JSON.stringify({ path: filePath }),
+  });
+}
+
+export function confirmModelInstallApi(body: {
+  jobId: string;
+  type: string;
+  family?: string;
+  mode?: 'copy' | 'move' | 'link';
+}): Promise<ModelInstallJob> {
+  return request('/api/models/install', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function analyzeDependenciesApi(body: {
+  familyId: string;
+  vramGB?: number | null;
+  extras?: Array<{
+    id: string;
+    type: string;
+    filename: string;
+    url: string;
+    sizeBytes: number;
+    sha256: string;
+    gated?: boolean;
+    notes?: string;
+  }>;
+}): Promise<DependencyAnalysis> {
+  return request('/api/models/dependencies/analyze', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function createDependencyPlanApi(body: {
+  familyId: string;
+  choices: Array<{
+    role: string;
+    action: 'download' | 'skip' | 'local';
+    componentId?: string;
+    localPath?: string;
+    mode?: 'copy' | 'move' | 'link';
+  }>;
+  extras?: Array<{
+    id: string;
+    type: string;
+    filename: string;
+    url: string;
+    sizeBytes: number;
+    sha256: string;
+    gated?: boolean;
+    notes?: string;
+  }>;
+  hfToken?: string;
+}): Promise<DependencyPlan> {
+  return request('/api/models/dependencies/plan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function executeDependencyPlanApi(body: {
+  planId: string;
+  hfToken?: string;
+}): Promise<DependencyPlan> {
+  return request('/api/models/dependencies/execute', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchDependencyPlan(planId: string): Promise<DependencyPlan> {
+  return request(`/api/models/dependencies/plans/${encodeURIComponent(planId)}`);
+}
+
+export function saveHfTokenApi(token: string): Promise<{ ok: boolean }> {
+  return request('/api/models/hf-token', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
 }
 
 export function fetchHealth(): Promise<{

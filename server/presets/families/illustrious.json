@@ -5,6 +5,10 @@
     "cfg": 5.5,
     "baseRes": 1024
   },
+  "supportsGguf": false,
+  "loaderKind": "checkpoint",
+  "requiredComponents": {},
+  "filenameHints": {},
   "positive": [
     "masterpiece",
     "best quality",

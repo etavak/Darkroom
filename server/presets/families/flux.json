@@ -9,6 +9,36 @@
     "baseRes": 1024
   },
   "disableNegative": true,
+  "supportsGguf": true,
+  "loaderKind": "transformer",
+  "requiredComponents": {
+    "text_encoders": ["clip_l", "t5xxl"],
+    "vae": ["ae"]
+  },
+  "filenameHints": {
+    "clip_l": ["clip_l", "clip-l", "clip.l"],
+    "t5xxl": ["t5xxl", "t5_xxl", "t5-xxl", "t5xxl_fp"],
+    "ae": ["ae.safetensors", "ae.sft", "flux_ae", "ae.gguf"]
+  },
+  "dependencies": [
+    {
+      "role": "clip_l",
+      "required": true,
+      "options": ["clip_l"]
+    },
+    {
+      "role": "t5",
+      "required": true,
+      "options": ["t5xxl_fp16", "t5xxl_fp8_e4m3fn"],
+      "recommend": { "vramUnderGB": 12, "pick": "t5xxl_fp8_e4m3fn" }
+    },
+    {
+      "role": "vae",
+      "required": false,
+      "options": ["ae"],
+      "recommend": { "pick": "ae" }
+    }
+  ],
   "defaultStyle": "photo",
   "styles": {
     "photo": {

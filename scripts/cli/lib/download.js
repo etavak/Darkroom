@@ -7,6 +7,8 @@ import { getConfig } from './env.js';
 import { httpGetJson } from './http.js';
 import { ensureLogsDir, logsDir } from './paths.js';
 
+const WEIGHT_RE = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i;
+
 /**
  * @param {NodeJS.WritableStream} stream
  * @param {number} transferred
@@ -30,7 +32,11 @@ function writeProgress(stream, transferred, total) {
  * Download a URL to destPath with a simple progress bar.
  * @param {string} url
  * @param {string} destPath
- * @param {{ headers?: Record<string, string> }} [opts]
+ * @param {{
+ *   headers?: Record<string, string>,
+ *   onProgress?: (transferred: number, total: number) => void,
+ *   quiet?: boolean,
+ * }} [opts]
  */
 export function downloadFile(url, destPath, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -68,16 +74,29 @@ export function downloadFile(url, destPath, opts = {}) {
             reject(new Error(`Download failed HTTP ${code}`));
             return;
           }
+          const ctype = String(res.headers['content-type'] || '');
+          if (/text\/html/i.test(ctype)) {
+            res.resume();
+            reject(
+              new Error(
+                'URL returned HTML instead of a model file. Use a direct file link, or a Hugging Face / Civitai model page.',
+              ),
+            );
+            return;
+          }
           const total = Number(res.headers['content-length'] || 0);
           let transferred = 0;
           const out = fs.createWriteStream(tmp);
           res.on('data', (chunk) => {
             transferred += chunk.length;
-            writeProgress(process.stdout, transferred, total);
+            if (typeof opts.onProgress === 'function') {
+              opts.onProgress(transferred, total);
+            }
+            if (!opts.quiet) writeProgress(process.stdout, transferred, total);
           });
           res.pipe(out);
           out.on('finish', () => {
-            process.stdout.write('\n');
+            if (!opts.quiet) process.stdout.write('\n');
             fs.renameSync(tmp, destPath);
             resolve({ destPath, bytes: transferred });
           });
@@ -96,8 +115,31 @@ export function downloadFile(url, destPath, opts = {}) {
 }
 
 /**
+ * Companion files from the same model page (e.g. Civitai VAE).
+ * @typedef {{
+ *   path: string,
+ *   size: number,
+ *   downloadUrl: string,
+ *   filename: string,
+ *   fileType: string,
+ *   sha256?: string,
+ * }} ResolvedCompanion
+ *
+ * @typedef {{
+ *   downloadUrl: string,
+ *   filename: string,
+ *   triggerWords: string[],
+ *   previewUrl: string | null,
+ *   modelName: string,
+ *   headers?: Record<string, string>,
+ *   candidates?: { path: string, size: number, downloadUrl: string, filename: string, fileType?: string }[],
+ *   companions?: ResolvedCompanion[],
+ * }} ResolvedModel
+ */
+
+/**
  * @param {string} pageUrl
- * @returns {Promise<{ downloadUrl: string, filename: string, triggerWords: string[], previewUrl: string | null, modelName: string }>}
+ * @returns {Promise<ResolvedModel>}
  */
 export async function resolveModelUrl(pageUrl) {
   const cfg = getConfig();
@@ -110,6 +152,11 @@ export async function resolveModelUrl(pageUrl) {
   // Direct file URL
   const u = new URL(pageUrl);
   const filename = path.basename(u.pathname) || 'model.safetensors';
+  if (!WEIGHT_RE.test(filename)) {
+    throw new Error(
+      'That looks like a page URL, not a model file. Paste a Hugging Face / Civitai model page, or a direct .safetensors link.',
+    );
+  }
   return {
     downloadUrl: pageUrl,
     filename,
@@ -159,14 +206,34 @@ async function resolveCivitai(pageUrl, token) {
     throw new Error('Unrecognized Civitai URL — use a model or model version page');
   }
 
+  const files = Array.isArray(version.files) ? version.files : [];
   const file =
-    (version.files || []).find((f) => /\.safetensors$/i.test(f.name || '')) ||
-    (version.files || []).find((f) => f.downloadUrl) ||
+    files.find((f) => /\.safetensors$/i.test(f.name || '') && String(f.type || '') !== 'VAE') ||
+    files.find((f) => /\.safetensors$/i.test(f.name || '')) ||
+    files.find((f) => f.downloadUrl) ||
     null;
   if (!file?.downloadUrl) throw new Error('No downloadable file found on this Civitai version');
 
   const preview =
     (version.images || []).find((img) => img.url && !/\.mp4$/i.test(img.url))?.url || null;
+
+  /** @type {ResolvedModel['companions']} */
+  const companions = [];
+  for (const f of files) {
+    if (!f?.downloadUrl || !f.name) continue;
+    const fType = String(f.type || '');
+    if (fType !== 'VAE' && !/vae/i.test(f.name)) continue;
+    if (f.name === file.name) continue;
+    const hashes = f.hashes || {};
+    companions.push({
+      path: f.name,
+      size: Number(f.sizeKB ? f.sizeKB * 1024 : f.size || 0) || 0,
+      downloadUrl: f.downloadUrl,
+      filename: f.name,
+      fileType: 'VAE',
+      sha256: hashes.SHA256 || hashes.sha256 || undefined,
+    });
+  }
 
   return {
     downloadUrl: file.downloadUrl,
@@ -174,28 +241,121 @@ async function resolveCivitai(pageUrl, token) {
     triggerWords: Array.isArray(version.trainedWords) ? version.trainedWords : [],
     previewUrl: preview,
     modelName: version.model?.name || version.name || file.name,
+    companions: companions.length ? companions : undefined,
   };
 }
 
 /**
  * @param {string} pageUrl
+ */
+function parseHuggingFaceUrl(pageUrl) {
+  const u = new URL(pageUrl);
+  const parts = u.pathname.split('/').filter(Boolean);
+  if (parts.length < 2) {
+    throw new Error('Unrecognized Hugging Face URL — expected huggingface.co/owner/repo');
+  }
+  const owner = parts[0];
+  const repo = parts[1];
+  /** @type {string | null} */
+  let rev = 'main';
+  /** @type {string | null} */
+  let filePath = null;
+
+  if (parts[2] === 'blob' || parts[2] === 'resolve' || parts[2] === 'tree') {
+    rev = parts[3] || 'main';
+    const rest = parts.slice(4).join('/');
+    filePath = rest ? decodeURIComponent(rest) : null;
+  }
+
+  return { owner, repo, rev, filePath, repoId: `${owner}/${repo}` };
+}
+
+/**
+ * @param {string} pageUrl
  * @param {string} token
+ * @returns {Promise<ResolvedModel>}
  */
 async function resolveHuggingFace(pageUrl, token) {
-  // Accept resolve/main/... direct links or blob links
-  let downloadUrl = pageUrl;
-  if (pageUrl.includes('/blob/')) {
-    downloadUrl = pageUrl.replace('/blob/', '/resolve/');
+  const { rev, filePath, repoId } = parseHuggingFaceUrl(pageUrl);
+  const headers = {
+    'User-Agent': 'Darkroom/1.0',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  // Direct file link: .../blob|resolve/<rev>/<file>
+  if (filePath && WEIGHT_RE.test(filePath)) {
+    const downloadUrl = `https://huggingface.co/${repoId}/resolve/${rev}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+    const filename = path.basename(filePath);
+    return {
+      downloadUrl,
+      filename,
+      triggerWords: [],
+      previewUrl: null,
+      modelName: `${repoId}/${filePath}`,
+      headers,
+    };
   }
-  const u = new URL(downloadUrl);
-  const filename = path.basename(u.pathname) || 'model.safetensors';
+
+  // Repo (or folder) page — list weight files via the HF API
+  const treeUrl = `https://huggingface.co/api/models/${repoId}/tree/${encodeURIComponent(rev || 'main')}?recursive=true`;
+  const res = await httpGetJson(treeUrl, { headers });
+  if (res.status !== 200 || !Array.isArray(res.json)) {
+    throw new Error(
+      `Hugging Face listing failed (${res.status}). Check the repo URL` +
+        (token ? '' : ' or set HF_TOKEN for gated models') +
+        '.',
+    );
+  }
+
+  const prefix = filePath ? `${filePath.replace(/\/$/, '')}/` : '';
+  /** @type {{ path: string, size: number, downloadUrl: string, filename: string }[]} */
+  const candidates = [];
+  for (const entry of res.json) {
+    if (entry?.type !== 'file' || typeof entry.path !== 'string') continue;
+    if (!WEIGHT_RE.test(entry.path)) continue;
+    if (prefix && !entry.path.startsWith(prefix) && entry.path !== filePath) continue;
+    const size = Number(entry.size) || 0;
+    // Skip tiny non-models (configs sometimes misnamed); keep real shards
+    if (size > 0 && size < 1024 * 1024) continue;
+    candidates.push({
+      path: entry.path,
+      size,
+      downloadUrl: `https://huggingface.co/${repoId}/resolve/${rev}/${entry.path
+        .split('/')
+        .map(encodeURIComponent)
+        .join('/')}`,
+      filename: path.basename(entry.path),
+    });
+  }
+
+  candidates.sort((a, b) => b.size - a.size);
+  if (candidates.length === 0) {
+    throw new Error(`No .safetensors / weight files found in ${repoId}`);
+  }
+
+  if (candidates.length === 1) {
+    const only = candidates[0];
+    return {
+      downloadUrl: only.downloadUrl,
+      filename: only.filename,
+      triggerWords: [],
+      previewUrl: null,
+      modelName: `${repoId}/${only.path}`,
+      headers,
+      candidates,
+    };
+  }
+
+  // Multiple files — caller should prompt; still set a default to the largest
+  const largest = candidates[0];
   return {
-    downloadUrl,
-    filename,
+    downloadUrl: largest.downloadUrl,
+    filename: largest.filename,
     triggerWords: [],
     previewUrl: null,
-    modelName: filename,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    modelName: repoId,
+    headers,
+    candidates,
   };
 }
 
@@ -238,4 +398,15 @@ export function downloadsCacheDir() {
   const dir = path.join(logsDir, 'downloads');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/**
+ * @param {number} bytes
+ */
+export function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '?';
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
+  return `${bytes} B`;
 }

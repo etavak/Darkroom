@@ -47,10 +47,29 @@ export type UpscaleSettings = {
   scale?: number;
 };
 
+/** How MODEL / CLIP / VAE are loaded into the graph. */
+export type ModelLoadMode = 'checkpoint' | 'split';
+
 export type GenerationSettings = {
   prompt: string;
   negative_prompt: string;
+  /**
+   * Primary model id for presets/family mapping.
+   * Checkpoint mode: ckpt filename. Split mode: usually the UNET / diffusion filename.
+   */
   checkpoint: string;
+  /** checkpoint = CheckpointLoaderSimple; split = UNET + CLIP(s) + VAE */
+  modelMode?: ModelLoadMode;
+  /** Split stack: diffusion / UNET file under models/diffusion_models */
+  unet?: string;
+  /** Split stack: first text encoder (DualCLIPLoader clip_name1 or CLIPLoader clip_name) */
+  clipName?: string;
+  /** Split stack: second text encoder for DualCLIPLoader (e.g. T5) */
+  clipName2?: string;
+  /** CLIPLoader / DualCLIPLoader `type` (flux, sdxl, …) */
+  clipType?: string;
+  /** Optional VAE override (checkpoint mode) or required VAE (split mode) */
+  vaeName?: string;
   width: number;
   height: number;
   steps: number;

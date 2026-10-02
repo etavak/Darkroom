@@ -26,27 +26,48 @@
     "cpuIndex": "https://download.pytorch.org/whl/cpu"
   },
   "nodes": {
+    "comfyui-gguf": {
+      "name": "ComfyUI-GGUF",
+      "repo": "https://github.com/city96/ComfyUI-GGUF.git",
+      "dir": "ComfyUI-GGUF",
+      "testedRef": "main",
+      "requiresCuda": false,
+      "platforms": ["*"],
+      "gpus": ["*"],
+      "optional": true,
+      "offerOn": ["gguf", "flux", "sd3"]
+    },
     "controlnet-aux": {
       "name": "ControlNet Aux",
       "repo": "https://github.com/Fannovel16/comfyui_controlnet_aux.git",
       "dir": "comfyui_controlnet_aux",
       "testedRef": "main",
-      "requiresCuda": false
+      "requiresCuda": false,
+      "platforms": ["*"],
+      "gpus": ["*"]
     },
     "impact-pack": {
       "name": "Impact Pack",
       "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git",
       "dir": "ComfyUI-Impact-Pack",
       "testedRef": "Main",
-      "requiresCuda": false
+      "requiresCuda": false,
+      "platforms": ["*"],
+      "gpus": ["*"]
     },
     "ipadapter-plus": {
       "name": "IPAdapter Plus",
       "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git",
       "dir": "ComfyUI_IPAdapter_plus",
       "testedRef": "main",
-      "requiresCuda": false
+      "requiresCuda": false,
+      "platforms": ["*"],
+      "gpus": ["*"]
     }
+  },
+  "nvidiaExtras": {
+    "note": "Never install by default. Offer only when an NVIDIA GPU is detected.",
+    "packages": ["xformers", "sageattention", "triton", "tensorrt", "nunchaku"]
   },
   "cudaOnlyNodeHints": [
     "ComfyUI-AnimateDiff-Evolved",

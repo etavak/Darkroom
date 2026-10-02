@@ -6,6 +6,10 @@
     "clipSkip": 2,
     "baseRes": 512
   },
+  "supportsGguf": false,
+  "loaderKind": "checkpoint",
+  "requiredComponents": {},
+  "filenameHints": {},
   "positive": [
     "masterpiece",
     "best quality"

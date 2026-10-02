@@ -9,6 +9,8 @@ type Props = {
   progressStep?: number;
   progressMax?: number;
   disabled?: boolean;
+  /** Shown under the button when Generate is disabled */
+  disabledReason?: string | null;
 };
 
 export function GenerateButton({
@@ -19,6 +21,7 @@ export function GenerateButton({
   progressStep = 0,
   progressMax = 0,
   disabled,
+  disabledReason,
 }: Props) {
   if (running) {
     const pct = Math.max(0, Math.min(100, progress));
@@ -56,17 +59,25 @@ export function GenerateButton({
   }
 
   return (
-    <Button
-      type="button"
-      size="lg"
-      className={cn('h-11 w-full font-semibold tracking-wide')}
-      onClick={onGenerate}
-      disabled={disabled}
-    >
-      <span>Generate</span>
-      <kbd className="ml-2 rounded-[6px] border border-primary-foreground/25 bg-primary-foreground/10 px-1.5 py-0.5 font-mono text-[10px] font-normal tabular-nums text-primary-foreground/80">
-        Ctrl+Enter
-      </kbd>
-    </Button>
+    <div className="space-y-1.5">
+      <Button
+        type="button"
+        size="lg"
+        className={cn(
+          'h-11 w-full font-semibold tracking-wide shadow-[0_0_0_1px_oklch(0.78_0.14_70/0.35),0_8px_24px_-8px_oklch(0.78_0.14_70/0.55)]',
+          'bg-primary text-primary-foreground hover:bg-primary/90',
+        )}
+        onClick={onGenerate}
+        disabled={disabled}
+      >
+        <span>Generate</span>
+        <kbd className="ml-2 rounded-[6px] border border-primary-foreground/25 bg-primary-foreground/10 px-1.5 py-0.5 font-mono text-[10px] font-normal tabular-nums text-primary-foreground/80">
+          Ctrl+Enter
+        </kbd>
+      </Button>
+      {disabled && disabledReason ? (
+        <p className="text-center text-[11px] text-muted-foreground">{disabledReason}</p>
+      ) : null}
+    </div>
   );
 }

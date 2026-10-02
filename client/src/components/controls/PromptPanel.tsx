@@ -1,6 +1,4 @@
-import { HelpCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
-import { Tooltip } from '@/components/ui/tooltip';
 import { TagChips } from '@/components/controls/TagChips';
 import { TagPromptInput } from '@/components/controls/TagPromptInput';
 import { estimateTokenCount } from '@/lib/tokens';
@@ -58,18 +56,6 @@ export function PromptPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="space-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <Label htmlFor="prompt">Prompt</Label>
-          <Tooltip content="Describe the image. Preset tags are injected automatically; your text is appended after them.">
-            <button
-              type="button"
-              className="text-muted-foreground transition-colors duration-150 hover:text-foreground"
-              aria-label="About the prompt field"
-            >
-              <HelpCircle className="h-3.5 w-3.5" />
-            </button>
-          </Tooltip>
-        </div>
         {positiveTags.length > 0 && (
           <div className="space-y-1">
             <p className="field-label text-[10px]">Injected tags</p>

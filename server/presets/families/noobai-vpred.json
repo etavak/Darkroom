@@ -7,6 +7,10 @@
     "sampler": "euler",
     "scheduler": "beta"
   },
+  "supportsGguf": false,
+  "loaderKind": "checkpoint",
+  "requiredComponents": {},
+  "filenameHints": {},
   "positive": [
     "masterpiece",
     "best quality",

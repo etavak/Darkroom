@@ -50,13 +50,68 @@ export async function ensureNativeModules() {
 }
 
 /**
- * Build client/server dist if missing.
+ * True if any source file under dir is newer than marker (mtime).
+ * @param {string} dir
+ * @param {number} markerMtimeMs
+ * @param {(name: string) => boolean} [filter]
+ */
+function sourceNewerThan(dir, markerMtimeMs, filter) {
+  if (!fs.existsSync(dir)) return false;
+  /** @type {string[]} */
+  const stack = [dir];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur) break;
+    let entries;
+    try {
+      entries = fs.readdirSync(cur, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const full = path.join(cur, e.name);
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules' || e.name === 'dist' || e.name === '.git') continue;
+        stack.push(full);
+      } else if (!filter || filter(e.name)) {
+        try {
+          if (fs.statSync(full).mtimeMs > markerMtimeMs) return true;
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Build client/server dist if missing or source is newer than dist.
  */
 export async function ensureBuilt() {
-  if (!fs.existsSync(path.join(clientDist, 'index.html'))) {
+  const clientMarker = path.join(clientDist, 'index.html');
+  const clientSrc = path.join(root, 'client', 'src');
+  const clientNeeds =
+    !fs.existsSync(clientMarker) ||
+    sourceNewerThan(clientSrc, fs.statSync(clientMarker).mtimeMs, (n) =>
+      /\.(tsx?|jsx?|css|html)$/.test(n),
+    ) ||
+    sourceNewerThan(path.join(root, 'client', 'public'), fs.statSync(clientMarker).mtimeMs);
+
+  if (clientNeeds) {
     await runNpm(['run', 'build', '-w', 'client']);
   }
-  if (!fs.existsSync(serverEntry)) {
+
+  const serverNeeds =
+    !fs.existsSync(serverEntry) ||
+    sourceNewerThan(path.join(root, 'server', 'src'), fs.statSync(serverEntry).mtimeMs, (n) =>
+      /\.tsx?$/.test(n),
+    ) ||
+    sourceNewerThan(path.join(root, 'server', 'presets'), fs.existsSync(serverEntry) ? fs.statSync(serverEntry).mtimeMs : 0, (n) =>
+      /\.json$/.test(n),
+    );
+
+  if (serverNeeds) {
     await runNpm(['run', 'build', '-w', 'server']);
   }
 }

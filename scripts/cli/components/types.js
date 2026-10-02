@@ -1,5 +1,7 @@
 /**
  * @typedef {'missing' | 'installed' | 'update_available' | 'broken'} ComponentState
+ * @typedef {'darwin' | 'win32' | 'linux' | '*'} PlatformId
+ * @typedef {'apple_silicon' | 'intel_mac' | 'nvidia' | 'cpu' | '*'} GpuProfile
  *
  * @typedef {{
  *   state: ComponentState,
@@ -22,6 +24,8 @@
  *   id: string,
  *   name: string,
  *   optional?: boolean,
+ *   platforms?: PlatformId[],
+ *   gpus?: GpuProfile[],
  *   status: () => Promise<ComponentStatus>,
  *   install: (ctx?: ComponentContext) => Promise<void>,
  *   update: (ctx?: ComponentContext) => Promise<void>,
@@ -30,6 +34,11 @@
  *   uninstall: (ctx?: ComponentContext) => Promise<void>,
  * }} Component
  */
+
+/** @type {PlatformId[]} */
+export const ALL_PLATFORMS = ['*'];
+/** @type {GpuProfile[]} */
+export const ALL_GPUS = ['*'];
 
 /**
  * @param {ComponentStatus} s

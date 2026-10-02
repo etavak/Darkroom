@@ -1,3 +1,7 @@
 {
-  "mappings": {}
+  "mappings": {
+    "flux-2-klein-4b.safetensors": {
+      "family": "flux2-klein"
+    }
+  }
 }

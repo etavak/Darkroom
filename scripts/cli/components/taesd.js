@@ -12,6 +12,8 @@ export const taesdComponent = {
   id: 'taesd',
   name: 'TAESD previews',
   optional: true,
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     loadAndApplyEnv();

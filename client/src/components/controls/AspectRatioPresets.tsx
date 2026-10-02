@@ -26,7 +26,7 @@ function AspectIcon({ w, h, active }: { w: number; h: number; active: boolean })
       aria-hidden
       className={cn(
         'inline-block rounded-[2px] border',
-        active ? 'border-primary-foreground/80 bg-primary-foreground/25' : 'border-muted-foreground/70',
+        active ? 'border-primary bg-primary/40' : 'border-muted-foreground/70',
       )}
       style={{ width: iw, height: ih }}
     />
@@ -79,7 +79,7 @@ export function AspectRatioPresets({
               className={cn(
                 'flex h-12 flex-col items-center justify-center gap-1 rounded-[10px] border text-[11px] font-medium transition-colors duration-150',
                 active
-                  ? 'border-primary bg-primary text-primary-foreground'
+                  ? 'border-primary bg-primary/15 text-foreground'
                   : 'border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground',
                 disabled && 'pointer-events-none opacity-50',
               )}
@@ -97,9 +97,9 @@ export function AspectRatioPresets({
             onChange(width, height, 'custom');
           }}
           className={cn(
-                'flex h-12 flex-col items-center justify-center gap-1 rounded-[10px] border text-[11px] font-medium transition-colors duration-150',
+            'flex h-12 flex-col items-center justify-center gap-1 rounded-[10px] border text-[11px] font-medium transition-colors duration-150',
             isCustom || customOpen
-              ? 'border-primary bg-primary text-primary-foreground'
+              ? 'border-primary bg-primary/15 text-foreground'
               : 'border-border text-muted-foreground hover:border-muted-foreground/50 hover:text-foreground',
             disabled && 'pointer-events-none opacity-50',
           )}

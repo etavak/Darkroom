@@ -1,0 +1,64 @@
+{
+  "id": "sd3",
+  "name": "SD3",
+  "settings": {
+    "cfg": 4.5,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "baseRes": 1024
+  },
+  "supportsGguf": true,
+  "loaderKind": "transformer",
+  "requiredComponents": {
+    "text_encoders": ["clip_l", "clip_g"],
+    "vae": ["sd3_vae"]
+  },
+  "filenameHints": {
+    "clip_l": ["clip_l", "clip-l"],
+    "clip_g": ["clip_g", "clip-g"],
+    "sd3_vae": ["sd3_medium", "sd3", "vae"]
+  },
+  "dependencies": [
+    {
+      "role": "clip_l",
+      "required": true,
+      "options": ["clip_l"]
+    },
+    {
+      "role": "clip_g",
+      "required": true,
+      "options": ["clip_g"]
+    },
+    {
+      "role": "t5",
+      "required": false,
+      "options": ["t5xxl_fp16", "t5xxl_fp8_e4m3fn", "t5xxl_fp8_e4m3fn_scaled"],
+      "recommend": { "vramUnderGB": 12, "pick": "t5xxl_fp8_e4m3fn" }
+    }
+  ],
+  "defaultStyle": "photo",
+  "styles": {
+    "photo": {
+      "name": "Photo",
+      "positive": [
+        "photograph",
+        "natural lighting"
+      ]
+    },
+    "cinematic": {
+      "name": "Cinematic",
+      "positive": [
+        "cinematic still",
+        "dramatic lighting"
+      ]
+    },
+    "illustration": {
+      "name": "Illustration",
+      "positive": [
+        "digital illustration"
+      ]
+    }
+  },
+  "tagSources": [],
+  "tagFormat": "spaces"
+}

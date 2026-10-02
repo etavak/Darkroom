@@ -108,6 +108,8 @@ async function installPortableNode(channel, log) {
 export const nodeComponent = {
   id: 'node',
   name: 'Node.js',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     const pins = loadPins();

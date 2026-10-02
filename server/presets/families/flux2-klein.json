@@ -1,0 +1,62 @@
+{
+  "id": "flux2-klein",
+  "name": "Flux.2 Klein",
+  "settings": {
+    "cfg": 1,
+    "guidance": 1,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "baseRes": 1024
+  },
+  "disableNegative": true,
+  "supportsGguf": false,
+  "loaderKind": "transformer",
+  "requiredComponents": {
+    "text_encoders": ["qwen_3_4b"],
+    "vae": ["flux2_vae"]
+  },
+  "filenameHints": {
+    "qwen_3_4b": ["qwen_3_4b", "qwen3", "qwen_3"],
+    "flux2_vae": ["flux2-vae", "flux2_vae", "flux-2-vae"]
+  },
+  "dependencies": [
+    {
+      "role": "text_encoder",
+      "required": true,
+      "options": ["qwen_3_4b", "qwen_3_4b_fp4"],
+      "recommend": { "vramUnderGB": 16, "pick": "qwen_3_4b_fp4" }
+    },
+    {
+      "role": "vae",
+      "required": true,
+      "options": ["flux2_vae"]
+    }
+  ],
+  "defaultClipType": "flux2",
+  "defaultStyle": "photo",
+  "styles": {
+    "photo": {
+      "name": "Photo",
+      "positive": [
+        "photograph",
+        "natural lighting"
+      ]
+    },
+    "cinematic": {
+      "name": "Cinematic",
+      "positive": [
+        "cinematic still",
+        "dramatic lighting"
+      ]
+    },
+    "illustration": {
+      "name": "Illustration",
+      "positive": [
+        "digital illustration",
+        "clean linework"
+      ]
+    }
+  },
+  "tagSources": [],
+  "tagFormat": "spaces"
+}

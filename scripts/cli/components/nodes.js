@@ -16,7 +16,15 @@ import { defaultConfirm } from './types.js';
 
 /**
  * @param {string} id
- * @param {{ name: string, repo: string, dir: string, testedRef?: string, requiresCuda?: boolean }} meta
+ * @param {{
+ *   name: string,
+ *   repo: string,
+ *   dir: string,
+ *   testedRef?: string,
+ *   requiresCuda?: boolean,
+ *   platforms?: import('./types.js').PlatformId[],
+ *   gpus?: import('./types.js').GpuProfile[],
+ * }} meta
  * @returns {import('./types.js').Component}
  */
 export function createNodeComponent(id, meta) {
@@ -24,6 +32,8 @@ export function createNodeComponent(id, meta) {
     id: `node:${id}`,
     name: meta.name,
     optional: true,
+    platforms: meta.platforms?.length ? meta.platforms : ['*'],
+    gpus: meta.requiresCuda ? ['nvidia'] : meta.gpus?.length ? meta.gpus : ['*'],
 
     async status() {
       loadAndApplyEnv();

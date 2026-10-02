@@ -1,0 +1,25 @@
+---
+description: Components must declare platforms/GPUs; NVIDIA extras stay optional
+alwaysApply: true
+---
+
+# Component platform and GPU rules
+
+Every Darkroom installable component (CLI `scripts/cli/components/*`, entries in `components.json`) must declare:
+
+- `platforms`: OS list it supports (`darwin`, `win32`, `linux`), or `['*']` for all
+- `gpus`: accelerator profiles it supports (`apple_silicon`, `intel_mac`, `nvidia`, `cpu`), or `['*']` for all
+
+Never install NVIDIA-only extras by default (not in Install everything, not as silent deps):
+
+- xformers
+- SageAttention
+- Triton
+- TensorRT
+- Nunchaku
+
+Offer those only as optional components when an NVIDIA GPU is detected (`detectAccelProfile() === 'nvidia'` / `hasNvidiaGpu()`).
+
+Custom nodes that need CUDA must set `requiresCuda: true` (or `gpus: ['nvidia']`) and stay optional. Doctor should warn when they are present on unsupported platforms (e.g. macOS).
+
+GGUF support (`comfyui-gguf` / ComfyUI-GGUF) is plain PyTorch and hardware-agnostic — keep it optional, never part of Install everything, and offer it when a `.gguf` file is added or a transformer family (flux / sd3) is selected.

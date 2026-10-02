@@ -11,6 +11,8 @@ import { defaultConfirm } from './types.js';
 export const darkroomComponent = {
   id: 'darkroom',
   name: 'Darkroom',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     const pkg = path.join(root, 'package.json');

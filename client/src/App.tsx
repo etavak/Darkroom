@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdvancedSettings } from '@/components/controls/AdvancedSettings';
+import { AddModelDialog } from '@/components/controls/AddModelDialog';
 import { AspectRatioPresets } from '@/components/controls/AspectRatioPresets';
 import { BatchControl } from '@/components/controls/BatchControl';
-import { CheckpointSelect } from '@/components/controls/CheckpointSelect';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
 import { GenerateButton } from '@/components/controls/GenerateButton';
 import { JobQueue, type QueuedJob } from '@/components/controls/JobQueue';
+import { LoraPanel } from '@/components/controls/LoraPanel';
+import { DependencyResolver } from '@/components/controls/DependencyResolver';
 import { MapFamilyDialog } from '@/components/controls/MapFamilyDialog';
+import { ModelStackPanel } from '@/components/controls/ModelStackPanel';
 import { PanelSection } from '@/components/controls/PanelSection';
 import { PromptPanel } from '@/components/controls/PromptPanel';
 import { SamplerControls } from '@/components/controls/SamplerControls';
@@ -20,23 +23,31 @@ import { PreviewCanvas } from '@/components/preview/PreviewCanvas';
 import { ResultActionBar } from '@/components/preview/ResultActionBar';
 import { AppSettingsPanel } from '@/components/settings/AppSettingsPanel';
 import { scaleAspectPresets } from '@/constants/aspectRatios';
-import { useCheckpoints } from '@/hooks/useCheckpoints';
 import { useFamilies } from '@/hooks/useFamilies';
 import { useGeneration } from '@/hooks/useGeneration';
 import { useHistory } from '@/hooks/useHistory';
+import { useModels } from '@/hooks/useModels';
 import { useServerSettings } from '@/hooks/useServerSettings';
 import { useUiSettings } from '@/hooks/useUiSettings';
 import {
   fetchHealth,
   fetchPreviewSettings,
+  fetchSystemStats,
   mapCheckpointFamily,
   resolvePresetsApi,
   startComfyApi,
   updatePreviewQuality,
 } from '@/lib/api';
 import { parseImageSettings } from '@/lib/imageMeta';
+import { autoPickStack, evaluateReadiness } from '@/lib/modelReadiness';
 import { eventMatchesShortcut, qualityToPreviewMethod } from '@/lib/uiSettings';
-import type { GenerationRecord, GenerationSettings } from '@/types/generation';
+import type {
+  GenerationRecord,
+  GenerationSettings,
+  LoraSettings,
+  ModelLoadMode,
+  SystemStatsSummary,
+} from '@/types/generation';
 import type { ResolvedPresets } from '@/types/presets';
 
 function randomSeed(): number {
@@ -61,8 +72,7 @@ const emptyResolved: ResolvedPresets = {
 };
 
 export default function App() {
-  const { checkpoints, loading: ckptLoading, reload: reloadCheckpoints } =
-    useCheckpoints();
+  const { catalog, loading: modelsLoading, reload: reloadModels } = useModels();
   const { families } = useFamilies();
   const { items, loading: histLoading, reload, confirmRemove } = useHistory();
   const [comfyOk, setComfyOk] = useState<boolean | null>(null);
@@ -115,7 +125,14 @@ export default function App() {
 
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
+  const [modelMode, setModelMode] = useState<ModelLoadMode>('checkpoint');
   const [checkpoint, setCheckpoint] = useState('');
+  const [unet, setUnet] = useState('');
+  const [clipName, setClipName] = useState('');
+  const [clipName2, setClipName2] = useState('');
+  const [clipType, setClipType] = useState('flux');
+  const [vaeName, setVaeName] = useState('');
+  const [loras, setLoras] = useState<LoraSettings[]>([]);
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [aspectId, setAspectId] = useState('1:1');
@@ -131,6 +148,11 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewImages, setViewImages] = useState<string[]>([]);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [addModelOpen, setAddModelOpen] = useState(false);
+  const [depFamilyId, setDepFamilyId] = useState<string | null>(null);
+  const [addModelPreferType, setAddModelPreferType] = useState<string | undefined>();
+  const [systemStats, setSystemStats] = useState<SystemStatsSummary | null>(null);
+  const lastAutopickUnet = useRef('');
 
   const familyMeta = useMemo(
     () => families.find((f) => f.id === resolved.familyId) ?? null,
@@ -139,28 +161,79 @@ export default function App() {
 
   const styles = familyMeta?.styles ?? [];
 
-  // Keep checkpoint valid
+  /** Filename used for family/preset mapping */
+  const primaryModel =
+    modelMode === 'split' ? unet || checkpoint : checkpoint;
+
+  // Keep model selections valid as Comfy lists refresh
   useEffect(() => {
-    if (checkpoints.length === 0) {
-      setCheckpoint('');
-      return;
+    if (catalog.checkpoints.length === 0) {
+      if (modelMode === 'checkpoint') setCheckpoint('');
+    } else if (!checkpoint || !catalog.checkpoints.includes(checkpoint)) {
+      if (modelMode === 'checkpoint') setCheckpoint(catalog.checkpoints[0]);
     }
-    if (!checkpoint || !checkpoints.includes(checkpoint)) {
-      setCheckpoint(checkpoints[0]);
+
+    if (catalog.diffusion_models.length === 0) {
+      if (modelMode === 'split') setUnet('');
+    } else if (!unet || !catalog.diffusion_models.includes(unet)) {
+      if (modelMode === 'split') setUnet(catalog.diffusion_models[0]);
     }
-  }, [checkpoints, checkpoint]);
+
+    if (clipName && catalog.text_encoders.length > 0 && !catalog.text_encoders.includes(clipName)) {
+      setClipName('');
+    }
+    if (clipName2 && !catalog.text_encoders.includes(clipName2)) setClipName2('');
+
+    if (vaeName && catalog.vae.length > 0 && !catalog.vae.includes(vaeName)) {
+      setVaeName('');
+    }
+  }, [
+    catalog.checkpoints,
+    catalog.diffusion_models,
+    catalog.text_encoders,
+    catalog.vae,
+    checkpoint,
+    clipName,
+    clipName2,
+    modelMode,
+    unet,
+    vaeName,
+  ]);
+
+  // Auto-pick TE/VAE from family filename hints when diffusion changes
+  useEffect(() => {
+    if (modelMode !== 'split' || !unet) return;
+    if (lastAutopickUnet.current === unet) return;
+    lastAutopickUnet.current = unet;
+    const picked = autoPickStack(familyMeta, catalog, families, unet);
+    if (picked.clipName) setClipName(picked.clipName);
+    if (picked.clipName2) setClipName2(picked.clipName2);
+    if (picked.vaeName) setVaeName(picked.vaeName);
+    if (picked.clipType) setClipType(picked.clipType);
+  }, [modelMode, unet, familyMeta, catalog, families]);
+
+  // Offer split mode + GGUF-aware defaults when only diffusion models exist
+  useEffect(() => {
+    if (
+      modelMode === 'checkpoint' &&
+      catalog.checkpoints.length === 0 &&
+      catalog.diffusion_models.length > 0
+    ) {
+      setModelMode('split');
+    }
+  }, [catalog.checkpoints.length, catalog.diffusion_models.length, modelMode]);
 
   // Resolve presets whenever inputs change
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!checkpoint) {
+      if (!primaryModel) {
         setResolved(emptyResolved);
         return;
       }
       try {
         const next = await resolvePresetsApi({
-          checkpoint,
+          checkpoint: primaryModel,
           styleId,
           dismissedPositive,
           dismissedNegative,
@@ -176,7 +249,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [checkpoint, styleId, dismissedPositive, dismissedNegative, prompt, negativePrompt]);
+  }, [primaryModel, styleId, dismissedPositive, dismissedNegative, prompt, negativePrompt]);
 
   // When family or style identity changes: apply settings + scale aspect
   const identityKey = `${resolved.familyId ?? ''}|${resolved.styleId ?? ''}|${resolved.mapped}`;
@@ -224,21 +297,34 @@ export default function App() {
         if (!cancelled) {
           setComfyOk(h.comfy);
           setRemoteMode(h.mode === 'remote');
-          if (h.comfy) void reloadCheckpoints();
+          if (h.comfy) {
+            void reloadModels();
+            void fetchSystemStats()
+              .then((s) => {
+                if (!cancelled) setSystemStats(s);
+              })
+              .catch(() => {
+                if (!cancelled) setSystemStats(null);
+              });
+          } else {
+            setSystemStats(null);
+          }
         }
       } catch {
-        if (!cancelled) setComfyOk(false);
+        if (!cancelled) {
+          setComfyOk(false);
+          setSystemStats(null);
+        }
       }
     };
     void check();
-    // Faster poll while offline so Start / reconnect feels responsive
     const intervalMs = comfyOk === false ? 5_000 : 10_000;
     const id = window.setInterval(check, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [reloadCheckpoints, comfyOk]);
+  }, [reloadModels, comfyOk]);
 
   useEffect(() => {
     try {
@@ -300,10 +386,11 @@ export default function App() {
   const buildSettings = useCallback(
     (nextSeed: number): GenerationSettings => {
       const s = resolved.settings;
-      return {
+      const base: GenerationSettings = {
         prompt: resolved.finalPositive,
         negative_prompt: resolved.finalNegative,
-        checkpoint,
+        checkpoint: modelMode === 'split' ? unet || checkpoint : checkpoint,
+        modelMode,
         width,
         height,
         steps,
@@ -314,19 +401,37 @@ export default function App() {
         batch_size: batchSize,
         clipSkip: s.clipSkip ?? clipSkip,
         guidance: s.guidance ?? guidance,
+        loras: loras.length ? loras : undefined,
       };
+      if (modelMode === 'split') {
+        base.unet = unet;
+        base.clipName = clipName;
+        base.clipName2 = clipName2 || undefined;
+        base.clipType = clipType || 'flux';
+        base.vaeName = vaeName;
+      } else if (vaeName) {
+        base.vaeName = vaeName;
+      }
+      return base;
     },
     [
       batchSize,
       cfg,
       checkpoint,
+      clipName,
+      clipName2,
       clipSkip,
+      clipType,
       guidance,
       height,
+      loras,
+      modelMode,
       resolved,
       sampler,
       scheduler,
       steps,
+      unet,
+      vaeName,
       width,
     ],
   );
@@ -391,8 +496,48 @@ export default function App() {
     }
   }, [buildSettings, runGenerate, seedLocked]);
 
+  const readiness = useMemo(
+    () =>
+      evaluateReadiness({
+        mode: modelMode,
+        checkpoint,
+        unet,
+        clipName,
+        clipName2,
+        vaeName,
+        catalog,
+        family: familyMeta,
+        families,
+        mapped: resolved.mapped,
+      }),
+    [
+      modelMode,
+      checkpoint,
+      unet,
+      clipName,
+      clipName2,
+      vaeName,
+      catalog,
+      familyMeta,
+      families,
+      resolved.mapped,
+    ],
+  );
+
+  const generateBlockedReason = useMemo(() => {
+    if (comfyOk === false) return 'ComfyUI offline';
+    if (readiness.reason) return readiness.reason;
+    if (!resolved.finalPositive.trim()) return 'Add a prompt';
+    return null;
+  }, [comfyOk, readiness.reason, resolved.finalPositive]);
+
+  const openAddModel = useCallback((preferType?: string) => {
+    setAddModelPreferType(preferType);
+    setAddModelOpen(true);
+  }, []);
+
   const handleGenerate = useCallback(async () => {
-    if (!checkpoint || !resolved.finalPositive.trim() || !resolved.mapped || comfyOk === false) {
+    if (!readiness.ready || !resolved.finalPositive.trim() || comfyOk === false) {
       return;
     }
     if (queueRef.current.length >= serverSettings.maxQueueLength) {
@@ -416,11 +561,10 @@ export default function App() {
     void processQueue();
   }, [
     buildSettings,
-    checkpoint,
     comfyOk,
     processQueue,
+    readiness.ready,
     resolved.finalPositive,
-    resolved.mapped,
     seed,
     seedLocked,
     serverSettings.maxQueueLength,
@@ -551,7 +695,14 @@ export default function App() {
     const s = item.settings;
     setPrompt(s.prompt);
     setNegativePrompt(s.negative_prompt);
+    setModelMode(s.modelMode === 'split' ? 'split' : 'checkpoint');
     setCheckpoint(s.checkpoint);
+    setUnet(s.unet ?? '');
+    setClipName(s.clipName ?? '');
+    setClipName2(s.clipName2 ?? '');
+    setClipType(s.clipType ?? 'flux');
+    setVaeName(s.vaeName ?? '');
+    setLoras(s.loras ?? []);
     setWidth(s.width);
     setHeight(s.height);
     setSteps(s.steps);
@@ -647,7 +798,8 @@ export default function App() {
     loading: histLoading,
   };
 
-  const showMapDialog = Boolean(checkpoint) && !resolved.mapped && families.length > 0 && comfyOk !== false;
+  const showMapDialog =
+    Boolean(primaryModel) && !resolved.mapped && families.length > 0 && comfyOk !== false;
 
   const renderSettings = () => (
     <SettingsPanel
@@ -673,34 +825,80 @@ export default function App() {
             progress={runtime.progress}
             progressStep={runtime.progressStep}
             progressMax={runtime.progressMax}
-            disabled={
-              !checkpoint ||
-              !resolved.finalPositive.trim() ||
-              !resolved.mapped ||
-              comfyOk === false
-            }
+            disabled={Boolean(generateBlockedReason) || !readiness.ready}
+            disabledReason={generateBlockedReason}
           />
           {runtime.error && <p className="text-xs text-destructive">{runtime.error}</p>}
         </div>
       }
     >
       <PanelSection title="Model">
-        <CheckpointSelect
-          checkpoints={checkpoints}
-          value={checkpoint}
-          onChange={(v) => {
+        <ModelStackPanel
+          catalog={catalog}
+          mode={modelMode}
+          onModeChange={(mode) => {
+            setModelMode(mode);
+            setStyleId(null);
+            setDismissedPositive([]);
+            setDismissedNegative([]);
+            prevFamily.current = null;
+          }}
+          checkpoint={checkpoint}
+          onCheckpointChange={(v) => {
             setCheckpoint(v);
             setStyleId(null);
             setDismissedPositive([]);
             setDismissedNegative([]);
             prevFamily.current = null;
           }}
-          loading={ckptLoading}
+          unet={unet}
+          onUnetChange={(v) => {
+            setUnet(v);
+            lastAutopickUnet.current = '';
+            setStyleId(null);
+            setDismissedPositive([]);
+            setDismissedNegative([]);
+            prevFamily.current = null;
+          }}
+          clipName={clipName}
+          onClipNameChange={setClipName}
+          clipName2={clipName2}
+          onClipName2Change={setClipName2}
+          clipType={clipType}
+          onClipTypeChange={setClipType}
+          vaeName={vaeName}
+          onVaeNameChange={setVaeName}
+          loading={modelsLoading}
           offline={comfyOk === false}
           familyName={resolved.familyName}
           mapped={resolved.mapped}
           disabled={runtime.running}
+          missing={readiness.missing}
+          needsGguf={readiness.needsGguf}
+          offerGguf={
+            Boolean(familyMeta?.supportsGguf) &&
+            !catalog.available.ggufUnet &&
+            !readiness.needsGguf
+          }
+          onAddModel={openAddModel}
         />
+        <LoraPanel
+          loras={loras}
+          options={catalog.loras}
+          onChange={setLoras}
+          loading={modelsLoading}
+          disabled={runtime.running}
+          offline={comfyOk === false}
+          onAddModel={() => openAddModel('lora')}
+        />
+        {catalog.embeddings.length > 0 ? (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Embeddings ({catalog.embeddings.length}): type{' '}
+            <code className="text-[10px]">embedding:name</code> in the prompt. Available:{' '}
+            {catalog.embeddings.slice(0, 8).join(', ')}
+            {catalog.embeddings.length > 8 ? '…' : ''}
+          </p>
+        ) : null}
         <StyleSelect
           styles={styles}
           value={styleId ?? resolved.styleId}
@@ -743,7 +941,7 @@ export default function App() {
           cfg={resolved.settings.cfg ?? cfg}
           clipSkip={resolved.settings.clipSkip ?? clipSkip}
           sampler={resolved.settings.sampler ?? sampler}
-          checkpoint={checkpoint}
+          checkpoint={primaryModel}
         />
       </PanelSection>
 
@@ -799,6 +997,8 @@ export default function App() {
         controlsDimmed={comfyOk === false}
         historyPosition={uiSettings.historyPosition}
         resizablePanels={uiSettings.resizablePanels}
+        systemLabel={systemStats?.ok ? systemStats.label : null}
+        vramTooltip={systemStats?.vramTooltip}
         settingsOpen={settingsOpen}
         onSettingsOpenChange={setSettingsOpen}
         uiSettingsOpen={uiSettingsOpen}
@@ -843,6 +1043,8 @@ export default function App() {
                   startingComfy={startingComfy}
                   onDropSettingsFile={(file) => void applyDroppedSettings(file)}
                   canvasBackground={uiSettings.canvasBackground}
+                  emptyModelState={readiness.nothingInstalled}
+                  onAddModel={() => openAddModel()}
                 />
               </div>
               <div className="mt-4 shrink-0 space-y-2">
@@ -868,17 +1070,20 @@ export default function App() {
       />
       <MapFamilyDialog
         open={showMapDialog}
-        checkpoint={checkpoint}
-        families={families}
+        checkpoint={primaryModel}
+        families={
+          /\.gguf$/i.test(primaryModel)
+            ? families.filter((f) => f.supportsGguf || f.id === 'flux' || f.id === 'sd3')
+            : families
+        }
         onSave={async (family) => {
-          await mapCheckpointFamily(checkpoint, family);
+          await mapCheckpointFamily(primaryModel, family);
           prevFamily.current = null;
-          // Force resolve refresh
           setStyleId(null);
           setDismissedPositive([]);
           setDismissedNegative([]);
           const next = await resolvePresetsApi({
-            checkpoint,
+            checkpoint: primaryModel,
             styleId: null,
             dismissedPositive: [],
             dismissedNegative: [],
@@ -887,6 +1092,67 @@ export default function App() {
           });
           setResolved(next);
           if (next.styleId) setStyleId(next.styleId);
+          // Offer GGUF component hint for transformer families
+          if ((family === 'flux' || family === 'sd3') && !catalog.available.ggufUnet) {
+            setCopyFlash('Tip: install ComfyUI-GGUF from the CLI for .gguf models');
+            window.setTimeout(() => setCopyFlash(null), 4000);
+          }
+          const fam = families.find((f) => f.id === family);
+          if (fam?.dependencies?.length) {
+            setDepFamilyId(family);
+          }
+        }}
+      />
+      {depFamilyId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-xl">
+            <DependencyResolver
+              familyId={depFamilyId}
+              vramTotalBytes={systemStats?.vramTotal}
+              onDone={() => {
+                setDepFamilyId(null);
+                void reloadModels();
+              }}
+              onSkip={() => setDepFamilyId(null)}
+            />
+          </div>
+        </div>
+      ) : null}
+      <AddModelDialog
+        open={addModelOpen}
+        onClose={() => setAddModelOpen(false)}
+        preferType={addModelPreferType}
+        families={families}
+        onInstalled={({ filename, type, family }) => {
+          void reloadModels().then(() => {
+            if (type === 'checkpoint') {
+              setModelMode('checkpoint');
+              setCheckpoint(filename);
+            } else if (type === 'diffusion') {
+              setModelMode('split');
+              setUnet(filename);
+              lastAutopickUnet.current = '';
+            } else if (type === 'text_encoder') {
+              setModelMode('split');
+              if (!clipName) setClipName(filename);
+              else if (!clipName2) setClipName2(filename);
+            } else if (type === 'vae') {
+              setVaeName(filename);
+            }
+            if (family) {
+              void mapCheckpointFamily(filename, family).then(async () => {
+                const next = await resolvePresetsApi({
+                  checkpoint: filename,
+                  styleId: null,
+                  dismissedPositive: [],
+                  dismissedNegative: [],
+                  userPositive: prompt,
+                  userNegative: negativePrompt,
+                });
+                setResolved(next);
+              });
+            }
+          });
         }}
       />
     </>

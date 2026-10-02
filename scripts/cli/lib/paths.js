@@ -14,6 +14,7 @@ export const clientDist = path.join(root, 'client', 'dist');
 export const serverEntry = path.join(root, 'server', 'dist', 'index.js');
 export const checkpointsPath = path.join(root, 'server', 'presets', 'checkpoints.json');
 export const familiesDir = path.join(root, 'server', 'presets', 'families');
+export const modelComponentsPath = path.join(root, 'server', 'presets', 'components.json');
 export const tagsDir = path.join(root, 'server', 'tags');
 
 /** Self-contained runtime (portable node, uv, MinGit, restore points) */
@@ -59,6 +60,8 @@ export function getCustomNodesDir(comfyDir = process.env.COMFY_DIR || '') {
 /** @type {Record<string, string>} */
 export const MODEL_SUBDIRS = {
   checkpoint: 'checkpoints',
+  diffusion: 'diffusion_models',
+  text_encoder: 'text_encoders',
   lora: 'loras',
   vae: 'vae',
   upscaler: 'upscale_models',
@@ -66,9 +69,20 @@ export const MODEL_SUBDIRS = {
   controlnet: 'controlnet',
 };
 
-export function modelDirForType(type, comfyDir = process.env.COMFY_DIR || '') {
+/**
+ * Resolve models subfolder for a type.
+ * Diffusion GGUFs go in models/unet (ComfyUI-GGUF); TE GGUFs stay in text_encoders.
+ * @param {string} type
+ * @param {string} [comfyDir]
+ * @param {{ filename?: string }} [opts]
+ */
+export function modelDirForType(type, comfyDir = process.env.COMFY_DIR || '', opts = {}) {
   const rootModels = getModelsRoot(comfyDir);
   if (!rootModels) return null;
+  const filename = String(opts.filename || '').toLowerCase();
+  if (type === 'diffusion' && filename.endsWith('.gguf')) {
+    return path.join(rootModels, 'unet');
+  }
   const sub = MODEL_SUBDIRS[type];
   if (!sub) return null;
   return path.join(rootModels, sub);

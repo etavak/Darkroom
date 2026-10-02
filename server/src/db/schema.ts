@@ -23,4 +23,16 @@ CREATE TABLE IF NOT EXISTS user_presets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_presets_layer ON user_presets(layer);
+
+CREATE TABLE IF NOT EXISTS model_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename TEXT NOT NULL,
+  model_type TEXT NOT NULL,
+  dest_path TEXT NOT NULL UNIQUE,
+  source_path TEXT NOT NULL,
+  link_type TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_links_filename ON model_links(filename);
 `;

@@ -5,6 +5,10 @@ import { accelInstallNote, isIntelMac } from '../lib/hardware.js';
 import { root } from '../lib/paths.js';
 import { handleCancel } from '../lib/prompt.js';
 import { writeEnvFile } from '../setup/writeEnv.js';
+import fs from 'node:fs';
+import { createModelLink } from '../lib/linkInstall.js';
+import { updateModelLinkSource } from '../lib/modelLinksDb.js';
+import { deleteModel, listBrokenModelLinks, normalizeDraggedPath } from '../lib/models.js';
 import {
   listComponents,
   listCoreInstallOrder,
@@ -150,7 +154,27 @@ export async function configureRemote(url) {
 }
 
 /**
- * Doctor: status all components + macOS CUDA node warnings.
+ * Known-bad torch builds for ComfyUI-GGUF on Apple Silicon
+ * (city96/ComfyUI-GGUF#107 — "buffer is not large enough").
+ * Nightlies before 2024-10-20; prefer 2.4.1 or nightlies ≥ that date / 2.7+.
+ * @param {string} version
+ */
+export function isBadGgufTorchOnAppleSilicon(version) {
+  const v = String(version || '');
+  const m = v.match(/^2\.6\.0\.dev(\d{8})/);
+  if (m) {
+    const stamp = Number(m[1]);
+    return stamp > 0 && stamp < 20241020;
+  }
+  // Some reports: early 2.6 nightlies without clear stamp still break
+  if (/^2\.6\.0\.dev/.test(v) && !/dev2024102[0-9]|dev20241[1-2]|dev2025/.test(v)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Doctor: status all components + macOS CUDA node warnings + GGUF/torch.
  */
 export async function runDoctor() {
   p.intro('Doctor');
@@ -188,6 +212,68 @@ export async function runDoctor() {
         status: { state: 'broken', problems: ['CUDA-only — unsupported on macOS'] },
       });
     }
+
+    // GGUF + known-bad torch on Apple Silicon (issue 107)
+    if (process.arch === 'arm64') {
+      const gguf = listComponents().find((c) => c.id === 'node:comfyui-gguf');
+      const torch = listComponents().find((c) => c.id === 'torch');
+      if (gguf && torch) {
+        const ggufSt = await gguf.status();
+        const torchSt = await torch.status();
+        if (ggufSt.state === 'installed' && torchSt.version && isBadGgufTorchOnAppleSilicon(torchSt.version)) {
+          const msg =
+            `Torch ${torchSt.version} is known to cause “buffer is not large enough” with ComfyUI-GGUF on Apple Silicon (issue #107). Use torch 2.4.1 or a nightly ≥ 2024-10-20 (or current 2.7.x).`;
+          lines.push(`GGUF / torch: ${msg}`);
+          problems.push({
+            comp: {
+              id: 'gguf-torch-hint',
+              name: 'ComfyUI-GGUF / PyTorch',
+              async status() {
+                return { state: 'broken', problems: [msg] };
+              },
+              async install() {},
+              async update() {},
+              async repair() {
+                p.log.warn(msg);
+                p.log.info('Components → PyTorch → reinstall/update to a fixed build.');
+              },
+              async reinstall() {},
+              async uninstall() {},
+            },
+            status: { state: 'broken', problems: [msg] },
+          });
+        }
+      }
+    }
+  }
+
+  // Broken model links (symlink/hardlink targets moved or unplugged)
+  let brokenLinks = [];
+  try {
+    brokenLinks = listBrokenModelLinks();
+  } catch {
+    brokenLinks = [];
+  }
+  for (const link of brokenLinks) {
+    const msg = `Broken ${link.linkType}: ${link.filename} → ${link.sourcePath || '(unknown)'}`;
+    lines.push(`Model link: ${msg}`);
+    problems.push({
+      comp: {
+        id: `model-link:${link.destPath}`,
+        name: `Link ${link.filename}`,
+        async status() {
+          return { state: 'broken', problems: [msg] };
+        },
+        async install() {},
+        async update() {},
+        async repair() {
+          await repairBrokenModelLink(link);
+        },
+        async reinstall() {},
+        async uninstall() {},
+      },
+      status: { state: 'broken', problems: [msg] },
+    });
   }
 
   p.note(lines.join('\n'), 'Status');
@@ -224,4 +310,44 @@ export async function runDoctor() {
       p.log.error(`${comp.name}: ${err instanceof Error ? err.message : err}`);
     }
   }
+}
+
+/**
+ * @param {{ destPath: string, sourcePath: string | null, filename: string, linkType: string }} link
+ */
+async function repairBrokenModelLink(link) {
+  const action = await p.select({
+    message: `Broken link: ${link.filename}`,
+    options: [
+      { value: 'relink', label: 'Relink…', hint: 'choose a new source path' },
+      { value: 'remove', label: 'Remove link', hint: 'keeps any original file' },
+      { value: 'skip', label: 'Skip' },
+    ],
+  });
+  if (handleCancel(action) || action === 'skip') return;
+
+  if (action === 'remove') {
+    deleteModel(link.destPath);
+    p.log.success(`Removed link for ${link.filename}`);
+    return;
+  }
+
+  const raw = await p.text({
+    message: 'New source file path',
+    initialValue: link.sourcePath || '',
+    validate: (v) => (!v?.trim() ? 'Path required' : undefined),
+  });
+  if (handleCancel(raw)) return;
+  const src = normalizeDraggedPath(String(raw));
+  if (!fs.existsSync(src)) {
+    throw new Error(`Source not found: ${src}`);
+  }
+  try {
+    fs.unlinkSync(link.destPath);
+  } catch {
+    // already missing
+  }
+  const { linkType } = createModelLink(src, link.destPath);
+  updateModelLinkSource(link.destPath, src, linkType);
+  p.log.success(`Relinked (${linkType}) → ${src}`);
 }

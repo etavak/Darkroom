@@ -1,11 +1,14 @@
 import { ensureSave, type PipelineContext, WorkflowGraph } from '../graph.js';
 import type { WorkflowModule } from '../types.js';
 
+function isGguf(name: string | undefined): boolean {
+  return Boolean(name && /\.gguf$/i.test(name));
+}
+
 /**
- * Core txt2img path (built-in ComfyUI nodes only):
- * CheckpointLoader → CLIP encode ×2 → EmptyLatent → KSampler → VAEDecode → SaveImage
- *
- * Split into load (before optional LoRA/ControlNet) and sample (after).
+ * Core txt2img path:
+ * CheckpointLoader OR UNET+CLIP+VAE (GGUF variants when needed)
+ * → CLIP encode ×2 → EmptyLatent → KSampler → VAEDecode → SaveImage
  */
 export const baseModule: WorkflowModule & {
   load: (ctx: PipelineContext) => void;
@@ -20,17 +23,66 @@ export const baseModule: WorkflowModule & {
 
   load(ctx) {
     const { graph, settings } = ctx;
+    const mode = settings.modelMode === 'split' ? 'split' : 'checkpoint';
 
-    const ckpt = graph.add('CheckpointLoaderSimple', {
-      ckpt_name: settings.checkpoint,
-    });
+    if (mode === 'split') {
+      if (!settings.unet) throw new Error('Split stack requires a diffusion / UNET model');
+      if (!settings.clipName) throw new Error('Split stack requires a text encoder');
+      if (!settings.vaeName) throw new Error('Split stack requires a VAE');
 
-    ctx.model = [ckpt, 0];
-    ctx.clip = [ckpt, 1];
-    ctx.vae = [ckpt, 2];
+      const unetGguf = isGguf(settings.unet);
+      if (unetGguf) {
+        // city96/ComfyUI-GGUF NODE_CLASS_MAPPINGS: UnetLoaderGGUF
+        const unet = graph.add('UnetLoaderGGUF', { unet_name: settings.unet });
+        ctx.model = [unet, 0];
+      } else {
+        const unetInputs: Record<string, unknown> = { unet_name: settings.unet };
+        unetInputs.weight_dtype = 'default';
+        const unet = graph.add('UNETLoader', unetInputs);
+        ctx.model = [unet, 0];
+      }
+
+      const clip1Gguf = isGguf(settings.clipName);
+      const clip2Gguf = isGguf(settings.clipName2);
+      const anyClipGguf = clip1Gguf || clip2Gguf;
+
+      if (settings.clipName2) {
+        // DualCLIPLoaderGGUF accepts mixed GGUF + safetensors
+        const dualClass = anyClipGguf ? 'DualCLIPLoaderGGUF' : 'DualCLIPLoader';
+        const dual = graph.add(dualClass, {
+          clip_name1: settings.clipName,
+          clip_name2: settings.clipName2,
+          type: settings.clipType || 'flux',
+        });
+        ctx.clip = [dual, 0];
+      } else {
+        const clipClass = clip1Gguf ? 'CLIPLoaderGGUF' : 'CLIPLoader';
+        const clipInputs: Record<string, unknown> = {
+          clip_name: settings.clipName,
+        };
+        if (settings.clipType) clipInputs.type = settings.clipType;
+        const clip = graph.add(clipClass, clipInputs);
+        ctx.clip = [clip, 0];
+      }
+
+      const vae = graph.add('VAELoader', { vae_name: settings.vaeName });
+      ctx.vae = [vae, 0];
+    } else {
+      const ckpt = graph.add('CheckpointLoaderSimple', {
+        ckpt_name: settings.checkpoint,
+      });
+
+      ctx.model = [ckpt, 0];
+      ctx.clip = [ckpt, 1];
+      ctx.vae = [ckpt, 2];
+
+      if (settings.vaeName) {
+        const vae = graph.add('VAELoader', { vae_name: settings.vaeName });
+        ctx.vae = [vae, 0];
+      }
+    }
 
     if (typeof settings.clipSkip === 'number' && settings.clipSkip > 1) {
-      // CLIPSetLastLayer uses negative index: skip 2 → -2
       const clipSkip = graph.add('CLIPSetLastLayer', {
         clip: ctx.clip,
         stop_at_clip_layer: -Math.abs(settings.clipSkip),

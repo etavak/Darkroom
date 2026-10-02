@@ -14,6 +14,18 @@ export type FamilyStyleSummary = {
   name: string;
 };
 
+export type FamilyRequiredComponents = {
+  text_encoders?: string[];
+  vae?: string[];
+};
+
+export type FamilyDependency = {
+  role: string;
+  required: boolean;
+  options: string[];
+  recommend?: { vramUnderGB?: number; pick: string };
+};
+
 export type FamilySummary = {
   id: string;
   name: string;
@@ -24,6 +36,12 @@ export type FamilySummary = {
   tagsEnabled?: boolean;
   styles: FamilyStyleSummary[];
   settings: LayerSettings;
+  supportsGguf?: boolean;
+  loaderKind?: 'checkpoint' | 'transformer';
+  requiredComponents?: FamilyRequiredComponents;
+  filenameHints?: Record<string, string[]>;
+  dependencies?: FamilyDependency[];
+  defaultClipType?: string;
 };
 
 export type InjectedTag = {

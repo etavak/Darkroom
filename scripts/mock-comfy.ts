@@ -42,7 +42,19 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/system_stats') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ system: { comfyui_version: 'mock' } }));
+    res.end(
+      JSON.stringify({
+        system: { comfyui_version: 'mock' },
+        devices: [
+          {
+            name: 'mps',
+            type: 'mps',
+            vram_total: 36 * 1024 ** 3,
+            vram_free: 24 * 1024 ** 3,
+          },
+        ],
+      }),
+    );
     return;
   }
 
@@ -54,6 +66,59 @@ const server = http.createServer(async (req, res) => {
           input: {
             required: {
               ckpt_name: [['mock_sdxl.safetensors', 'other_model.safetensors']],
+            },
+          },
+        },
+        UNETLoader: {
+          input: {
+            required: {
+              unet_name: [['mock_flux_unet.safetensors']],
+              weight_dtype: [['default', 'fp8_e4m3fn']],
+            },
+          },
+        },
+        DualCLIPLoader: {
+          input: {
+            required: {
+              clip_name1: [['clip_l.safetensors', 't5xxl_fp16.safetensors']],
+              clip_name2: [['clip_l.safetensors', 't5xxl_fp16.safetensors']],
+              type: [['flux', 'sdxl', 'sd3']],
+            },
+          },
+        },
+        CLIPLoader: {
+          input: {
+            required: {
+              clip_name: [['clip_l.safetensors']],
+              type: [['stable_diffusion', 'flux']],
+            },
+          },
+        },
+        VAELoader: {
+          input: {
+            required: {
+              vae_name: [['ae.safetensors', 'mock_vae.safetensors']],
+            },
+          },
+        },
+        LoraLoader: {
+          input: {
+            required: {
+              lora_name: [['mock_lora.safetensors']],
+            },
+          },
+        },
+        ControlNetLoader: {
+          input: {
+            required: {
+              control_net_name: [['mock_controlnet.safetensors']],
+            },
+          },
+        },
+        UpscaleModelLoader: {
+          input: {
+            required: {
+              model_name: [['4x_mock.pth']],
             },
           },
         },

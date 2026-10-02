@@ -26,16 +26,21 @@ export function readSafetensorsHeader(filePath) {
 
 /**
  * @param {string} filePath
- * @returns {'checkpoint' | 'lora' | 'vae' | 'upscaler' | 'embedding' | 'controlnet' | 'unknown'}
+ * @returns {'checkpoint' | 'diffusion' | 'text_encoder' | 'lora' | 'vae' | 'upscaler' | 'embedding' | 'controlnet' | 'unknown'}
  */
 export function guessModelType(filePath) {
   const lower = filePath.toLowerCase();
   const base = lower.replace(/\\/g, '/');
 
-  // Path hints
-  if (/\/loras?\//.test(base) || /lora/i.test(pathBasename(filePath))) {
-    // continue — confirm with header when possible
+  // GGUF: no safetensors header — classify by name / path
+  if (lower.endsWith('.gguf')) {
+    return guessGgufType(filePath);
   }
+
+  // Path hints from HF / Comfy layouts (folder wins over ambiguous filenames)
+  if (/\/(text_encoders?|clip|text_encoder)\//.test(base)) return 'text_encoder';
+  if (/\/(diffusion_models?|unet|transformer)\//.test(base)) return 'diffusion';
+  if (/\/vae\//.test(base)) return 'vae';
 
   const parsed = readSafetensorsHeader(filePath);
   if (!parsed) {
@@ -99,18 +104,31 @@ export function guessModelType(filePath) {
     const size = fs.statSync(filePath).size;
     if (size < 50 * 1024 * 1024) return 'embedding';
   }
-  if (
-    keys.some(
-      (k) =>
-        k.includes('diffusion_model') ||
-        k.includes('double_blocks') ||
-        k.includes('cond_stage_model') ||
-        k.includes('conditioner.embedders') ||
-        k.includes('model.diffusion_model'),
-    )
-  ) {
-    return 'checkpoint';
-  }
+  const hasTextEncoder = keys.some(
+    (k) =>
+      k.includes('text_model') ||
+      k.includes('encoder.layers') ||
+      k.includes('shared.weight') ||
+      k.includes('token_embedding') ||
+      k.includes('text_projection'),
+  );
+  const hasDiffusion = keys.some(
+    (k) =>
+      k.includes('diffusion_model') ||
+      k.includes('double_blocks') ||
+      k.includes('single_blocks') ||
+      k.includes('joint_blocks') ||
+      k.includes('model.diffusion_model'),
+  );
+  const hasCond = keys.some(
+    (k) => k.includes('cond_stage_model') || k.includes('conditioner.embedders'),
+  );
+
+  // Full checkpoint: diffusion + text / conditioner in one file
+  if (hasDiffusion && (hasCond || hasTextEncoder)) return 'checkpoint';
+  if (hasDiffusion && !hasTextEncoder) return 'diffusion';
+  if (hasTextEncoder && !hasDiffusion) return 'text_encoder';
+  if (hasDiffusion || hasCond) return 'checkpoint';
 
   return guessFromFilename(filePath);
 }
@@ -119,13 +137,57 @@ function pathBasename(p) {
   return p.split(/[/\\]/).pop() || p;
 }
 
+/**
+ * GGUF files are typically diffusion (UNET) or text-encoder (T5/CLIP) quants.
+ * @param {string} filePath
+ */
+function guessGgufType(filePath) {
+  const name = pathBasename(filePath).toLowerCase();
+  const base = filePath.toLowerCase().replace(/\\/g, '/');
+  if (/\/(text_encoders?|clip)\//.test(base)) return 'text_encoder';
+  if (/\/(diffusion_models?|unet)\//.test(base)) return 'diffusion';
+  if (
+    name.includes('t5') ||
+    name.includes('clip_l') ||
+    name.includes('clip-l') ||
+    name.includes('clip_g') ||
+    name.includes('text_encoder') ||
+    name.includes('vit-') ||
+    name.includes('umt5')
+  ) {
+    return 'text_encoder';
+  }
+  // Default GGUF → diffusion (flux/sd3 transformer quants)
+  return 'diffusion';
+}
+
 function guessFromFilename(filePath) {
   const name = pathBasename(filePath).toLowerCase();
+  if (name.endsWith('.gguf')) return guessGgufType(filePath);
   if (name.includes('lora') || name.includes('lycoris') || name.includes('locon')) return 'lora';
-  if (name.includes('vae')) return 'vae';
+  if (name.includes('vae') || name === 'ae.safetensors') return 'vae';
   if (name.includes('control') || name.includes('canny') || name.includes('depth')) return 'controlnet';
   if (name.includes('upscal') || name.includes('esrgan') || name.includes('4x')) return 'upscaler';
   if (name.includes('embed') || name.includes('textual')) return 'embedding';
+  if (
+    name.includes('text_encoder') ||
+    name.includes('clip_l') ||
+    name.includes('clip_g') ||
+    name.includes('t5xxl') ||
+    name.includes('mistral')
+  ) {
+    return 'text_encoder';
+  }
+  if (
+    name.includes('diffusion') ||
+    name.includes('unet') ||
+    /^flux\d/i.test(name) ||
+    name.includes('flux1') ||
+    name.includes('flux-') ||
+    name.includes('flux_')
+  ) {
+    return 'diffusion';
+  }
   if (name.endsWith('.safetensors') || name.endsWith('.ckpt') || name.endsWith('.pt')) {
     return 'checkpoint';
   }
@@ -134,6 +196,8 @@ function guessFromFilename(filePath) {
 
 export const MODEL_TYPE_OPTIONS = [
   { value: 'checkpoint', label: 'Checkpoint' },
+  { value: 'diffusion', label: 'Diffusion model' },
+  { value: 'text_encoder', label: 'Text encoder' },
   { value: 'lora', label: 'LoRA' },
   { value: 'vae', label: 'VAE' },
   { value: 'upscaler', label: 'Upscaler' },

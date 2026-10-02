@@ -113,6 +113,8 @@ async function installUnixSource(dest, ctx, log) {
 export const comfyuiComponent = {
   id: 'comfyui',
   name: 'ComfyUI',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     loadAndApplyEnv();

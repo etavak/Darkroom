@@ -11,6 +11,8 @@ export const tagsComponent = {
   id: 'tags',
   name: 'Tag CSVs',
   optional: true,
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     const files = loadPins().tags?.files || [];

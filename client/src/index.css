@@ -55,9 +55,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* Accent action color (Generate / Start) — warm safelight */
-  --primary: oklch(0.78 0.14 70);
-  --primary-foreground: oklch(0.18 0.02 70);
+  /* Accent action color (Generate / Start) — brightest safelight */
+  --primary: oklch(0.86 0.16 72);
+  --primary-foreground: oklch(0.16 0.03 72);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -67,7 +67,7 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.78 0.14 70);
+  --ring: oklch(0.86 0.16 72);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

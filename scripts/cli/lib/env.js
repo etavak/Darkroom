@@ -71,3 +71,39 @@ export function getConfig() {
     remote: mode === 'remote',
   };
 }
+
+/**
+ * Upsert KEY=value in .env (creates the file if missing).
+ * @param {string} key
+ * @param {string} value
+ * @param {string} [file]
+ */
+export function upsertEnvValue(key, value, file = envPath) {
+  const line = `${key}=${value}`;
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, `${line}\n`, 'utf8');
+    process.env[key] = value;
+    return;
+  }
+
+  const raw = fs.readFileSync(file, 'utf8');
+  const lines = raw.split(/\r?\n/);
+  let found = false;
+  const next = lines.map((l) => {
+    const trimmed = l.trim();
+    if (!trimmed || trimmed.startsWith('#')) return l;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) return l;
+    if (trimmed.slice(0, eq).trim() !== key) return l;
+    found = true;
+    return line;
+  });
+
+  if (!found) {
+    if (next.length > 0 && next[next.length - 1] !== '') next.push('');
+    next.push(line);
+  }
+
+  fs.writeFileSync(file, next.join('\n').replace(/\n+$/, '\n'), 'utf8');
+  process.env[key] = value;
+}

@@ -22,6 +22,20 @@ export type StyleDef = TagLayer & {
   name: string;
 };
 
+/** Slots a split-stack family needs beyond the diffusion model */
+export type FamilyRequiredComponents = {
+  text_encoders?: string[];
+  vae?: string[];
+};
+
+/** Downloadable companion roles resolved after install */
+export type FamilyDependency = {
+  role: string;
+  required: boolean;
+  options: string[];
+  recommend?: { vramUnderGB?: number; pick: string };
+};
+
 export type FamilyDef = TagLayer & {
   id: string;
   name: string;
@@ -32,6 +46,18 @@ export type FamilyDef = TagLayer & {
   tagSources?: string[];
   /** How autocomplete inserts tags */
   tagFormat?: 'spaces' | 'underscores';
+  /** Allow .gguf diffusion / TE (transformer families only) */
+  supportsGguf?: boolean;
+  /** checkpoint = single-file families; transformer = split UNET/CLIP/VAE */
+  loaderKind?: 'checkpoint' | 'transformer';
+  /** Required TE/VAE slots for split stack (empty for checkpoint families) */
+  requiredComponents?: FamilyRequiredComponents;
+  /** Filename substring hints keyed by component slot (clip_l, t5xxl, ae, …) */
+  filenameHints?: Record<string, string[]>;
+  /** Auto-install companions (see server/presets/components.json) */
+  dependencies?: FamilyDependency[];
+  /** Preferred CLIPLoader / DualCLIPLoader `type` for split stack */
+  defaultClipType?: string;
   styles: Record<string, StyleDef>;
 };
 

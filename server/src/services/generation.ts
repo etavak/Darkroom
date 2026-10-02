@@ -113,10 +113,34 @@ export function validateSettings(body: unknown): GenerationSettings {
     return v;
   };
 
+  const modelMode = b.modelMode === 'split' ? 'split' : 'checkpoint';
+  const unet = typeof b.unet === 'string' ? b.unet : undefined;
+  const clipName = typeof b.clipName === 'string' ? b.clipName : undefined;
+  const clipName2 = typeof b.clipName2 === 'string' ? b.clipName2 : undefined;
+  const clipType = typeof b.clipType === 'string' ? b.clipType : undefined;
+  const vaeName = typeof b.vaeName === 'string' && b.vaeName ? b.vaeName : undefined;
+
+  let checkpoint = typeof b.checkpoint === 'string' ? b.checkpoint : '';
+  if (modelMode === 'split') {
+    if (!unet) throw new Error('Missing or invalid unet');
+    if (!clipName) throw new Error('Missing or invalid clipName');
+    if (!vaeName) throw new Error('Missing or invalid vaeName');
+    // Preset/family mapping keys off `checkpoint` — use diffusion filename when omitted.
+    if (!checkpoint) checkpoint = unet;
+  } else if (!checkpoint) {
+    throw new Error('Missing or invalid checkpoint');
+  }
+
   return {
     prompt: typeof b.prompt === 'string' ? b.prompt : '',
     negative_prompt: typeof b.negative_prompt === 'string' ? b.negative_prompt : '',
-    checkpoint: requireString('checkpoint'),
+    checkpoint,
+    modelMode,
+    unet,
+    clipName,
+    clipName2,
+    clipType,
+    vaeName,
     width: requireNumber('width'),
     height: requireNumber('height'),
     steps: requireNumber('steps'),

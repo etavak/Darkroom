@@ -10,6 +10,7 @@ import { checkpointsRouter } from './routes/checkpoints.js';
 import { generateRouter } from './routes/generate.js';
 import { historyRouter } from './routes/history.js';
 import { imagesRouter } from './routes/images.js';
+import { modelsRouter } from './routes/models.js';
 import { presetsRouter } from './routes/presets.js';
 import { settingsRouter } from './routes/settings.js';
 import { tagsRouter } from './routes/tags.js';
@@ -33,6 +34,7 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.use('/api/checkpoints', checkpointsRouter);
+app.use('/api/models', modelsRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/images', imagesRouter);

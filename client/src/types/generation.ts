@@ -35,10 +35,18 @@ export type UpscaleSettings = {
   scale?: number;
 };
 
+export type ModelLoadMode = 'checkpoint' | 'split';
+
 export type GenerationSettings = {
   prompt: string;
   negative_prompt: string;
   checkpoint: string;
+  modelMode?: ModelLoadMode;
+  unet?: string;
+  clipName?: string;
+  clipName2?: string;
+  clipType?: string;
+  vaeName?: string;
   width: number;
   height: number;
   steps: number;
@@ -75,4 +83,126 @@ export type GenerateResponse = {
 
 export type GenerationUiState = GenerationSettings & {
   seedLocked: boolean;
+};
+
+export type ModelCatalog = {
+  checkpoints: string[];
+  diffusion_models: string[];
+  text_encoders: string[];
+  vae: string[];
+  loras: string[];
+  controlnet: string[];
+  upscale_models: string[];
+  embeddings: string[];
+  clip_types: string[];
+  dual_clip_types: string[];
+  available: {
+    checkpoint: boolean;
+    unet: boolean;
+    clip: boolean;
+    dualClip: boolean;
+    vae: boolean;
+    lora: boolean;
+    controlnet: boolean;
+    upscale: boolean;
+    ggufUnet?: boolean;
+    ggufClip?: boolean;
+    ggufDualClip?: boolean;
+  };
+};
+
+export type ModelInstallJob = {
+  id: string;
+  status: 'resolving' | 'downloading' | 'detecting' | 'ready' | 'installing' | 'done' | 'error';
+  progress: number;
+  transferred: number;
+  total: number;
+  filename?: string;
+  guessedType?: string;
+  error?: string;
+  dest?: string;
+  modelName?: string;
+  /** Present after URL resolve — client uses this to know Download is available */
+  downloadUrl?: string;
+  /** Set after download/upload lands on disk */
+  tempPath?: string;
+  localPath?: string;
+  allowLink?: boolean;
+  defaultMode?: 'copy' | 'move' | 'link';
+  linkType?: 'symlink' | 'hardlink';
+  candidates?: Array<{ path: string; size: number; downloadUrl: string; filename: string }>;
+  companions?: Array<{
+    path: string;
+    size: number;
+    downloadUrl: string;
+    filename: string;
+    fileType: string;
+    sha256?: string;
+  }>;
+  triggerWords?: string[];
+};
+
+export type DependencyOption = {
+  id: string;
+  filename: string;
+  type: string;
+  notes?: string;
+  sizeBytes: number;
+  sha256: string;
+  gated: boolean;
+  licenseUrl?: string;
+  recommended: boolean;
+};
+
+export type DependencyRole = {
+  role: string;
+  required: boolean;
+  status: 'satisfied' | 'missing' | 'choice';
+  satisfiedBy?: { filename: string; path: string };
+  options: DependencyOption[];
+  preselected?: string | null;
+};
+
+export type DependencyAnalysis = {
+  familyId: string;
+  vramGB: number | null;
+  roles: DependencyRole[];
+  freeDiskBytes: number | null;
+  freeDiskLabel: string;
+};
+
+export type DependencyPlan = {
+  id: string;
+  familyId: string;
+  items: Array<{
+    role: string;
+    action: 'download' | 'local';
+    type: string;
+    filename: string;
+    sizeBytes: number;
+    gated: boolean;
+    licenseUrl?: string;
+    notes?: string;
+  }>;
+  totalBytes: number;
+  totalLabel: string;
+  freeDiskBytes: number | null;
+  freeDiskLabel: string;
+  gatedLicenseUrls: string[];
+  needsHfToken: boolean;
+  status: 'ready' | 'running' | 'done' | 'error';
+  progress: number;
+  currentFile?: string;
+  error?: string;
+  completed: string[];
+};
+
+export type SystemStatsSummary = {
+  ok: boolean;
+  label: string;
+  deviceName: string | null;
+  backend: string | null;
+  vramTotal: number | null;
+  vramFree: number | null;
+  vramTooltip: string | null;
 };

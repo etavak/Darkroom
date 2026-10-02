@@ -179,5 +179,11 @@ export function listFamilySummaries() {
     tagsEnabled: (f.tagSources ?? []).length > 0,
     styles: Object.entries(f.styles).map(([id, s]) => ({ id, name: s.name })),
     settings: f.settings ?? {},
+    supportsGguf: Boolean(f.supportsGguf),
+    loaderKind: f.loaderKind ?? 'checkpoint',
+    requiredComponents: f.requiredComponents ?? {},
+    filenameHints: f.filenameHints ?? {},
+    dependencies: f.dependencies ?? [],
+    defaultClipType: f.defaultClipType,
   }));
 }

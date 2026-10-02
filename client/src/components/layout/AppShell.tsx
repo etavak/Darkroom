@@ -37,6 +37,9 @@ type Props = {
   controlsDimmed?: boolean;
   historyPosition?: HistoryPosition;
   resizablePanels?: boolean;
+  /** e.g. "Apple M5 · MPS" from /system_stats */
+  systemLabel?: string | null;
+  vramTooltip?: string | null;
 };
 
 export function AppShell({
@@ -54,10 +57,13 @@ export function AppShell({
   controlsDimmed,
   historyPosition = 'right',
   resizablePanels = false,
+  systemLabel,
+  vramTooltip,
 }: Props) {
   const historyOnRight = historyPosition === 'right';
   const historyOnBottom = historyPosition === 'bottom';
   const historyHidden = historyPosition === 'hidden';
+  const subtitle = systemLabel || 'local · ComfyUI';
 
   return (
     <div
@@ -82,9 +88,15 @@ export function AppShell({
             <LogoMark />
             <div className="flex items-baseline gap-2.5">
               <h1 className="text-lg font-semibold tracking-tight">Darkroom</h1>
-              <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                local · ComfyUI
-              </span>
+              {vramTooltip ? (
+                <Tooltip content={vramTooltip}>
+                  <span className="hidden cursor-default text-[11px] text-muted-foreground sm:inline">
+                    {subtitle}
+                  </span>
+                </Tooltip>
+              ) : (
+                <span className="hidden text-[11px] text-muted-foreground sm:inline">{subtitle}</span>
+              )}
             </div>
           </div>
         </div>

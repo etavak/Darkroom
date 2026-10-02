@@ -19,6 +19,9 @@ type Props = {
   startingComfy?: boolean;
   onDropSettingsFile?: (file: File) => void;
   canvasBackground?: CanvasBackground;
+  /** When no models are installed */
+  emptyModelState?: boolean;
+  onAddModel?: () => void;
 };
 
 const CANVAS_BG: Record<CanvasBackground, string> = {
@@ -61,6 +64,8 @@ export function PreviewCanvas({
   startingComfy = false,
   onDropSettingsFile,
   canvasBackground = 'theme',
+  emptyModelState = false,
+  onAddModel,
 }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -157,6 +162,21 @@ export function PreviewCanvas({
                 )}
               </Button>
             )}
+          </div>
+        ) : emptyModelState ? (
+          <div className="flex flex-col items-center gap-3 px-6 text-center text-muted-foreground">
+            <ImageIcon className="h-12 w-12 opacity-40" />
+            <div>
+              <p className="text-sm font-medium text-foreground">Add a model</p>
+              <p className="mt-1 max-w-xs text-xs opacity-70">
+                Install a checkpoint or a diffusion stack to start generating.
+              </p>
+            </div>
+            {onAddModel ? (
+              <Button type="button" size="sm" onClick={onAddModel}>
+                Add model
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2 text-muted-foreground">

@@ -80,6 +80,8 @@ async function installTorchForHardware(python, channel, log) {
 export const torchComponent = {
   id: 'torch',
   name: 'PyTorch',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     loadAndApplyEnv();

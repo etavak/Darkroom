@@ -138,6 +138,8 @@ export function getManagedPython() {
 export const pythonComponent = {
   id: 'python',
   name: 'Python',
+  platforms: ['*'],
+  gpus: ['*'],
 
   async status() {
     const pins = loadPins();
