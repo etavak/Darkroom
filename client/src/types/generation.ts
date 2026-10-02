@@ -33,9 +33,28 @@ export type UpscaleSettings = {
   enabled: boolean;
   model: string;
   scale?: number;
+  refine?: boolean;
+  refineDenoise?: number;
+  refineSteps?: number;
+};
+
+export type OutpaintSettings = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  feather: number;
+  targetAspect?: string | null;
 };
 
 export type ModelLoadMode = 'checkpoint' | 'split';
+export type GenerationMode = 'txt2img' | 'img2img' | 'outpaint' | 'edit' | 'upscale';
+export type SourceSizeMode = 'match' | 'aspect';
+export type SourceFitMode = 'crop' | 'fit';
+export type EditStrategy = 'kontext' | 'qwen';
+
+/** UI mode selector (maps to generationMode). */
+export type WorkMode = 'generate' | 'img2img' | 'outpaint' | 'edit';
 
 export type GenerationSettings = {
   prompt: string;
@@ -57,6 +76,16 @@ export type GenerationSettings = {
   batch_size: number;
   clipSkip?: number;
   guidance?: number;
+  generationMode?: GenerationMode;
+  sourceImage?: string;
+  parentId?: string;
+  denoise?: number;
+  sourceSizeMode?: SourceSizeMode;
+  sourceFit?: SourceFitMode;
+  sizeMultiple?: number;
+  outpaint?: OutpaintSettings | null;
+  editStrategy?: EditStrategy;
+  inpaintModel?: string;
   loras?: LoraSettings[];
   controlnet?: ControlNetSettings | null;
   hiresFix?: HiresFixSettings | null;
@@ -73,6 +102,9 @@ export type GenerationRecord = {
   images: string[];
   status: string;
   error: string | null;
+  completedAt?: number | null;
+  durationMs?: number | null;
+  parentId?: string | null;
 };
 
 export type GenerateResponse = {
@@ -122,9 +154,7 @@ export type ModelInstallJob = {
   error?: string;
   dest?: string;
   modelName?: string;
-  /** Present after URL resolve — client uses this to know Download is available */
   downloadUrl?: string;
-  /** Set after download/upload lands on disk */
   tempPath?: string;
   localPath?: string;
   allowLink?: boolean;
@@ -205,4 +235,13 @@ export type SystemStatsSummary = {
   vramTotal: number | null;
   vramFree: number | null;
   vramTooltip: string | null;
+};
+
+export type SourceImageState = {
+  previewUrl: string;
+  comfyName: string;
+  localName: string;
+  width: number;
+  height: number;
+  parentId?: string | null;
 };

@@ -1,5 +1,4 @@
-/** Parse PNG tEXt / iTXt chunks for generation metadata. */
-export async function parseImageSettings(file: File): Promise<{
+export type ParsedImageSettings = {
   prompt?: string;
   negative_prompt?: string;
   seed?: number;
@@ -8,9 +7,18 @@ export async function parseImageSettings(file: File): Promise<{
   width?: number;
   height?: number;
   sampler?: string;
+  scheduler?: string;
   checkpoint?: string;
+  clipSkip?: number;
+  guidance?: number;
+  denoise?: number;
+  /** Full settings blob when Darkroom embedded JSON is present */
+  settings?: Record<string, unknown>;
   raw?: Record<string, string>;
-} | null> {
+};
+
+/** Parse PNG tEXt / iTXt chunks for generation metadata. */
+export async function parseImageSettings(file: File): Promise<ParsedImageSettings | null> {
   const buf = await file.arrayBuffer();
   const bytes = new Uint8Array(buf);
   // PNG signature
@@ -70,6 +78,38 @@ export async function parseImageSettings(file: File): Promise<{
 
   if (Object.keys(texts).length === 0) return null;
 
+  // Darkroom full settings JSON
+  if (texts.darkroom) {
+    try {
+      const parsed = JSON.parse(texts.darkroom) as {
+        settings?: Record<string, unknown>;
+      };
+      const s = parsed.settings;
+      if (s && typeof s === 'object') {
+        return {
+          prompt: typeof s.prompt === 'string' ? s.prompt : undefined,
+          negative_prompt:
+            typeof s.negative_prompt === 'string' ? s.negative_prompt : undefined,
+          seed: typeof s.seed === 'number' ? s.seed : undefined,
+          steps: typeof s.steps === 'number' ? s.steps : undefined,
+          cfg: typeof s.cfg === 'number' ? s.cfg : undefined,
+          width: typeof s.width === 'number' ? s.width : undefined,
+          height: typeof s.height === 'number' ? s.height : undefined,
+          sampler: typeof s.sampler === 'string' ? s.sampler : undefined,
+          scheduler: typeof s.scheduler === 'string' ? s.scheduler : undefined,
+          checkpoint: typeof s.checkpoint === 'string' ? s.checkpoint : undefined,
+          clipSkip: typeof s.clipSkip === 'number' ? s.clipSkip : undefined,
+          guidance: typeof s.guidance === 'number' ? s.guidance : undefined,
+          denoise: typeof s.denoise === 'number' ? s.denoise : undefined,
+          settings: s,
+          raw: texts,
+        };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   // A1111-style "parameters"
   if (texts.parameters) {
     return parseA1111Parameters(texts.parameters, texts);
@@ -78,7 +118,10 @@ export async function parseImageSettings(file: File): Promise<{
   // ComfyUI prompt JSON
   if (texts.prompt) {
     try {
-      const graph = JSON.parse(texts.prompt) as Record<string, { class_type?: string; inputs?: Record<string, unknown> }>;
+      const graph = JSON.parse(texts.prompt) as Record<
+        string,
+        { class_type?: string; inputs?: Record<string, unknown> }
+      >;
       return parseComfyPrompt(graph, texts);
     } catch {
       // fall through

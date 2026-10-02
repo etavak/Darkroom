@@ -55,8 +55,8 @@ export function JobQueue({ jobs, activeId, onRemove, onReorder }: Props) {
               size="icon"
               className="h-6 w-6 shrink-0"
               onClick={() => onRemove(job.id)}
-              aria-label="Remove from queue"
-              title="Remove from queue"
+              aria-label={job.id === activeId ? 'Cancel job' : 'Remove from queue'}
+              title={job.id === activeId ? 'Cancel job' : 'Remove from queue'}
             >
               <X className="h-3 w-3" />
             </Button>

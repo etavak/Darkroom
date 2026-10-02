@@ -28,8 +28,12 @@ if not errorlevel 1 (
 if not defined NODE_BIN (
   for /d %%D in ("%RUNTIME_NODE%\node-v*-win-%NODE_ARCH%") do (
     if exist "%%D\node.exe" (
-      set "NODE_BIN=%%D\node.exe"
-      goto :have_node
+      for /f "tokens=1 delims=v" %%V in ('"%%D\node.exe" -v') do set PORTVER=%%V
+      for /f "tokens=1 delims=." %%M in ("!PORTVER!") do set PORTMAJOR=%%M
+      if "!PORTMAJOR!"=="!PIN_MAJOR!" (
+        set "NODE_BIN=%%D\node.exe"
+        goto :have_node
+      )
     )
   )
 )
@@ -58,7 +62,11 @@ if not defined NODE_BIN (
   )
   del /f /q "%TMP%" >nul 2>nul
   for /d %%D in ("%RUNTIME_NODE%\node-v*-win-%NODE_ARCH%") do (
-    if exist "%%D\node.exe" set "NODE_BIN=%%D\node.exe"
+    if exist "%%D\node.exe" (
+      for /f "tokens=1 delims=v" %%V in ('"%%D\node.exe" -v') do set PORTVER=%%V
+      for /f "tokens=1 delims=." %%M in ("!PORTVER!") do set PORTMAJOR=%%M
+      if "!PORTMAJOR!"=="!PIN_MAJOR!" set "NODE_BIN=%%D\node.exe"
+    )
   )
 )
 
@@ -71,6 +79,10 @@ if not defined NODE_BIN (
 set "NODE_DIR=%NODE_BIN%"
 for %%I in ("%NODE_BIN%") do set "NODE_DIR=%%~dpI"
 set "NPM_BIN=%NODE_DIR%npm.cmd"
+REM Put this Node first so npm/node-gyp never pick a different major from PATH.
+set "PATH=%NODE_DIR%;%PATH%"
+
+for /f "delims=" %%V in ('"%NODE_BIN%" -v') do set "NODE_VER=%%V"
 
 if not exist "%ROOT%\node_modules\@clack\prompts" (
   echo [Darkroom] Installing dependencies…
@@ -85,10 +97,18 @@ if not exist "%ROOT%\node_modules\@clack\prompts" (
     pause
     exit /b 1
   )
-) else (
-  "%NODE_BIN%" -e "require('better-sqlite3')" >nul 2>nul
+  echo [Darkroom] Rebuilding native modules for Node !NODE_VER!…
+  call "%NPM_BIN%" rebuild better-sqlite3 --prefix "%ROOT%"
   if errorlevel 1 (
-    echo [Darkroom] Rebuilding native modules for current Node…
+    echo [Darkroom] npm rebuild failed.
+    pause
+    exit /b 1
+  )
+) else (
+  REM bare require() only loads JS — native addon loads on new Database()
+  "%NODE_BIN%" -e "const D=require('better-sqlite3'); const d=new D(':memory:'); d.close();" >nul 2>nul
+  if errorlevel 1 (
+    echo [Darkroom] Rebuilding native modules for Node !NODE_VER!…
     call "%NPM_BIN%" rebuild better-sqlite3 --prefix "%ROOT%"
     if errorlevel 1 (
       echo [Darkroom] npm rebuild failed.

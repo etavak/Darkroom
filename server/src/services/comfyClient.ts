@@ -95,3 +95,21 @@ export async function viewImage(params: {
   }
   return Buffer.from(await res.arrayBuffer());
 }
+
+/** Upload an image into ComfyUI's input folder. Returns the filename Comfy expects. */
+export async function uploadImage(buf: Buffer, filename: string): Promise<string> {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_') || 'source.png';
+  const form = new FormData();
+  form.append('image', new Blob([new Uint8Array(buf)]), safe);
+  form.append('overwrite', 'true');
+  const res = await comfyFetch('/upload/image', {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ComfyError(`upload image failed: ${res.status} ${text}`, res.status);
+  }
+  const data = (await res.json()) as { name?: string; filename?: string };
+  return data.name || data.filename || safe;
+}

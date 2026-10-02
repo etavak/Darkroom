@@ -122,6 +122,16 @@ const server = http.createServer(async (req, res) => {
             },
           },
         },
+        LoadImage: { input: { required: { image: [['mock_source.png']] } } },
+        ImageScale: { input: { required: {} } },
+        ImagePadForOutpaint: { input: { required: {} } },
+        VAEEncode: { input: { required: {} } },
+        VAEDecode: { input: { required: {} } },
+        SetLatentNoiseMask: { input: { required: {} } },
+        KSampler: { input: { required: {} } },
+        EmptyLatentImage: { input: { required: {} } },
+        ReferenceLatent: { input: { required: {} } },
+        FluxGuidance: { input: { required: {} } },
       }),
     );
     return;
@@ -188,6 +198,17 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/view') {
     res.writeHead(200, { 'Content-Type': 'image/png' });
     res.end(tinyPng());
+    return;
+  }
+
+  if (url.pathname === '/upload/image') {
+    // Consume body; return a stable filename for LoadImage
+    const chunks: Buffer[] = [];
+    req.on('data', (c) => chunks.push(Buffer.from(c)));
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ name: 'mock_source.png', subfolder: '', type: 'input' }));
+    });
     return;
   }
 

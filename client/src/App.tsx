@@ -1,27 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AdvancedSettings } from '@/components/controls/AdvancedSettings';
 import { AddModelDialog } from '@/components/controls/AddModelDialog';
 import { AspectRatioPresets } from '@/components/controls/AspectRatioPresets';
 import { BatchControl } from '@/components/controls/BatchControl';
+import { CollapsibleSection } from '@/components/controls/CollapsibleSection';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
 import { GenerateButton } from '@/components/controls/GenerateButton';
+import { HiresFixControls } from '@/components/controls/HiresFixControls';
 import { JobQueue, type QueuedJob } from '@/components/controls/JobQueue';
 import { LoraPanel } from '@/components/controls/LoraPanel';
 import { DependencyResolver } from '@/components/controls/DependencyResolver';
 import { MapFamilyDialog } from '@/components/controls/MapFamilyDialog';
 import { ModelStackPanel } from '@/components/controls/ModelStackPanel';
-import { PanelSection } from '@/components/controls/PanelSection';
 import { PromptPanel } from '@/components/controls/PromptPanel';
 import { SamplerControls } from '@/components/controls/SamplerControls';
 import { SeedControl } from '@/components/controls/SeedControl';
+import { SourcePanel } from '@/components/controls/SourcePanel';
 import { StyleSelect } from '@/components/controls/StyleSelect';
 import { Gallery } from '@/components/gallery/Gallery';
 import { AppShell } from '@/components/layout/AppShell';
 import { MainStage } from '@/components/layout/MainStage';
 import { SettingsPanel } from '@/components/layout/SettingsPanel';
 import { PreviewCanvas } from '@/components/preview/PreviewCanvas';
-import { ResultActionBar } from '@/components/preview/ResultActionBar';
+import {
+  ResultActionBar,
+  type UpscaleRequest,
+  type VaryStrength,
+} from '@/components/preview/ResultActionBar';
 import { AppSettingsPanel } from '@/components/settings/AppSettingsPanel';
+import { UndoToast } from '@/components/ui/UndoToast';
 import { scaleAspectPresets } from '@/constants/aspectRatios';
 import { useFamilies } from '@/hooks/useFamilies';
 import { useGeneration } from '@/hooks/useGeneration';
@@ -39,14 +45,37 @@ import {
   updatePreviewQuality,
 } from '@/lib/api';
 import { parseImageSettings } from '@/lib/imageMeta';
-import { autoPickStack, evaluateReadiness } from '@/lib/modelReadiness';
+import { shortModelName } from '@/lib/modelProfiles';
+import {
+  autoPickStack,
+  evaluateReadiness,
+  inferFamilyFromDiffusion,
+} from '@/lib/modelReadiness';
+import {
+  loadPanelSections,
+  savePanelSections,
+  type PanelSectionId,
+  type PanelSectionState,
+} from '@/lib/panelSections';
+import { pushRecentPrompt } from '@/lib/promptLibrary';
+import {
+  matchSourceSize,
+  uploadFileAsSource,
+  useGalleryAsSource,
+} from '@/lib/sourceImage';
 import { eventMatchesShortcut, qualityToPreviewMethod } from '@/lib/uiSettings';
 import type {
   GenerationRecord,
   GenerationSettings,
+  HiresFixSettings,
   LoraSettings,
   ModelLoadMode,
+  OutpaintSettings,
+  SourceFitMode,
+  SourceImageState,
+  SourceSizeMode,
   SystemStatsSummary,
+  WorkMode,
 } from '@/types/generation';
 import type { ResolvedPresets } from '@/types/presets';
 
@@ -74,14 +103,23 @@ const emptyResolved: ResolvedPresets = {
 export default function App() {
   const { catalog, loading: modelsLoading, reload: reloadModels } = useModels();
   const { families } = useFamilies();
-  const { items, loading: histLoading, reload, confirmRemove } = useHistory();
+  const {
+    items,
+    loading: histLoading,
+    reload,
+    softDelete,
+    undoDelete,
+    dismissUndo,
+    pendingDelete,
+  } = useHistory();
   const [comfyOk, setComfyOk] = useState<boolean | null>(null);
   const [remoteMode, setRemoteMode] = useState(false);
   const [startingComfy, setStartingComfy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiSettingsOpen, setUiSettingsOpen] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [finalOpen, setFinalOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState<PanelSectionState>(() => loadPanelSections());
+  const modelAutoCollapsed = useRef(false);
   const [perPromptPreview, setPerPromptPreview] = useState<boolean | null>(null);
   const [queue, setQueue] = useState<QueuedJob[]>([]);
   const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
@@ -95,7 +133,11 @@ export default function App() {
   });
   const queueBusy = useRef(false);
   const queueRef = useRef<QueuedJob[]>([]);
-  queueRef.current = queue;
+  /** Keep queueRef in sync — never assign queueRef from render (races the async drain loop). */
+  const syncQueue = useCallback((next: QueuedJob[]) => {
+    queueRef.current = next;
+    setQueue(next);
+  }, []);
 
   const {
     settings: uiSettings,
@@ -131,6 +173,7 @@ export default function App() {
   const [clipName, setClipName] = useState('');
   const [clipName2, setClipName2] = useState('');
   const [clipType, setClipType] = useState('flux');
+  const [clipTypeOverride, setClipTypeOverride] = useState(false);
   const [vaeName, setVaeName] = useState('');
   const [loras, setLoras] = useState<LoraSettings[]>([]);
   const [width, setWidth] = useState(1024);
@@ -145,6 +188,25 @@ export default function App() {
   const [seed, setSeed] = useState(randomSeed);
   const [seedLocked, setSeedLocked] = useState(false);
   const [batchSize, setBatchSize] = useState(1);
+  const [hiresFix, setHiresFix] = useState<HiresFixSettings>({
+    enabled: false,
+    scale: 1.5,
+    steps: 15,
+    denoise: 0.45,
+  });
+  const [source, setSource] = useState<SourceImageState | null>(null);
+  const [workMode, setWorkMode] = useState<WorkMode>('generate');
+  const [imgDenoise, setImgDenoise] = useState(0.55);
+  const [sourceSizeMode, setSourceSizeMode] = useState<SourceSizeMode>('match');
+  const [sourceFit, setSourceFit] = useState<SourceFitMode>('crop');
+  const [outpaint, setOutpaint] = useState<OutpaintSettings>({
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    feather: 40,
+    targetAspect: null,
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewImages, setViewImages] = useState<string[]>([]);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
@@ -158,6 +220,9 @@ export default function App() {
     () => families.find((f) => f.id === resolved.familyId) ?? null,
     [families, resolved.familyId],
   );
+
+  const sizeMultiple =
+    familyMeta?.sizeMultiple ?? (familyMeta?.loaderKind === 'transformer' ? 64 : 8);
 
   const styles = familyMeta?.styles ?? [];
 
@@ -209,8 +274,19 @@ export default function App() {
     if (picked.clipName) setClipName(picked.clipName);
     if (picked.clipName2) setClipName2(picked.clipName2);
     if (picked.vaeName) setVaeName(picked.vaeName);
-    if (picked.clipType) setClipType(picked.clipType);
-  }, [modelMode, unet, familyMeta, catalog, families]);
+    if (picked.clipType && !clipTypeOverride) setClipType(picked.clipType);
+  }, [modelMode, unet, familyMeta, catalog, families, clipTypeOverride]);
+
+  // Keep clip type aligned with family unless the user overrides
+  useEffect(() => {
+    if (clipTypeOverride) return;
+    const auto = familyMeta?.defaultClipType;
+    if (auto) setClipType(auto);
+  }, [familyMeta?.defaultClipType, familyMeta?.id, clipTypeOverride]);
+
+  useEffect(() => {
+    savePanelSections(panelOpen);
+  }, [panelOpen]);
 
   // Offer split mode + GGUF-aware defaults when only diffusion models exist
   useEffect(() => {
@@ -273,6 +349,7 @@ export default function App() {
     }
 
     const s = resolved.settings;
+    if (typeof s.steps === 'number') setSteps(s.steps);
     if (typeof s.cfg === 'number') setCfg(s.cfg);
     if (typeof s.clipSkip === 'number') setClipSkip(s.clipSkip);
     else setClipSkip(undefined);
@@ -351,13 +428,13 @@ export default function App() {
   const onComplete = useCallback(
     (record: GenerationRecord) => {
       void reload();
-      if (uiSettings.jumpToNewest) {
+      if (uiSettings.jumpToNewest || !selectedId) {
         setSelectedId(record.id);
         setViewImages(record.images);
       }
       setSettingsOpen(false);
     },
-    [reload, uiSettings.jumpToNewest],
+    [reload, selectedId, uiSettings.jumpToNewest],
   );
 
   const { runtime, generate, cancel, setLivePreviewEnabled } = useGeneration(onComplete);
@@ -385,23 +462,51 @@ export default function App() {
 
   const buildSettings = useCallback(
     (nextSeed: number): GenerationSettings => {
-      const s = resolved.settings;
+      let w = width;
+      let h = height;
+      if (workMode === 'img2img' && source && sourceSizeMode === 'match' && source.width && source.height) {
+        const matched = matchSourceSize(source.width, source.height, sizeMultiple);
+        w = matched.width;
+        h = matched.height;
+      }
+
+      const generationMode =
+        workMode === 'generate'
+          ? 'txt2img'
+          : workMode === 'img2img'
+            ? 'img2img'
+            : workMode === 'outpaint'
+              ? 'outpaint'
+              : 'edit';
+
       const base: GenerationSettings = {
         prompt: resolved.finalPositive,
         negative_prompt: resolved.finalNegative,
         checkpoint: modelMode === 'split' ? unet || checkpoint : checkpoint,
         modelMode,
-        width,
-        height,
+        width: w,
+        height: h,
         steps,
-        cfg: typeof s.cfg === 'number' ? s.cfg : cfg,
-        sampler: s.sampler ?? sampler,
-        scheduler: s.scheduler ?? scheduler,
+        cfg,
+        sampler,
+        scheduler,
         seed: nextSeed,
         batch_size: batchSize,
-        clipSkip: s.clipSkip ?? clipSkip,
-        guidance: s.guidance ?? guidance,
+        clipSkip,
+        guidance,
         loras: loras.length ? loras : undefined,
+        hiresFix: hiresFix.enabled && workMode === 'generate' ? hiresFix : undefined,
+        generationMode,
+        sourceImage: workMode === 'generate' ? undefined : source?.comfyName,
+        parentId: workMode === 'generate' ? undefined : source?.parentId || undefined,
+        denoise: workMode === 'generate' ? undefined : imgDenoise,
+        sourceSizeMode,
+        sourceFit,
+        sizeMultiple,
+        outpaint: workMode === 'outpaint' ? outpaint : undefined,
+        editStrategy:
+          workMode === 'edit' ? familyMeta?.editStrategy ?? 'kontext' : undefined,
+        inpaintModel: familyMeta?.preferredInpaintModel,
       };
       if (modelMode === 'split') {
         base.unet = unet;
@@ -422,15 +527,25 @@ export default function App() {
       clipName2,
       clipSkip,
       clipType,
+      familyMeta?.editStrategy,
+      familyMeta?.preferredInpaintModel,
       guidance,
       height,
+      hiresFix,
+      imgDenoise,
       loras,
       modelMode,
+      outpaint,
       resolved,
       sampler,
       scheduler,
+      sizeMultiple,
+      source,
+      sourceFit,
+      sourceSizeMode,
       steps,
       unet,
+      workMode,
       vaeName,
       width,
     ],
@@ -461,18 +576,13 @@ export default function App() {
       for (;;) {
         while (queueRef.current.length > 0) {
           if (haltForeverRef.current) {
-            setQueue([]);
-            queueRef.current = [];
+            syncQueue([]);
             break;
           }
           const next = queueRef.current[0];
           setActiveQueueId(next.id);
           await runGenerate(next.settings);
-          setQueue((q) => {
-            const rest = q.filter((j) => j.id !== next.id);
-            queueRef.current = rest;
-            return rest;
-          });
+          syncQueue(queueRef.current.filter((j) => j.id !== next.id));
           setActiveQueueId(null);
         }
         if (haltForeverRef.current || !foreverRef.current) break;
@@ -484,17 +594,19 @@ export default function App() {
           settings,
           label: settings.prompt.slice(0, 48) || 'Forever',
         };
-        setQueue((q) => {
-          const next = [...q, job];
-          queueRef.current = next;
-          return next;
-        });
+        syncQueue([...queueRef.current, job]);
       }
     } finally {
       queueBusy.current = false;
       setActiveQueueId(null);
+      // Jobs may have been enqueued while this drain was finishing
+      if (queueRef.current.length > 0 && !haltForeverRef.current) {
+        queueMicrotask(() => {
+          void processQueue();
+        });
+      }
     }
-  }, [buildSettings, runGenerate, seedLocked]);
+  }, [buildSettings, runGenerate, seedLocked, syncQueue]);
 
   const readiness = useMemo(
     () =>
@@ -527,14 +639,145 @@ export default function App() {
   const generateBlockedReason = useMemo(() => {
     if (comfyOk === false) return 'ComfyUI offline';
     if (readiness.reason) return readiness.reason;
-    if (!resolved.finalPositive.trim()) return 'Add a prompt';
+    if (workMode !== 'generate' && !source) return 'Set a source image';
+    if (!resolved.finalPositive.trim()) {
+      return workMode === 'edit' ? 'Describe the change' : 'Add a prompt';
+    }
     return null;
-  }, [comfyOk, readiness.reason, resolved.finalPositive]);
+  }, [comfyOk, readiness.reason, resolved.finalPositive, source, workMode]);
+
+  // Collapse Model once the stack is valid (first time only)
+  useEffect(() => {
+    if (!readiness.ready || modelAutoCollapsed.current) return;
+    modelAutoCollapsed.current = true;
+    setPanelOpen((prev) => ({ ...prev, model: false, prompt: true }));
+  }, [readiness.ready]);
+
+  const setSectionOpen = useCallback((id: PanelSectionId, open: boolean) => {
+    setPanelOpen((prev) => ({ ...prev, [id]: open }));
+  }, []);
+
+  const soloSection = useCallback((id: PanelSectionId) => {
+    setPanelOpen({
+      model: id === 'model',
+      source: id === 'source',
+      prompt: id === 'prompt',
+      image: id === 'image',
+      loras: id === 'loras',
+      sampling: id === 'sampling',
+    });
+  }, []);
+
+  const applySource = useCallback(
+    (next: SourceImageState, preferMode: WorkMode = 'img2img') => {
+      setSource(next);
+      setWorkMode((prev) => (prev === 'generate' ? preferMode : prev));
+      setPanelOpen((p) => ({ ...p, source: true }));
+      if (next.width > 0 && next.height > 0) {
+        const matched = matchSourceSize(next.width, next.height, sizeMultiple);
+        if (sourceSizeMode === 'match') {
+          setWidth(matched.width);
+          setHeight(matched.height);
+          setAspectId('custom');
+        }
+      }
+    },
+    [sizeMultiple, sourceSizeMode],
+  );
+
+  const clearSource = useCallback(() => {
+    setSource(null);
+    setWorkMode('generate');
+  }, []);
+
+  const setSourceFromFile = useCallback(
+    async (file: File) => {
+      try {
+        const next = await uploadFileAsSource(file);
+        applySource(next, 'img2img');
+      } catch (err) {
+        setCopyFlash(err instanceof Error ? err.message : 'Source upload failed');
+        window.setTimeout(() => setCopyFlash(null), 2500);
+      }
+    },
+    [applySource],
+  );
+
+  const setSourceFromGallery = useCallback(
+    async (item: GenerationRecord) => {
+      if (!item.images[0]) return;
+      try {
+        const next = await useGalleryAsSource(item.images[0], item.id);
+        applySource(next, 'img2img');
+      } catch (err) {
+        setCopyFlash(err instanceof Error ? err.message : 'Source upload failed');
+        window.setTimeout(() => setCopyFlash(null), 2500);
+      }
+    },
+    [applySource],
+  );
+
+  const stackFamily =
+    familyMeta ??
+    (modelMode === 'split' ? inferFamilyFromDiffusion(unet, families) : null);
+  const teCount = stackFamily?.requiredComponents?.text_encoders?.length ?? 0;
+  const teHints = stackFamily?.filenameHints ?? {};
+  const teKeys = stackFamily?.requiredComponents?.text_encoders ?? [];
+  const vaeKeys = stackFamily?.requiredComponents?.vae ?? [];
+
+  const modelSummary = useMemo(() => {
+    if (modelMode === 'split') {
+      return [shortModelName(unet), shortModelName(clipName), shortModelName(vaeName)]
+        .filter((x) => x && x !== '—')
+        .join(' · ');
+    }
+    return shortModelName(checkpoint);
+  }, [modelMode, unet, clipName, vaeName, checkpoint]);
+
+  const promptSummary = useMemo(() => {
+    const t = resolved.finalPositive.trim() || prompt.trim();
+    if (!t) return 'Empty prompt';
+    return t.length > 42 ? `${t.slice(0, 40)}…` : t;
+  }, [resolved.finalPositive, prompt]);
+
+  const imageSummary = `${width}×${height} · seed ${seed}${seedLocked ? ' · locked' : ''}${
+    hiresFix.enabled ? ` · hires ${hiresFix.scale}×` : ''
+  }`;
+  const loraSummary =
+    loras.length === 0
+      ? 'None'
+      : loras.map((l) => `${shortModelName(l.name)} ${l.strength_model}`).join(', ');
+  const samplingSummary = `${steps} steps · CFG ${cfg} · ${sampler}`;
+
+  const previousImage = useMemo(() => {
+    const completed = items.filter((i) => i.images[0]);
+    if (selectedId) {
+      const idx = completed.findIndex((i) => i.id === selectedId);
+      if (idx >= 0 && completed[idx + 1]?.images[0]) return completed[idx + 1].images[0];
+    }
+    if (runtime.resultImages[0] && completed[0]?.images[0] !== runtime.resultImages[0]) {
+      return completed[0]?.images[0] ?? null;
+    }
+    return completed[1]?.images[0] ?? null;
+  }, [items, selectedId, runtime.resultImages]);
 
   const openAddModel = useCallback((preferType?: string) => {
     setAddModelPreferType(preferType);
     setAddModelOpen(true);
   }, []);
+
+  // Show the most recent history image on the canvas once history loads
+  const historySeeded = useRef(false);
+  useEffect(() => {
+    if (historySeeded.current || histLoading) return;
+    historySeeded.current = true;
+    if (selectedId || viewImages.length > 0) return;
+    const first = items.find((i) => i.status === 'completed' && i.images[0]);
+    if (first) {
+      setSelectedId(first.id);
+      setViewImages(first.images);
+    }
+  }, [histLoading, items, selectedId, viewImages.length]);
 
   const handleGenerate = useCallback(async () => {
     if (!readiness.ready || !resolved.finalPositive.trim() || comfyOk === false) {
@@ -548,34 +791,64 @@ export default function App() {
     const nextSeed = seedLocked ? seed : randomSeed();
     if (!seedLocked) setSeed(nextSeed);
     const settings = buildSettings(nextSeed);
+    if (prompt.trim()) pushRecentPrompt(prompt);
     const job: QueuedJob = {
       id: crypto.randomUUID(),
       settings,
       label: settings.prompt.slice(0, 48) || 'Queued job',
     };
-    setQueue((q) => {
-      const next = [...q, job];
-      queueRef.current = next;
-      return next;
-    });
+    syncQueue([...queueRef.current, job]);
     void processQueue();
   }, [
     buildSettings,
     comfyOk,
     processQueue,
+    prompt,
     readiness.ready,
     resolved.finalPositive,
     seed,
     seedLocked,
     serverSettings.maxQueueLength,
+    syncQueue,
   ]);
 
   const handleCancel = useCallback(async () => {
     haltForeverRef.current = true;
-    setQueue([]);
-    queueRef.current = [];
+    syncQueue([]);
     await cancel();
-  }, [cancel]);
+  }, [cancel, syncQueue]);
+
+  /** Cancel one queue job; if it's running, interrupt without clearing the rest. */
+  const cancelQueueJob = useCallback(
+    async (id: string) => {
+      if (id === activeQueueId) {
+        await cancel();
+        syncQueue(queueRef.current.filter((j) => j.id !== id));
+        return;
+      }
+      syncQueue(queueRef.current.filter((j) => j.id !== id));
+    },
+    [activeQueueId, cancel, syncQueue],
+  );
+
+  const enqueueJob = useCallback(
+    (settings: GenerationSettings, label?: string) => {
+      if (comfyOk === false) return;
+      if (queueRef.current.length >= serverSettings.maxQueueLength) {
+        setCopyFlash(`Queue full (max ${serverSettings.maxQueueLength})`);
+        window.setTimeout(() => setCopyFlash(null), 2000);
+        return;
+      }
+      const job: QueuedJob = {
+        id: crypto.randomUUID(),
+        settings,
+        label: label || settings.prompt.slice(0, 48) || 'Queued job',
+      };
+      syncQueue([...queueRef.current, job]);
+      void processQueue();
+    },
+    [comfyOk, processQueue, serverSettings.maxQueueLength, syncQueue],
+  );
 
   const handleStartComfy = useCallback(async () => {
     setStartingComfy(true);
@@ -597,9 +870,22 @@ export default function App() {
       window.setTimeout(() => setCopyFlash(null), 2000);
       return;
     }
+    const s = meta.settings;
     if (meta.prompt) setPrompt(meta.prompt);
     if (meta.negative_prompt != null) setNegativePrompt(meta.negative_prompt);
-    if (meta.checkpoint) setCheckpoint(meta.checkpoint);
+    if (meta.checkpoint) {
+      if (s && s.modelMode === 'split') {
+        setModelMode('split');
+        if (typeof s.unet === 'string') setUnet(s.unet);
+        if (typeof s.clipName === 'string') setClipName(s.clipName);
+        if (typeof s.clipName2 === 'string') setClipName2(s.clipName2);
+        if (typeof s.clipType === 'string') setClipType(s.clipType);
+        if (typeof s.vaeName === 'string') setVaeName(s.vaeName);
+      } else {
+        setModelMode('checkpoint');
+        setCheckpoint(meta.checkpoint);
+      }
+    }
     if (typeof meta.width === 'number') setWidth(meta.width);
     if (typeof meta.height === 'number') setHeight(meta.height);
     if (typeof meta.steps === 'number') setSteps(meta.steps);
@@ -609,6 +895,28 @@ export default function App() {
       setSeedLocked(true);
     }
     if (meta.sampler) setSampler(meta.sampler);
+    if (meta.scheduler) setScheduler(meta.scheduler);
+    if (typeof meta.clipSkip === 'number') setClipSkip(meta.clipSkip);
+    if (typeof meta.guidance === 'number') setGuidance(meta.guidance);
+    if (s?.hiresFix && typeof s.hiresFix === 'object') {
+      const hf = s.hiresFix as HiresFixSettings;
+      setHiresFix({
+        enabled: Boolean(hf.enabled),
+        scale: typeof hf.scale === 'number' ? hf.scale : 1.5,
+        steps: typeof hf.steps === 'number' ? hf.steps : 15,
+        denoise: typeof hf.denoise === 'number' ? hf.denoise : 0.45,
+        sampler: hf.sampler,
+        scheduler: hf.scheduler,
+      });
+    }
+    if (Array.isArray(s?.loras)) {
+      setLoras(
+        s.loras.filter(
+          (l): l is LoraSettings =>
+            Boolean(l) && typeof l === 'object' && typeof (l as LoraSettings).name === 'string',
+        ) as LoraSettings[],
+      );
+    }
     setAspectId('custom');
     setCopyFlash('Settings loaded from image');
     window.setTimeout(() => setCopyFlash(null), 2000);
@@ -622,6 +930,29 @@ export default function App() {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const typing =
+        tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement | null)?.isContentEditable;
+      if (typing) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void setSourceFromFile(file);
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [setSourceFromFile]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -701,6 +1032,7 @@ export default function App() {
     setClipName(s.clipName ?? '');
     setClipName2(s.clipName2 ?? '');
     setClipType(s.clipType ?? 'flux');
+    setClipTypeOverride(Boolean(s.clipType));
     setVaeName(s.vaeName ?? '');
     setLoras(s.loras ?? []);
     setWidth(s.width);
@@ -714,9 +1046,19 @@ export default function App() {
     setSeed(s.seed);
     setSeedLocked(true);
     setBatchSize(s.batch_size);
+    if (s.hiresFix) {
+      setHiresFix({
+        enabled: Boolean(s.hiresFix.enabled),
+        scale: s.hiresFix.scale ?? 1.5,
+        steps: s.hiresFix.steps ?? 15,
+        denoise: s.hiresFix.denoise ?? 0.45,
+        sampler: s.hiresFix.sampler,
+        scheduler: s.hiresFix.scheduler,
+      });
+    }
     setDismissedPositive([]);
     setDismissedNegative([]);
-    setAdvancedOpen(true);
+    setPanelOpen((prev) => ({ ...prev, sampling: true, model: true, image: true }));
     setSettingsOpen(true);
   };
 
@@ -726,50 +1068,99 @@ export default function App() {
   };
 
   const selectedRecord = items.find((i) => i.id === selectedId) ?? null;
-  const displayImages =
-    runtime.running || runtime.resultImages.length > 0 ? runtime.resultImages : viewImages;
+  /** Prefer history selection when idle so delete/navigation update the canvas. */
+  const displayImages = runtime.running ? runtime.resultImages : viewImages;
 
-  const activeRecord: GenerationRecord | null =
-    selectedRecord ??
-    (runtime.jobId && displayImages.length > 0
-      ? {
-          id: runtime.jobId,
-          createdAt: Date.now(),
-          promptId: runtime.promptId ?? '',
-          clientId: '',
-          settings: {
-            prompt: resolved.finalPositive,
-            negative_prompt: resolved.finalNegative,
-            checkpoint,
-            width,
-            height,
-            steps,
-            cfg,
-            sampler,
-            scheduler,
-            seed,
-            batch_size: batchSize,
-            clipSkip,
-            guidance,
-          },
-          images: displayImages,
-          status: 'completed',
-          error: null,
-        }
-      : null);
-
-  const deleteCurrent = () => {
-    if (!activeRecord) return;
-    void confirmRemove(activeRecord.id, uiSettings.confirmDelete).then((ok) => {
-      if (ok && selectedId === activeRecord.id) {
+  const selectNeighborAfterDelete = useCallback(
+    (deletedId: string, remaining: GenerationRecord[]) => {
+      if (selectedId !== deletedId) return;
+      const next = remaining.find((i) => i.status === 'completed' && i.images[0]);
+      if (next) {
+        setSelectedId(next.id);
+        setViewImages(next.images);
+      } else {
         setSelectedId(null);
         setViewImages([]);
       }
-    });
+    },
+    [selectedId],
+  );
+
+  const deleteHistoryItem = useCallback(
+    (item: GenerationRecord) => {
+      const remaining = items.filter((i) => i.id !== item.id);
+      softDelete(item);
+      selectNeighborAfterDelete(item.id, remaining);
+    },
+    [items, selectNeighborAfterDelete, softDelete],
+  );
+
+  const deleteCurrent = () => {
+    if (!selectedRecord || selectedRecord.status !== 'completed') return;
+    deleteHistoryItem(selectedRecord);
   };
 
+  const handleVary = useCallback(
+    (strength: VaryStrength) => {
+      if (!selectedRecord?.images[0] || !readiness.ready) return;
+      const denoise = strength === 'subtle' ? 0.3 : 0.6;
+      const nextSeed = randomSeed();
+      const base = buildSettings(nextSeed);
+      enqueueJob(
+        {
+          ...base,
+          prompt: selectedRecord.settings.prompt || base.prompt,
+          negative_prompt: selectedRecord.settings.negative_prompt ?? base.negative_prompt,
+          width: selectedRecord.settings.width,
+          height: selectedRecord.settings.height,
+          seed: nextSeed,
+          generationMode: 'img2img',
+          sourceImage: selectedRecord.images[0],
+          parentId: selectedRecord.id,
+          denoise,
+          hiresFix: undefined,
+          upscale: undefined,
+        },
+        `Vary ${strength}`,
+      );
+    },
+    [buildSettings, enqueueJob, readiness.ready, selectedRecord],
+  );
+
+  const handleUpscale = useCallback(
+    (req: UpscaleRequest) => {
+      if (!selectedRecord?.images[0] || !readiness.ready) return;
+      const nextSeed = randomSeed();
+      const base = buildSettings(nextSeed);
+      enqueueJob(
+        {
+          ...base,
+          prompt: selectedRecord.settings.prompt || base.prompt,
+          negative_prompt: selectedRecord.settings.negative_prompt ?? base.negative_prompt,
+          width: selectedRecord.settings.width,
+          height: selectedRecord.settings.height,
+          seed: nextSeed,
+          generationMode: 'upscale',
+          sourceImage: selectedRecord.images[0],
+          parentId: selectedRecord.id,
+          hiresFix: undefined,
+          upscale: {
+            enabled: true,
+            model: req.model,
+            scale: req.scale,
+            refine: req.refine,
+            refineDenoise: 0.25,
+            refineSteps: 12,
+          },
+        },
+        `Upscale ${req.scale}×`,
+      );
+    },
+    [buildSettings, enqueueJob, readiness.ready, selectedRecord],
+  );
+
   const copySeed = async () => {
-    const value = String(activeRecord?.settings.seed ?? seed);
+    const value = String(selectedRecord?.settings.seed ?? seed);
     try {
       await navigator.clipboard.writeText(value);
       setCopyFlash('Seed copied');
@@ -786,15 +1177,15 @@ export default function App() {
     favorites,
     onSelect: selectItem,
     onReuse: reuseSettings,
-    onDelete: (item: GenerationRecord) => {
-      void confirmRemove(item.id, uiSettings.confirmDelete).then((ok) => {
-        if (ok && selectedId === item.id) {
-          setSelectedId(null);
-          setViewImages([]);
-        }
-      });
-    },
+    onDelete: deleteHistoryItem,
     onToggleFavorite: toggleFavorite,
+    onUseAsSource: (item: GenerationRecord) => {
+      void setSourceFromGallery(item);
+    },
+    onViewSource: (parentId: string) => {
+      const parent = items.find((i) => i.id === parentId);
+      if (parent) selectItem(parent);
+    },
     loading: histLoading,
   };
 
@@ -808,14 +1199,15 @@ export default function App() {
           <JobQueue
             jobs={queue}
             activeId={activeQueueId}
-            onRemove={(id) => setQueue((q) => q.filter((j) => j.id !== id))}
+            onRemove={(id) => {
+              void cancelQueueJob(id);
+            }}
             onReorder={(from, to) => {
-              setQueue((q) => {
-                const next = [...q];
-                const [item] = next.splice(from, 1);
-                next.splice(to, 0, item);
-                return next;
-              });
+              const next = [...queueRef.current];
+              const [item] = next.splice(from, 1);
+              if (!item) return;
+              next.splice(to, 0, item);
+              syncQueue(next);
             }}
           />
           <GenerateButton
@@ -827,12 +1219,20 @@ export default function App() {
             progressMax={runtime.progressMax}
             disabled={Boolean(generateBlockedReason) || !readiness.ready}
             disabledReason={generateBlockedReason}
+            queueCount={queue.length}
           />
           {runtime.error && <p className="text-xs text-destructive">{runtime.error}</p>}
         </div>
       }
     >
-      <PanelSection title="Model">
+      <CollapsibleSection
+        id="model"
+        title="Model"
+        open={panelOpen.model}
+        onOpenChange={(o) => setSectionOpen('model', o)}
+        onSolo={() => soloSection('model')}
+        summary={modelSummary}
+      >
         <ModelStackPanel
           catalog={catalog}
           mode={modelMode}
@@ -866,12 +1266,20 @@ export default function App() {
           onClipName2Change={setClipName2}
           clipType={clipType}
           onClipTypeChange={setClipType}
+          clipTypeOverride={clipTypeOverride}
+          onClipTypeOverrideChange={setClipTypeOverride}
           vaeName={vaeName}
           onVaeNameChange={setVaeName}
+          loras={loras}
+          onLorasChange={setLoras}
           loading={modelsLoading}
           offline={comfyOk === false}
           familyName={resolved.familyName}
           mapped={resolved.mapped}
+          textEncoderCount={teCount || (modelMode === 'split' ? 1 : 0)}
+          te1Hint={teKeys[0] ? `Hint: ${(teHints[teKeys[0]] || []).join(', ') || teKeys[0]}` : null}
+          te2Hint={teKeys[1] ? `Hint: ${(teHints[teKeys[1]] || []).join(', ') || teKeys[1]}` : null}
+          vaeHint={vaeKeys[0] ? `Hint: ${(teHints[vaeKeys[0]] || []).join(', ') || 'models/vae'}` : null}
           disabled={runtime.running}
           missing={readiness.missing}
           needsGguf={readiness.needsGguf}
@@ -882,23 +1290,6 @@ export default function App() {
           }
           onAddModel={openAddModel}
         />
-        <LoraPanel
-          loras={loras}
-          options={catalog.loras}
-          onChange={setLoras}
-          loading={modelsLoading}
-          disabled={runtime.running}
-          offline={comfyOk === false}
-          onAddModel={() => openAddModel('lora')}
-        />
-        {catalog.embeddings.length > 0 ? (
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Embeddings ({catalog.embeddings.length}): type{' '}
-            <code className="text-[10px]">embedding:name</code> in the prompt. Available:{' '}
-            {catalog.embeddings.slice(0, 8).join(', ')}
-            {catalog.embeddings.length > 8 ? '…' : ''}
-          </p>
-        ) : null}
         <StyleSelect
           styles={styles}
           value={styleId ?? resolved.styleId}
@@ -910,19 +1301,93 @@ export default function App() {
           disabled={runtime.running || !resolved.mapped}
           visible={Boolean(resolved.familyId)}
         />
-      </PanelSection>
+        {catalog.embeddings.length > 0 ? (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Embeddings: type <code className="text-[10px]">embedding:name</code> —{' '}
+            {catalog.embeddings.slice(0, 6).join(', ')}
+            {catalog.embeddings.length > 6 ? '…' : ''}
+          </p>
+        ) : null}
+      </CollapsibleSection>
 
-      <PanelSection title="Prompt">
+      <CollapsibleSection
+        id="source"
+        title="Source"
+        open={panelOpen.source}
+        onOpenChange={(o) => setSectionOpen('source', o)}
+        onSolo={() => soloSection('source')}
+        summary={
+          source
+            ? `${workMode}${source.width ? ` · ${source.width}×${source.height}` : ''}`
+            : 'Generate'
+        }
+      >
+        <SourcePanel
+          source={source}
+          mode={workMode}
+          supportsEdit={Boolean(familyMeta?.supportsEdit)}
+          denoise={imgDenoise}
+          sourceSizeMode={sourceSizeMode}
+          sourceFit={sourceFit}
+          outpaint={outpaint}
+          disabled={runtime.running}
+          onModeChange={(m) => {
+            if (m !== 'generate' && !source) {
+              setWorkMode(m === 'edit' && !familyMeta?.supportsEdit ? 'img2img' : m);
+              setPanelOpen((p) => ({ ...p, source: true }));
+              return;
+            }
+            if (m === 'edit' && !familyMeta?.supportsEdit) return;
+            setWorkMode(m);
+          }}
+          onClear={clearSource}
+          onReplaceFile={(file) => void setSourceFromFile(file)}
+          onDenoiseChange={setImgDenoise}
+          onSourceSizeModeChange={(v) => {
+            setSourceSizeMode(v);
+            if (v === 'match' && source?.width && source.height) {
+              const matched = matchSourceSize(source.width, source.height, sizeMultiple);
+              setWidth(matched.width);
+              setHeight(matched.height);
+              setAspectId('custom');
+            }
+          }}
+          onSourceFitChange={setSourceFit}
+          onOutpaintChange={setOutpaint}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="prompt"
+        title="Prompt"
+        open={panelOpen.prompt}
+        onOpenChange={(o) => setSectionOpen('prompt', o)}
+        onSolo={() => soloSection('prompt')}
+        summary={promptSummary}
+      >
         <PromptPanel
           prompt={prompt}
           negativePrompt={negativePrompt}
           positiveTags={resolved.positiveTags}
           negativeTags={resolved.negativeTags}
           disableNegative={resolved.disableNegative}
+          disableNegativeReason={
+            resolved.familyName
+              ? `Negatives are unused for ${resolved.familyName} (encoder / guidance family).`
+              : 'Negatives are unused for this family.'
+          }
           familyId={resolved.familyId}
           tagsEnabled={resolved.tagsEnabled}
+          tokenMode={familyMeta?.promptTokenMode ?? 'clip'}
+          tokenMax={familyMeta?.promptMaxTokens ?? 75}
           finalPositive={resolved.finalPositive}
           finalNegative={resolved.finalNegative}
+          enhanceConfigured={Boolean(
+            serverSettings.enhanceApiUrl.trim() && serverSettings.enhanceModel.trim(),
+          )}
+          promptPlaceholder={
+            workMode === 'edit' ? 'Describe the change…' : 'Describe your image...'
+          }
           onPromptChange={setPrompt}
           onNegativeChange={setNegativePrompt}
           onDismissPositive={(tag) =>
@@ -938,14 +1403,22 @@ export default function App() {
           onOpenChange={setFinalOpen}
           positive={resolved.finalPositive}
           negative={resolved.finalNegative}
-          cfg={resolved.settings.cfg ?? cfg}
-          clipSkip={resolved.settings.clipSkip ?? clipSkip}
-          sampler={resolved.settings.sampler ?? sampler}
+          cfg={cfg}
+          clipSkip={clipSkip}
+          guidance={guidance}
+          sampler={sampler}
           checkpoint={primaryModel}
         />
-      </PanelSection>
+      </CollapsibleSection>
 
-      <PanelSection title="Image">
+      <CollapsibleSection
+        id="image"
+        title="Image"
+        open={panelOpen.image}
+        onOpenChange={(o) => setSectionOpen('image', o)}
+        onSolo={() => soloSection('image')}
+        summary={imageSummary}
+      >
         <AspectRatioPresets
           presets={resolved.aspectPresets}
           width={width}
@@ -970,23 +1443,66 @@ export default function App() {
           onBatchChange={setBatchSize}
           disabled={runtime.running}
         />
-      </PanelSection>
+        <HiresFixControls
+          value={hiresFix}
+          onChange={setHiresFix}
+          disabled={runtime.running}
+        />
+      </CollapsibleSection>
 
-      <PanelSection title="Advanced">
-        <AdvancedSettings open={advancedOpen} onOpenChange={setAdvancedOpen} asSection>
-          <SamplerControls
-            steps={steps}
-            cfg={cfg}
-            sampler={sampler}
-            scheduler={scheduler}
-            onStepsChange={setSteps}
-            onCfgChange={setCfg}
-            onSamplerChange={setSampler}
-            onSchedulerChange={setScheduler}
-            disabled={runtime.running}
-          />
-        </AdvancedSettings>
-      </PanelSection>
+      <CollapsibleSection
+        id="loras"
+        title="LoRAs"
+        open={panelOpen.loras}
+        onOpenChange={(o) => setSectionOpen('loras', o)}
+        onSolo={() => soloSection('loras')}
+        summary={loraSummary}
+      >
+        <LoraPanel
+          loras={loras}
+          options={catalog.loras}
+          onChange={setLoras}
+          loading={modelsLoading}
+          disabled={runtime.running}
+          offline={comfyOk === false}
+          onAddModel={() => openAddModel('lora')}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        id="sampling"
+        title="Sampling"
+        open={panelOpen.sampling}
+        onOpenChange={(o) => setSectionOpen('sampling', o)}
+        onSolo={() => soloSection('sampling')}
+        summary={samplingSummary}
+      >
+        <SamplerControls
+          steps={steps}
+          cfg={cfg}
+          sampler={sampler}
+          scheduler={scheduler}
+          guidance={guidance}
+          clipSkip={clipSkip}
+          defaults={{
+            steps: familyMeta?.settings.steps ?? 25,
+            cfg: familyMeta?.settings.cfg ?? 7,
+            sampler: familyMeta?.settings.sampler ?? 'euler',
+            scheduler: familyMeta?.settings.scheduler ?? 'normal',
+            guidance: familyMeta?.settings.guidance,
+            clipSkip: familyMeta?.settings.clipSkip,
+          }}
+          showGuidance={typeof guidance === 'number'}
+          showClipSkip={typeof clipSkip === 'number'}
+          onStepsChange={setSteps}
+          onCfgChange={setCfg}
+          onSamplerChange={setSampler}
+          onSchedulerChange={setScheduler}
+          onGuidanceChange={setGuidance}
+          onClipSkipChange={setClipSkip}
+          disabled={runtime.running}
+        />
+      </CollapsibleSection>
     </SettingsPanel>
   );
 
@@ -999,6 +1515,7 @@ export default function App() {
         resizablePanels={uiSettings.resizablePanels}
         systemLabel={systemStats?.ok ? systemStats.label : null}
         vramTooltip={systemStats?.vramTooltip}
+        queueCount={queue.length}
         settingsOpen={settingsOpen}
         onSettingsOpenChange={setSettingsOpen}
         uiSettingsOpen={uiSettingsOpen}
@@ -1032,6 +1549,7 @@ export default function App() {
                 <PreviewCanvas
                   previewUrl={runtime.previewUrl}
                   resultImages={displayImages}
+                  compareImage={previousImage}
                   running={runtime.running}
                   width={width}
                   height={height}
@@ -1049,14 +1567,21 @@ export default function App() {
               </div>
               <div className="mt-4 shrink-0 space-y-2">
                 <ResultActionBar
-                  record={activeRecord}
-                  images={displayImages}
-                  visible={!runtime.running && displayImages.length > 0}
+                  record={selectedRecord}
+                  upscaleModels={catalog.upscale_models}
+                  defaultUpscaler={serverSettings.defaultUpscaler}
+                  visible={!runtime.running && Boolean(selectedRecord?.images[0])}
+                  busy={runtime.running}
                   onReuse={() => {
-                    if (activeRecord) reuseSettings(activeRecord);
+                    if (selectedRecord) reuseSettings(selectedRecord);
                   }}
                   onDelete={deleteCurrent}
                   onCopySeed={() => void copySeed()}
+                  onUpscale={handleUpscale}
+                  onVary={handleVary}
+                  onUseAsSource={
+                    selectedRecord ? () => void setSourceFromGallery(selectedRecord) : undefined
+                  }
                 />
                 {copyFlash && (
                   <p className="text-center text-[11px] text-muted-foreground">{copyFlash}</p>
@@ -1065,8 +1590,20 @@ export default function App() {
             </div>
           </MainStage>
         }
-        history={<Gallery {...historyShared} orientation="vertical" />}
-        historyMobile={<Gallery {...historyShared} orientation="horizontal" />}
+        history={<Gallery {...historyShared} orientation="vertical" showInfo />}
+        historyMobile={<Gallery {...historyShared} orientation="horizontal" showInfo={false} />}
+      />
+      <UndoToast
+        open={Boolean(pendingDelete)}
+        message="Generation deleted"
+        onUndo={() => {
+          const restored = undoDelete();
+          if (restored?.images[0]) {
+            setSelectedId(restored.id);
+            setViewImages(restored.images);
+          }
+        }}
+        onDismiss={dismissUndo}
       />
       <MapFamilyDialog
         open={showMapDialog}

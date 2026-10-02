@@ -11,6 +11,10 @@ export type ServerSettings = {
   promptCleanupNormalize: boolean;
   safeMode: boolean;
   wildcardsFolder: string;
+  enhanceApiUrl: string;
+  enhanceApiKey: string;
+  enhanceModel: string;
+  embedPngMetadata: boolean;
   vramMode: VramMode;
   unloadIdleMinutes: number;
   maxQueueLength: number;
@@ -46,6 +50,10 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = {
   promptCleanupNormalize: true,
   safeMode: false,
   wildcardsFolder: '',
+  enhanceApiUrl: '',
+  enhanceApiKey: '',
+  enhanceModel: '',
+  embedPngMetadata: true,
   vramMode: 'auto',
   unloadIdleMinutes: 0,
   maxQueueLength: 20,

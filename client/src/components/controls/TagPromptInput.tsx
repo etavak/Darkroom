@@ -5,8 +5,10 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { Textarea } from '@/components/ui/textarea';
+import { highlightPromptSyntax } from '@/lib/promptHighlight';
 import { cn } from '@/lib/utils';
 import { searchTagsApi, validateTagsApi } from '@/lib/api';
 import type { TagCategory, TagSuggestion } from '@/types/presets';
@@ -34,7 +36,6 @@ function splitTagSegments(value: string): Array<{ text: string; isSep: boolean }
     if (ch === ',') {
       parts.push({ text: cur, isSep: false });
       cur = '';
-      // include following spaces with separator
       let sep = ',';
       while (i + 1 < value.length && value[i + 1] === ' ') {
         i++;
@@ -64,6 +65,48 @@ function tokenAtCursor(value: string, cursor: number): { start: number; end: num
   };
 }
 
+/** Overlay that combines weight/wildcard highlights with optional unknown-tag underlines. */
+function buildOverlay(
+  value: string,
+  tagsEnabled: boolean,
+  unknown: Set<string>,
+): ReactNode[] {
+  if (!tagsEnabled) {
+    return highlightPromptSyntax(value);
+  }
+
+  const segments = splitTagSegments(value);
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  for (const seg of segments) {
+    if (seg.isSep) {
+      nodes.push(<span key={`s-${i++}`}>{seg.text}</span>);
+      continue;
+    }
+    const trimmed = seg.text.trim();
+    const isUnknown = trimmed.length > 0 && unknown.has(trimmed);
+    const lead = seg.text.match(/^\s*/)?.[0] ?? '';
+    const trail = seg.text.match(/\s*$/)?.[0] ?? '';
+    const core = seg.text.slice(lead.length, seg.text.length - trail.length);
+    nodes.push(
+      <span key={`p-${i++}`}>
+        {lead}
+        <span
+          className={
+            isUnknown
+              ? 'underline decoration-rose-400 decoration-wavy underline-offset-2'
+              : undefined
+          }
+        >
+          {core.length > 0 ? highlightPromptSyntax(core) : '\u200b'}
+        </span>
+        {trail}
+      </span>,
+    );
+  }
+  return nodes;
+}
+
 type Props = {
   id: string;
   value: string;
@@ -73,6 +116,8 @@ type Props = {
   className?: string;
   familyId: string | null;
   tagsEnabled: boolean;
+  /** Highlight (tag:1.2) and {a|b} via overlay (default true). */
+  highlightSyntax?: boolean;
 };
 
 export function TagPromptInput({
@@ -84,6 +129,7 @@ export function TagPromptInput({
   className,
   familyId,
   tagsEnabled,
+  highlightSyntax = true,
 }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -93,6 +139,8 @@ export function TagPromptInput({
   const [activeIdx, setActiveIdx] = useState(0);
   const [unknown, setUnknown] = useState<Set<string>>(new Set());
   const searchGen = useRef(0);
+
+  const showOverlay = highlightSyntax || tagsEnabled;
 
   const syncScroll = useCallback(() => {
     const ta = taRef.current;
@@ -107,7 +155,6 @@ export function TagPromptInput({
     syncScroll();
   }, [value, syncScroll]);
 
-  // Autocomplete fetch
   useEffect(() => {
     if (!tagsEnabled || !familyId || disabled) {
       setSuggestions([]);
@@ -120,7 +167,6 @@ export function TagPromptInput({
       setOpen(false);
       return;
     }
-    // Don't suggest inside intentional weight syntax mid-edit after colon
     if (/^\(.+:[\d.]*$/.test(query) && query.includes(':')) {
       setSuggestions([]);
       setOpen(false);
@@ -129,21 +175,22 @@ export function TagPromptInput({
 
     const gen = ++searchGen.current;
     const t = window.setTimeout(() => {
-      void searchTagsApi({ q: query, family: familyId, limit: 12 }).then((res) => {
-        if (gen !== searchGen.current) return;
-        setSuggestions(res.suggestions);
-        setOpen(res.suggestions.length > 0);
-        setActiveIdx(0);
-      }).catch(() => {
-        if (gen !== searchGen.current) return;
-        setSuggestions([]);
-        setOpen(false);
-      });
+      void searchTagsApi({ q: query, family: familyId, limit: 12 })
+        .then((res) => {
+          if (gen !== searchGen.current) return;
+          setSuggestions(res.suggestions);
+          setOpen(res.suggestions.length > 0);
+          setActiveIdx(0);
+        })
+        .catch(() => {
+          if (gen !== searchGen.current) return;
+          setSuggestions([]);
+          setOpen(false);
+        });
     }, 80);
     return () => window.clearTimeout(t);
   }, [value, cursor, familyId, tagsEnabled, disabled]);
 
-  // Unknown tag underline validation
   useEffect(() => {
     if (!tagsEnabled || !familyId) {
       setUnknown(new Set());
@@ -158,9 +205,11 @@ export function TagPromptInput({
       return;
     }
     const t = window.setTimeout(() => {
-      void validateTagsApi({ family: familyId, tags }).then((res) => {
-        setUnknown(new Set(res.unknown.map((u) => u.trim())));
-      }).catch(() => setUnknown(new Set()));
+      void validateTagsApi({ family: familyId, tags })
+        .then((res) => {
+          setUnknown(new Set(res.unknown.map((u) => u.trim())));
+        })
+        .catch(() => setUnknown(new Set()));
     }, 200);
     return () => window.clearTimeout(t);
   }, [value, familyId, tagsEnabled]);
@@ -202,12 +251,10 @@ export function TagPromptInput({
     }
   };
 
-  const segments = splitTagSegments(value);
-
   return (
     <div className="relative">
       <div className="relative">
-        {tagsEnabled && (
+        {showOverlay && (
           <div
             ref={mirrorRef}
             aria-hidden
@@ -216,32 +263,7 @@ export function TagPromptInput({
               className,
             )}
           >
-            {segments.map((seg, i) => {
-              if (seg.isSep) {
-                return <span key={i}>{seg.text}</span>;
-              }
-              const trimmed = seg.text.trim();
-              const isUnknown = trimmed.length > 0 && unknown.has(trimmed);
-              const lead = seg.text.match(/^\s*/)?.[0] ?? '';
-              const trail = seg.text.match(/\s*$/)?.[0] ?? '';
-              const core = seg.text.slice(lead.length, seg.text.length - trail.length);
-              return (
-                <span key={i}>
-                  {lead}
-                  <span
-                    className={
-                      isUnknown
-                        ? 'underline decoration-rose-400 decoration-wavy underline-offset-2'
-                        : undefined
-                    }
-                  >
-                    {core.length > 0 ? core : '\u200b'}
-                  </span>
-                  {trail}
-                </span>
-              );
-            })}
-            {/* trailing newline mirror for scroll height */}
+            {buildOverlay(value, tagsEnabled, unknown)}
             {'\n'}
           </div>
         )}
@@ -250,7 +272,7 @@ export function TagPromptInput({
           id={id}
           className={cn(
             'relative min-h-[100px] resize-y leading-relaxed',
-            tagsEnabled && 'bg-transparent text-transparent caret-foreground',
+            showOverlay && 'bg-transparent text-transparent caret-foreground',
             className,
           )}
           value={value}

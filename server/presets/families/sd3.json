@@ -3,10 +3,13 @@
   "name": "SD3",
   "settings": {
     "cfg": 4.5,
+    "steps": 28,
     "sampler": "euler",
     "scheduler": "simple",
     "baseRes": 1024
   },
+  "promptTokenMode": "encoder",
+  "promptMaxTokens": 512,
   "supportsGguf": true,
   "loaderKind": "transformer",
   "requiredComponents": {

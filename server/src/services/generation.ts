@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config.js';
+import { buildPngMetadataTexts, injectPngText } from '../lib/pngMeta.js';
 import * as comfy from './comfyClient.js';
+import { loadServerSettings } from './appSettings.js';
 import { supportsPerPromptPreviewMethod } from './envSettings.js';
 import { buildWorkflow, type GenerationSettings } from '../workflow/index.js';
 import * as history from './history.js';
@@ -88,6 +90,9 @@ function parseOptionalModules(
       enabled: Boolean(up.enabled),
       model: typeof up.model === 'string' ? up.model : '',
       scale: typeof up.scale === 'number' ? up.scale : undefined,
+      refine: Boolean(up.refine),
+      refineDenoise: typeof up.refineDenoise === 'number' ? up.refineDenoise : undefined,
+      refineSteps: typeof up.refineSteps === 'number' ? up.refineSteps : undefined,
     };
   }
 
@@ -125,11 +130,43 @@ export function validateSettings(body: unknown): GenerationSettings {
     if (!unet) throw new Error('Missing or invalid unet');
     if (!clipName) throw new Error('Missing or invalid clipName');
     if (!vaeName) throw new Error('Missing or invalid vaeName');
-    // Preset/family mapping keys off `checkpoint` — use diffusion filename when omitted.
     if (!checkpoint) checkpoint = unet;
   } else if (!checkpoint) {
     throw new Error('Missing or invalid checkpoint');
   }
+
+  const generationMode =
+    b.generationMode === 'img2img' ||
+    b.generationMode === 'upscale' ||
+    b.generationMode === 'outpaint' ||
+    b.generationMode === 'edit'
+      ? b.generationMode
+      : 'txt2img';
+  const sourceImage = typeof b.sourceImage === 'string' && b.sourceImage ? b.sourceImage : undefined;
+  const denoise = typeof b.denoise === 'number' && Number.isFinite(b.denoise) ? b.denoise : undefined;
+  const parentId = typeof b.parentId === 'string' && b.parentId ? b.parentId : undefined;
+
+  if (
+    (generationMode === 'img2img' ||
+      generationMode === 'upscale' ||
+      generationMode === 'outpaint' ||
+      generationMode === 'edit') &&
+    !sourceImage
+  ) {
+    throw new Error('Missing or invalid sourceImage');
+  }
+
+  const outRaw = asObject(b.outpaint);
+  const outpaint = outRaw
+    ? {
+        left: typeof outRaw.left === 'number' ? outRaw.left : 0,
+        right: typeof outRaw.right === 'number' ? outRaw.right : 0,
+        top: typeof outRaw.top === 'number' ? outRaw.top : 0,
+        bottom: typeof outRaw.bottom === 'number' ? outRaw.bottom : 0,
+        feather: typeof outRaw.feather === 'number' ? outRaw.feather : 40,
+        targetAspect: typeof outRaw.targetAspect === 'string' ? outRaw.targetAspect : null,
+      }
+    : undefined;
 
   return {
     prompt: typeof b.prompt === 'string' ? b.prompt : '',
@@ -151,32 +188,58 @@ export function validateSettings(body: unknown): GenerationSettings {
     batch_size: Math.max(1, Math.min(8, Math.floor(requireNumber('batch_size')))),
     clipSkip: typeof b.clipSkip === 'number' ? b.clipSkip : undefined,
     guidance: typeof b.guidance === 'number' ? b.guidance : undefined,
+    generationMode,
+    sourceImage,
+    parentId,
+    denoise,
+    sourceSizeMode: b.sourceSizeMode === 'aspect' ? 'aspect' : 'match',
+    sourceFit: b.sourceFit === 'fit' ? 'fit' : 'crop',
+    sizeMultiple: typeof b.sizeMultiple === 'number' ? b.sizeMultiple : undefined,
+    outpaint,
+    editStrategy: b.editStrategy === 'qwen' ? 'qwen' : b.editStrategy === 'kontext' ? 'kontext' : undefined,
+    inpaintModel: typeof b.inpaintModel === 'string' ? b.inpaintModel : undefined,
     ...parseOptionalModules(b),
   };
+}
+
+/** If sourceImage is a Darkroom gallery file, upload it into Comfy input. */
+async function resolveSourceImage(settings: GenerationSettings): Promise<GenerationSettings> {
+  if (!settings.sourceImage) return settings;
+  const base = path.basename(settings.sourceImage);
+  const localPath = path.join(config.imagesDir, base);
+  if (!fs.existsSync(localPath)) {
+    // Assume already a Comfy input name
+    return settings;
+  }
+  const buf = fs.readFileSync(localPath);
+  const uploaded = await comfy.uploadImage(buf, base);
+  return { ...settings, sourceImage: uploaded };
 }
 
 export async function startGeneration(
   settings: GenerationSettings,
   opts?: { previewMethod?: PreviewMethod },
 ): Promise<GenerateResult> {
+  const resolved = await resolveSourceImage(settings);
   const clientId = uuidv4();
-  const workflow = buildWorkflow(settings);
+  const workflow = await buildWorkflow(resolved);
   const previewMethod =
     opts?.previewMethod && supportsPerPromptPreviewMethod() ? opts.previewMethod : undefined;
   const queued = await comfy.queuePrompt(workflow, clientId, { previewMethod });
   const record = history.createGeneration({
     promptId: queued.prompt_id,
     clientId,
-    settings,
+    settings: resolved,
+    parentId: resolved.parentId,
   });
 
   pendingJobs.set(queued.prompt_id, {
     jobId: record.id,
     clientId,
-    settings,
+    settings: resolved,
   });
 
-  void watchAndPersist(record.id, queued.prompt_id);
+  void watchAndPersist(record.id, queued.prompt_id, resolved);
 
   return {
     jobId: record.id,
@@ -191,7 +254,11 @@ type ComfyImageRef = {
   type?: string;
 };
 
-async function watchAndPersist(jobId: string, promptId: string): Promise<void> {
+async function watchAndPersist(
+  jobId: string,
+  promptId: string,
+  settings: GenerationSettings,
+): Promise<void> {
   const maxAttempts = 600;
   for (let i = 0; i < maxAttempts; i++) {
     await sleep(1000);
@@ -206,12 +273,16 @@ async function watchAndPersist(jobId: string, promptId: string): Promise<void> {
         return;
       }
 
-      const outputs = entry.outputs as Record<string, { images?: ComfyImageRef[] }> | undefined;
+      const outputs = entry.outputs as
+        | Record<string, { images?: ComfyImageRef[]; parent?: unknown }>
+        | undefined;
       if (!outputs) continue;
 
       const refs: ComfyImageRef[] = [];
       for (const nodeOut of Object.values(outputs)) {
-        if (nodeOut.images) refs.push(...nodeOut.images);
+        if (!nodeOut.images?.length) continue;
+        const saved = nodeOut.images.filter((img) => !img.type || img.type === 'output');
+        refs.push(...(saved.length ? saved : nodeOut.images));
       }
       if (refs.length === 0) {
         if (status?.completed) {
@@ -222,11 +293,15 @@ async function watchAndPersist(jobId: string, promptId: string): Promise<void> {
         continue;
       }
 
+      const embed = loadServerSettings().embedPngMetadata;
       const saved: string[] = [];
       for (let idx = 0; idx < refs.length; idx++) {
         const ref = refs[idx];
-        const buf = await comfy.viewImage(ref);
+        let buf = await comfy.viewImage(ref);
         const ext = path.extname(ref.filename) || '.png';
+        if (embed && /\.png$/i.test(ext)) {
+          buf = injectPngText(buf, buildPngMetadataTexts(settings));
+        }
         const localName = `${jobId}_${idx}${ext}`;
         fs.writeFileSync(path.join(config.imagesDir, localName), buf);
         saved.push(localName);

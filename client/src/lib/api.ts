@@ -321,3 +321,57 @@ export function validateTagsApi(body: {
     body: JSON.stringify(body),
   });
 }
+
+export function fetchWildcards(): Promise<{
+  folder: string;
+  items: Array<{ name: string; relative: string }>;
+}> {
+  return request('/api/prompt/wildcards');
+}
+
+export function fetchWildcardContent(relative: string): Promise<{ options: string[]; text: string }> {
+  return request(`/api/prompt/wildcards/content?path=${encodeURIComponent(relative)}`);
+}
+
+export function enhancePromptApi(prompt: string): Promise<{ prompt: string }> {
+  return request('/api/prompt/enhance', {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+export type SourceUploadResult = {
+  localName: string;
+  comfyName: string;
+  width: number;
+  height: number;
+  url: string;
+};
+
+export async function uploadSourceApi(file: File): Promise<SourceUploadResult> {
+  const res = await fetch(`/api/source/upload?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as SourceUploadResult;
+}
+
+export function uploadSourceFromGalleryApi(filename: string): Promise<SourceUploadResult> {
+  return request('/api/source/from-gallery', {
+    method: 'POST',
+    body: JSON.stringify({ filename }),
+  });
+}

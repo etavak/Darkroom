@@ -29,24 +29,33 @@ function readLogTail(logFile, maxChars = 1800) {
 }
 
 /**
+ * better-sqlite3 only dlopens the native addon when constructing Database —
+ * a bare require() always succeeds and hides ABI mismatches.
+ * @param {NodeRequire} require
+ */
+function probeBetterSqlite3(require) {
+  const Database = require('better-sqlite3');
+  const db = new Database(':memory:');
+  db.close();
+}
+
+/**
  * Rebuild better-sqlite3 when the native addon does not load under the current Node.
  */
 export async function ensureNativeModules() {
   const addon = path.join(root, 'node_modules', 'better-sqlite3');
   if (!fs.existsSync(addon)) return;
+  const { createRequire } = await import('node:module');
+  const require = createRequire(path.join(root, 'package.json'));
   try {
-    const { createRequire } = await import('node:module');
-    const require = createRequire(path.join(root, 'package.json'));
-    require('better-sqlite3');
+    probeBetterSqlite3(require);
     return;
   } catch {
     // fall through to rebuild against this process's Node
   }
   // Use inherit so rebuild failures are visible in the CLI.
   await runNpm(['rebuild', 'better-sqlite3'], { stdio: 'inherit' });
-  const { createRequire } = await import('node:module');
-  const require = createRequire(path.join(root, 'package.json'));
-  require('better-sqlite3');
+  probeBetterSqlite3(require);
 }
 
 /**

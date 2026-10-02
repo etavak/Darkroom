@@ -12,6 +12,8 @@ export type GenerationRow = {
   image_paths_json: string;
   status: string;
   error: string | null;
+  completed_at: number | null;
+  parent_id: string | null;
 };
 
 export type GenerationDto = {
@@ -23,9 +25,13 @@ export type GenerationDto = {
   images: string[];
   status: string;
   error: string | null;
+  completedAt: number | null;
+  durationMs: number | null;
+  parentId: string | null;
 };
 
 function rowToDto(row: GenerationRow): GenerationDto {
+  const completedAt = row.completed_at ?? null;
   return {
     id: row.id,
     createdAt: row.created_at,
@@ -35,6 +41,12 @@ function rowToDto(row: GenerationRow): GenerationDto {
     images: JSON.parse(row.image_paths_json) as string[],
     status: row.status,
     error: row.error,
+    completedAt,
+    durationMs:
+      completedAt != null && completedAt >= row.created_at
+        ? completedAt - row.created_at
+        : null,
+    parentId: row.parent_id ?? null,
   };
 }
 
@@ -42,13 +54,22 @@ export function createGeneration(params: {
   promptId: string;
   clientId: string;
   settings: GenerationSettings;
+  parentId?: string | null;
 }): GenerationDto {
   const id = uuidv4();
   const createdAt = Date.now();
+  const parentId = params.parentId ?? params.settings.parentId ?? null;
   db.prepare(
-    `INSERT INTO generations (id, created_at, prompt_id, client_id, settings_json, image_paths_json, status)
-     VALUES (?, ?, ?, ?, ?, '[]', 'pending')`,
-  ).run(id, createdAt, params.promptId, params.clientId, JSON.stringify(params.settings));
+    `INSERT INTO generations (id, created_at, prompt_id, client_id, settings_json, image_paths_json, status, parent_id)
+     VALUES (?, ?, ?, ?, ?, '[]', 'pending', ?)`,
+  ).run(
+    id,
+    createdAt,
+    params.promptId,
+    params.clientId,
+    JSON.stringify(params.settings),
+    parentId,
+  );
 
   return {
     id,
@@ -59,6 +80,9 @@ export function createGeneration(params: {
     images: [],
     status: 'pending',
     error: null,
+    completedAt: null,
+    durationMs: null,
+    parentId,
   };
 }
 
@@ -86,9 +110,10 @@ export function getGenerationByPromptId(promptId: string): GenerationDto | null 
 }
 
 export function markCompleted(id: string, imagePaths: string[]): GenerationDto | null {
+  const completedAt = Date.now();
   db.prepare(
-    `UPDATE generations SET status = 'completed', image_paths_json = ?, error = NULL WHERE id = ?`,
-  ).run(JSON.stringify(imagePaths), id);
+    `UPDATE generations SET status = 'completed', image_paths_json = ?, error = NULL, completed_at = ? WHERE id = ?`,
+  ).run(JSON.stringify(imagePaths), completedAt, id);
   return getGeneration(id);
 }
 

@@ -1,0 +1,58 @@
+{
+  "id": "flux-kontext",
+  "name": "Flux Kontext",
+  "settings": {
+    "cfg": 1,
+    "steps": 28,
+    "guidance": 3.5,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "baseRes": 1024
+  },
+  "promptTokenMode": "encoder",
+  "promptMaxTokens": 512,
+  "sizeMultiple": 64,
+  "supportsEdit": true,
+  "editStrategy": "kontext",
+  "disableNegative": true,
+  "supportsGguf": true,
+  "loaderKind": "transformer",
+  "requiredComponents": {
+    "text_encoders": ["clip_l", "t5xxl"],
+    "vae": ["ae"]
+  },
+  "filenameHints": {
+    "clip_l": ["clip_l", "clip-l"],
+    "t5xxl": ["t5xxl", "t5_xxl"],
+    "ae": ["ae.safetensors", "ae.sft", "flux_ae"]
+  },
+  "dependencies": [
+    {
+      "role": "clip_l",
+      "required": true,
+      "options": ["clip_l"]
+    },
+    {
+      "role": "t5",
+      "required": true,
+      "options": ["t5xxl_fp16", "t5xxl_fp8_e4m3fn"],
+      "recommend": { "vramUnderGB": 12, "pick": "t5xxl_fp8_e4m3fn" }
+    },
+    {
+      "role": "vae",
+      "required": false,
+      "options": ["ae"],
+      "recommend": { "pick": "ae" }
+    }
+  ],
+  "defaultClipType": "flux",
+  "defaultStyle": "edit",
+  "styles": {
+    "edit": {
+      "name": "Edit",
+      "positive": []
+    }
+  },
+  "tagSources": [],
+  "tagFormat": "spaces"
+}

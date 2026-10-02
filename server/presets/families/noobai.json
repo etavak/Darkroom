@@ -3,8 +3,11 @@
   "name": "NoobAI",
   "settings": {
     "cfg": 5,
+    "steps": 28,
     "baseRes": 1024
   },
+  "promptTokenMode": "clip",
+  "promptMaxTokens": 75,
   "supportsGguf": false,
   "loaderKind": "checkpoint",
   "requiredComponents": {},

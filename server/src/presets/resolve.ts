@@ -185,5 +185,11 @@ export function listFamilySummaries() {
     filenameHints: f.filenameHints ?? {},
     dependencies: f.dependencies ?? [],
     defaultClipType: f.defaultClipType,
+    promptTokenMode: f.promptTokenMode ?? 'clip',
+    promptMaxTokens: typeof f.promptMaxTokens === 'number' ? f.promptMaxTokens : 75,
+    sizeMultiple: typeof f.sizeMultiple === 'number' ? f.sizeMultiple : f.loaderKind === 'transformer' ? 64 : 8,
+    supportsEdit: Boolean(f.supportsEdit),
+    editStrategy: f.editStrategy === 'qwen' ? 'qwen' : f.editStrategy === 'kontext' ? 'kontext' : undefined,
+    preferredInpaintModel: f.preferredInpaintModel,
   }));
 }

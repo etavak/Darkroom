@@ -13,6 +13,8 @@ function isGguf(name: string | undefined): boolean {
 export const baseModule: WorkflowModule & {
   load: (ctx: PipelineContext) => void;
   sample: (ctx: PipelineContext) => void;
+  loadSourceLatent: (ctx: PipelineContext) => Promise<void>;
+  loadSourceImage: (ctx: PipelineContext) => void;
 } = {
   name: 'base',
   shouldApply: () => true,
@@ -123,6 +125,7 @@ export const baseModule: WorkflowModule & {
 
   sample(ctx) {
     const { graph, settings } = ctx;
+    const denoise = typeof settings.denoise === 'number' ? settings.denoise : 1;
 
     const sampler = graph.add('KSampler', {
       seed: settings.seed,
@@ -130,7 +133,7 @@ export const baseModule: WorkflowModule & {
       cfg: settings.cfg,
       sampler_name: settings.sampler,
       scheduler: settings.scheduler,
-      denoise: 1,
+      denoise,
       model: ctx.model,
       positive: ctx.positive,
       negative: ctx.negative,
@@ -143,6 +146,49 @@ export const baseModule: WorkflowModule & {
       vae: ctx.vae,
     });
     ctx.image = [decoded, 0];
+    ensureSave(ctx);
+  },
+
+  /** Load a Comfy input image, scale to target, VAE-encode (img2img). */
+  async loadSourceLatent(ctx: PipelineContext) {
+    const { graph, settings } = ctx;
+    if (!settings.sourceImage) {
+      throw new Error('img2img requires sourceImage');
+    }
+    const { loadObjectInfo, requireNodeClass } = await import('../objectInfo.js');
+    const objectInfo = await loadObjectInfo();
+    const loadClass = requireNodeClass(objectInfo, ['LoadImage'], 'load image');
+    const scaleClass = requireNodeClass(objectInfo, ['ImageScale'], 'image scale');
+    const encodeClass = requireNodeClass(objectInfo, ['VAEEncode'], 'VAE encode');
+
+    const loaded = graph.add(loadClass, {
+      image: settings.sourceImage,
+    });
+    const scaled = graph.add(scaleClass, {
+      image: [loaded, 0],
+      upscale_method: 'lanczos',
+      width: settings.width,
+      height: settings.height,
+      crop: settings.sourceFit === 'fit' ? 'disabled' : 'center',
+    });
+    ctx.image = [scaled, 0];
+    const encoded = graph.add(encodeClass, {
+      pixels: ctx.image,
+      vae: ctx.vae,
+    });
+    ctx.latent = [encoded, 0];
+  },
+
+  /** Load image only (for upscale-from-image; no KSampler yet). */
+  loadSourceImage(ctx: PipelineContext) {
+    const { graph, settings } = ctx;
+    if (!settings.sourceImage) {
+      throw new Error('upscale requires sourceImage');
+    }
+    const loaded = graph.add('LoadImage', {
+      image: settings.sourceImage,
+    });
+    ctx.image = [loaded, 0];
     ensureSave(ctx);
   },
 };

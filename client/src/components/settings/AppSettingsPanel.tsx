@@ -545,6 +545,22 @@ export function AppSettingsPanel({
           />
         ),
       },
+      {
+        id: 'embed-png-metadata',
+        category: 'generation',
+        scope: 'server',
+        label: 'Embed PNG metadata',
+        description: 'Write prompt and settings into saved PNG files',
+        keywords: ['png', 'exif', 'parameters', 'drag'],
+        icon: <ImageIcon />,
+        control: (
+          <Switch
+            id="embed-png-metadata"
+            checked={server.embedPngMetadata}
+            onCheckedChange={(v) => void onServerPatch({ embedPngMetadata: v })}
+          />
+        ),
+      },
 
       // —— Performance ——
       {
@@ -647,6 +663,61 @@ export function AppSettingsPanel({
             placeholder="/path/to/wildcards"
             value={server.wildcardsFolder}
             onChange={(e) => void onServerPatch({ wildcardsFolder: e.target.value })}
+          />
+        ),
+      },
+      {
+        id: 'enhance-api-url',
+        category: 'generation',
+        scope: 'server',
+        label: 'Enhance API URL',
+        description: 'OpenAI-compatible base URL (…/v1). Leave blank to hide Enhance.',
+        keywords: ['openai', 'llm', 'prompt'],
+        icon: <Sparkles />,
+        control: (
+          <Input
+            id="enhance-api-url"
+            className="h-8 w-[12rem] text-xs"
+            placeholder="https://api.openai.com/v1"
+            value={server.enhanceApiUrl}
+            onChange={(e) => void onServerPatch({ enhanceApiUrl: e.target.value })}
+          />
+        ),
+      },
+      {
+        id: 'enhance-api-key',
+        category: 'generation',
+        scope: 'server',
+        label: 'Enhance API key',
+        description: 'Bearer token for the enhance endpoint',
+        keywords: ['openai', 'llm', 'prompt'],
+        icon: <Shield />,
+        control: (
+          <Input
+            id="enhance-api-key"
+            type="password"
+            className="h-8 w-[12rem] text-xs"
+            placeholder="sk-…"
+            value={server.enhanceApiKey}
+            onChange={(e) => void onServerPatch({ enhanceApiKey: e.target.value })}
+          />
+        ),
+      },
+      {
+        id: 'enhance-model',
+        category: 'generation',
+        scope: 'server',
+        label: 'Enhance model',
+        description: 'Chat model id used by Enhance',
+        keywords: ['openai', 'llm', 'prompt'],
+        icon: <Sparkles />,
+        control: (
+          <Input
+            id="enhance-model"
+            className="h-8 w-[8.5rem] text-xs"
+            placeholder="gpt-4o-mini"
+            value={server.enhanceModel}
+            onChange={(e) => void onServerPatch({ enhanceModel: e.target.value })}
           />
         ),
       },

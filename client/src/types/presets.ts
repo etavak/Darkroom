@@ -2,12 +2,15 @@ export type TagSource = 'FAMILY' | 'STYLE' | 'CKPT';
 
 export type LayerSettings = {
   cfg?: number;
+  steps?: number;
   clipSkip?: number;
   sampler?: string;
   scheduler?: string;
   guidance?: number;
   baseRes?: number;
 };
+
+export type PromptTokenMode = 'clip' | 'encoder';
 
 export type FamilyStyleSummary = {
   id: string;
@@ -42,6 +45,12 @@ export type FamilySummary = {
   filenameHints?: Record<string, string[]>;
   dependencies?: FamilyDependency[];
   defaultClipType?: string;
+  promptTokenMode?: PromptTokenMode;
+  promptMaxTokens?: number;
+  sizeMultiple?: number;
+  supportsEdit?: boolean;
+  editStrategy?: 'kontext' | 'qwen';
+  preferredInpaintModel?: string;
 };
 
 export type InjectedTag = {

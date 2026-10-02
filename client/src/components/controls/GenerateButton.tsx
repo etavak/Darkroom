@@ -11,6 +11,7 @@ type Props = {
   disabled?: boolean;
   /** Shown under the button when Generate is disabled */
   disabledReason?: string | null;
+  queueCount?: number;
 };
 
 export function GenerateButton({
@@ -22,6 +23,7 @@ export function GenerateButton({
   progressMax = 0,
   disabled,
   disabledReason,
+  queueCount = 0,
 }: Props) {
   if (running) {
     const pct = Math.max(0, Math.min(100, progress));
@@ -36,7 +38,7 @@ export function GenerateButton({
           onClick={onGenerate}
           disabled={disabled}
         >
-          Queue
+          Generate{queueCount > 0 ? ` · ${queueCount}` : ''}
         </Button>
         <button
           type="button"

@@ -40,6 +40,8 @@ type Props = {
   /** e.g. "Apple M5 · MPS" from /system_stats */
   systemLabel?: string | null;
   vramTooltip?: string | null;
+  /** Pending + running queue length for header badge */
+  queueCount?: number;
 };
 
 export function AppShell({
@@ -59,6 +61,7 @@ export function AppShell({
   resizablePanels = false,
   systemLabel,
   vramTooltip,
+  queueCount = 0,
 }: Props) {
   const historyOnRight = historyPosition === 'right';
   const historyOnBottom = historyPosition === 'bottom';
@@ -101,6 +104,11 @@ export function AppShell({
           </div>
         </div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          {queueCount > 0 ? (
+            <span className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-primary">
+              Queue {queueCount}
+            </span>
+          ) : null}
           <span
             className={cn(
               'inline-block h-1.5 w-1.5 rounded-full transition-colors duration-150',
@@ -157,10 +165,9 @@ export function AppShell({
         )}
       </div>
 
+      {/* Mobile-only history strip (desktop uses the side/bottom panel above) */}
       {!historyHidden && (
-        <div className={cn('shrink-0 border-t bg-card', !historyOnBottom && 'md:hidden')}>
-          {historyMobile}
-        </div>
+        <div className="shrink-0 border-t bg-card md:hidden">{historyMobile}</div>
       )}
 
       <Sheet open={settingsOpen} onOpenChange={onSettingsOpenChange}>

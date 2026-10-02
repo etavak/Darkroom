@@ -3,8 +3,12 @@
   "name": "SDXL",
   "settings": {
     "cfg": 5,
+    "steps": 25,
     "baseRes": 1024
   },
+  "promptTokenMode": "clip",
+  "promptMaxTokens": 75,
+  "sizeMultiple": 64,
   "supportsGguf": false,
   "loaderKind": "checkpoint",
   "requiredComponents": {},

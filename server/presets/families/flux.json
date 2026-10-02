@@ -3,11 +3,15 @@
   "name": "Flux",
   "settings": {
     "cfg": 1,
+    "steps": 28,
     "guidance": 3.5,
     "sampler": "euler",
     "scheduler": "simple",
     "baseRes": 1024
   },
+  "promptTokenMode": "encoder",
+  "promptMaxTokens": 512,
+  "sizeMultiple": 64,
   "disableNegative": true,
   "supportsGguf": true,
   "loaderKind": "transformer",

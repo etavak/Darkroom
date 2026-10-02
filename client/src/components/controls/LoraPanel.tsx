@@ -1,6 +1,5 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { ModelSelect } from '@/components/controls/ModelSelect';
 import { StepperNumber } from '@/components/ui/stepper-number';
 import type { LoraSettings } from '@/types/generation';
@@ -42,8 +41,7 @@ export function LoraPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <Label className="text-muted-foreground">LoRAs</Label>
+      <div className="flex items-center justify-end">
         <Button
           type="button"
           variant="ghost"
@@ -58,6 +56,8 @@ export function LoraPanel({
       </div>
       {options.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">No LoRAs in models/loras</p>
+      ) : loras.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">No LoRAs stacked</p>
       ) : null}
       {loras.map((lora, index) => (
         <div

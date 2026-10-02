@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS generations (
   settings_json TEXT NOT NULL,
   image_paths_json TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'pending',
-  error TEXT
+  error TEXT,
+  completed_at INTEGER,
+  parent_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC);

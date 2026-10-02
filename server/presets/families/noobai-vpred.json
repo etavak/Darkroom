@@ -3,10 +3,13 @@
   "name": "NoobAI (v-pred)",
   "settings": {
     "cfg": 5,
+    "steps": 28,
     "baseRes": 1024,
     "sampler": "euler",
     "scheduler": "beta"
   },
+  "promptTokenMode": "clip",
+  "promptMaxTokens": 75,
   "supportsGguf": false,
   "loaderKind": "checkpoint",
   "requiredComponents": {},

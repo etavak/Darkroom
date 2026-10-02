@@ -16,7 +16,7 @@ export type LoraSettings = {
 
 export type ControlNetSettings = {
   name: string;
-  image: string; // filename already uploaded to Comfy input, or data ref
+  image: string;
   strength: number;
   start_percent?: number;
   end_percent?: number;
@@ -36,39 +36,44 @@ export type DetailerSettings = {
   guide_size?: number;
   steps?: number;
   denoise?: number;
-  /** Impact Pack detector model filename, if present */
   detector?: string;
 };
 
 export type UpscaleSettings = {
   enabled: boolean;
   model: string;
-  /** Optional secondary scale after model upscale (1 = none) */
   scale?: number;
+  refine?: boolean;
+  refineDenoise?: number;
+  refineSteps?: number;
 };
 
-/** How MODEL / CLIP / VAE are loaded into the graph. */
+export type OutpaintSettings = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  feather: number;
+  /** When set (e.g. "16:9"), pads are computed to reach this aspect */
+  targetAspect?: string | null;
+};
+
+export type GenerationMode = 'txt2img' | 'img2img' | 'outpaint' | 'edit' | 'upscale';
+export type SourceSizeMode = 'match' | 'aspect';
+export type SourceFitMode = 'crop' | 'fit';
+export type EditStrategy = 'kontext' | 'qwen';
+
 export type ModelLoadMode = 'checkpoint' | 'split';
 
 export type GenerationSettings = {
   prompt: string;
   negative_prompt: string;
-  /**
-   * Primary model id for presets/family mapping.
-   * Checkpoint mode: ckpt filename. Split mode: usually the UNET / diffusion filename.
-   */
   checkpoint: string;
-  /** checkpoint = CheckpointLoaderSimple; split = UNET + CLIP(s) + VAE */
   modelMode?: ModelLoadMode;
-  /** Split stack: diffusion / UNET file under models/diffusion_models */
   unet?: string;
-  /** Split stack: first text encoder (DualCLIPLoader clip_name1 or CLIPLoader clip_name) */
   clipName?: string;
-  /** Split stack: second text encoder for DualCLIPLoader (e.g. T5) */
   clipName2?: string;
-  /** CLIPLoader / DualCLIPLoader `type` (flux, sdxl, …) */
   clipType?: string;
-  /** Optional VAE override (checkpoint mode) or required VAE (split mode) */
   vaeName?: string;
   width: number;
   height: number;
@@ -78,11 +83,22 @@ export type GenerationSettings = {
   scheduler: string;
   seed: number;
   batch_size: number;
-  /** CLIP skip (ComfyUI CLIPSetLastLayer stop_at_clip_layer, typically -2 for skip 2) */
   clipSkip?: number;
-  /** Flux-style guidance (FluxGuidance node when set) */
   guidance?: number;
-  /** Optional modules — omitted/empty means skip */
+  generationMode?: GenerationMode;
+  /** ComfyUI input filename (or Darkroom gallery name resolved server-side) */
+  sourceImage?: string;
+  /** History id of the parent generation this was derived from */
+  parentId?: string;
+  denoise?: number;
+  sourceSizeMode?: SourceSizeMode;
+  sourceFit?: SourceFitMode;
+  /** Pixel multiple for rounding (from family; default 64) */
+  sizeMultiple?: number;
+  outpaint?: OutpaintSettings | null;
+  editStrategy?: EditStrategy;
+  /** Optional preferred inpaint / fill model filename for outpaint families */
+  inpaintModel?: string;
   loras?: LoraSettings[];
   controlnet?: ControlNetSettings | null;
   hiresFix?: HiresFixSettings | null;
@@ -92,7 +108,6 @@ export type GenerationSettings = {
 
 export type WorkflowModule = {
   name: string;
-  /** Return true if this module should run for the current settings */
   shouldApply: (settings: GenerationSettings) => boolean;
   apply: (ctx: import('./graph.js').PipelineContext) => void;
 };

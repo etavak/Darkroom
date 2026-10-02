@@ -16,6 +16,12 @@ export type ServerSettings = {
   promptCleanupNormalize: boolean;
   safeMode: boolean;
   wildcardsFolder: string;
+  /** OpenAI-compatible base URL (e.g. https://api.openai.com/v1) */
+  enhanceApiUrl: string;
+  enhanceApiKey: string;
+  enhanceModel: string;
+  /** Write prompt/settings into saved PNG tEXt chunks */
+  embedPngMetadata: boolean;
   vramMode: VramMode;
   unloadIdleMinutes: number;
   maxQueueLength: number;
@@ -45,6 +51,10 @@ export const DEFAULT_SERVER_SETTINGS: ServerSettings = {
   promptCleanupNormalize: true,
   safeMode: false,
   wildcardsFolder: '',
+  enhanceApiUrl: '',
+  enhanceApiKey: '',
+  enhanceModel: '',
+  embedPngMetadata: true,
   vramMode: 'auto',
   unloadIdleMinutes: 0,
   maxQueueLength: 20,
@@ -98,6 +108,10 @@ function sanitize(raw: Partial<ServerSettings> | null | undefined): ServerSettin
     promptCleanupNormalize: Boolean(base.promptCleanupNormalize),
     safeMode: Boolean(base.safeMode),
     wildcardsFolder: typeof base.wildcardsFolder === 'string' ? base.wildcardsFolder : '',
+    enhanceApiUrl: typeof base.enhanceApiUrl === 'string' ? base.enhanceApiUrl : '',
+    enhanceApiKey: typeof base.enhanceApiKey === 'string' ? base.enhanceApiKey : '',
+    enhanceModel: typeof base.enhanceModel === 'string' ? base.enhanceModel : '',
+    embedPngMetadata: base.embedPngMetadata !== false,
     vramMode: isVramMode(base.vramMode) ? base.vramMode : 'auto',
     unloadIdleMinutes:
       typeof base.unloadIdleMinutes === 'number' && Number.isFinite(base.unloadIdleMinutes)

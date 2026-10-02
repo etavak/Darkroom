@@ -3,11 +3,14 @@
   "name": "Flux.2 Klein",
   "settings": {
     "cfg": 1,
+    "steps": 28,
     "guidance": 1,
     "sampler": "euler",
     "scheduler": "simple",
     "baseRes": 1024
   },
+  "promptTokenMode": "encoder",
+  "promptMaxTokens": 1024,
   "disableNegative": true,
   "supportsGguf": false,
   "loaderKind": "transformer",

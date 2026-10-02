@@ -12,7 +12,7 @@ type ScrubbyNumberProps = {
   max?: number;
   /** Base step for typing and scrubbing (default 1). */
   step?: number;
-  /** Restored on double-click of the label. */
+  /** Restored on double-click of the label or click of the reset dot. */
   defaultValue?: number;
   disabled?: boolean;
   className?: string;
@@ -35,7 +35,6 @@ function roundToStep(n: number, step: number): number {
 }
 
 function scrubDelta(dx: number, step: number, shift: boolean, alt: boolean): number {
-  // ~4px per base unit; Shift = 10×, Alt = fine (0.1×)
   const scale = shift ? 10 : alt ? 0.1 : 1;
   return (dx / 4) * step * scale;
 }
@@ -46,9 +45,15 @@ function effectiveStep(step: number, shift: boolean, alt: boolean): number {
   return step;
 }
 
+function nearlyEqual(a: number, b: number, step: number): boolean {
+  const eps = Math.max(step / 2, 1e-6);
+  return Math.abs(a - b) <= eps;
+}
+
 /**
  * Photoshop-style number field: drag left/right on the label to scrub.
  * Shift = 10× step, Alt = fine, double-click label = reset to default.
+ * A small dot appears when the value differs from the family default.
  */
 export function ScrubbyNumber({
   id,
@@ -67,6 +72,14 @@ export function ScrubbyNumber({
   const dragging = useRef(false);
   const startX = useRef(0);
   const startValue = useRef(0);
+
+  const dirty =
+    defaultValue !== undefined && !nearlyEqual(value, defaultValue, step);
+
+  const reset = () => {
+    if (disabled || defaultValue === undefined) return;
+    onChange(clamp(defaultValue, min, max));
+  };
 
   const onPointerDown = (e: React.PointerEvent<HTMLLabelElement>) => {
     if (disabled || e.button !== 0) return;
@@ -98,28 +111,37 @@ export function ScrubbyNumber({
 
   return (
     <div className={cn('space-y-1.5', className)}>
-      <Label
-        htmlFor={id}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onDoubleClick={() => {
-          if (disabled || defaultValue === undefined) return;
-          onChange(clamp(defaultValue, min, max));
-        }}
-        className={cn(
-          'select-none',
-          disabled ? 'cursor-default opacity-50' : 'cursor-ew-resize',
-        )}
-        title={
-          defaultValue !== undefined
-            ? 'Drag to adjust · Shift 10× · Alt fine · Double-click reset'
-            : 'Drag to adjust · Shift 10× · Alt fine'
-        }
-      >
-        {label}
-      </Label>
+      <div className="flex items-center gap-1.5">
+        <Label
+          htmlFor={id}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onDoubleClick={reset}
+          className={cn(
+            'select-none',
+            disabled ? 'cursor-default opacity-50' : 'cursor-ew-resize',
+          )}
+          title={
+            defaultValue !== undefined
+              ? 'Drag to adjust · Shift 10× · Alt fine · Double-click reset'
+              : 'Drag to adjust · Shift 10× · Alt fine'
+          }
+        >
+          {label}
+        </Label>
+        {dirty ? (
+          <button
+            type="button"
+            className="h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_2px_oklch(0.145_0_0)] ring-1 ring-primary/40"
+            title={`Reset to ${defaultValue}`}
+            aria-label={`Reset ${label} to default`}
+            disabled={disabled}
+            onClick={reset}
+          />
+        ) : null}
+      </div>
       <div className="flex items-center gap-1">
         <Input
           id={id}

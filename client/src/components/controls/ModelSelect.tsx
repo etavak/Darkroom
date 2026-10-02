@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Info, Plus } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -19,12 +20,13 @@ type Props = {
   offline?: boolean;
   allowEmpty?: boolean;
   emptyLabel?: string;
+  /** Shown as a tooltip on an info icon next to the label */
   hint?: string | null;
+  /** Small chip next to the label (e.g. family name) */
+  badge?: string | null;
   className?: string;
-  /** Open the Add model dialog from the bottom of the dropdown */
   onAddModel?: () => void;
   addLabel?: string;
-  /** Inline missing-component Add button next to the label */
   missing?: boolean;
   onAddMissing?: () => void;
 };
@@ -40,6 +42,7 @@ export function ModelSelect({
   allowEmpty,
   emptyLabel = 'None (auto)',
   hint,
+  badge,
   className,
   onAddModel,
   addLabel = 'Add model…',
@@ -57,7 +60,25 @@ export function ModelSelect({
   return (
     <div className={cn('space-y-1.5', className)}>
       <div className="flex items-center justify-between gap-2">
-        <Label className={missing ? 'text-destructive' : undefined}>{label}</Label>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Label className={missing ? 'text-destructive' : undefined}>{label}</Label>
+          {badge ? (
+            <span className="inline-flex shrink-0 items-center rounded-full border border-primary/35 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-foreground">
+              {badge}
+            </span>
+          ) : null}
+          {hint ? (
+            <Tooltip content={hint}>
+              <button
+                type="button"
+                className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={hint}
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+          ) : null}
+        </div>
         {missing && onAddMissing ? (
           <button
             type="button"
@@ -71,15 +92,15 @@ export function ModelSelect({
       <Select
         value={value || (allowEmpty ? '__empty__' : undefined)}
         onValueChange={(v) => onChange(v === '__empty__' ? '' : v)}
-        disabled={disabled || loading || offline || (!allowEmpty && options.length === 0 && !onAddModel)}
+        disabled={
+          disabled || loading || offline || (!allowEmpty && options.length === 0 && !onAddModel)
+        }
       >
         <SelectTrigger className={cn('min-w-0 w-full', missing && 'border-destructive/50')}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {allowEmpty ? (
-            <SelectItem value="__empty__">{emptyLabel}</SelectItem>
-          ) : null}
+          {allowEmpty ? <SelectItem value="__empty__">{emptyLabel}</SelectItem> : null}
           {options.map((name) => (
             <SelectItem key={name} value={name}>
               {name}
@@ -103,7 +124,6 @@ export function ModelSelect({
           ) : null}
         </SelectContent>
       </Select>
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

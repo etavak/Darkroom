@@ -74,6 +74,14 @@ fi
 
 NPM_BIN="$(dirname "$NODE_BIN")/npm"
 
+# Put this Node first so npm/node-gyp never pick a different major from PATH.
+export PATH="$(dirname "$NODE_BIN"):$PATH"
+
+sqlite_ok() {
+  # bare require() only loads JS — native addon loads on new Database()
+  "$NODE_BIN" -e "const D=require('better-sqlite3'); const d=new D(':memory:'); d.close();" >/dev/null 2>&1
+}
+
 if [ ! -d "$ROOT/node_modules/@clack/prompts" ]; then
   echo "[Darkroom] Installing dependencies…"
   if [ -f "$ROOT/package-lock.json" ]; then
@@ -81,7 +89,9 @@ if [ ! -d "$ROOT/node_modules/@clack/prompts" ]; then
   else
     "$NPM_BIN" install --prefix "$ROOT" || pause_err "[Darkroom] npm install failed."
   fi
-elif ! "$NODE_BIN" -e "require('better-sqlite3')" >/dev/null 2>&1; then
+  echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
+  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
+elif ! sqlite_ok; then
   echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
   "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
 fi

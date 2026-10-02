@@ -3,12 +3,16 @@ export type TagSource = 'FAMILY' | 'STYLE' | 'CKPT';
 
 export type LayerSettings = {
   cfg?: number;
+  steps?: number;
   clipSkip?: number;
   sampler?: string;
   scheduler?: string;
   guidance?: number;
   baseRes?: number;
 };
+
+/** How the UI token counter behaves for this family. */
+export type PromptTokenMode = 'clip' | 'encoder';
 
 export type TagLayer = {
   positive?: string[];
@@ -58,6 +62,18 @@ export type FamilyDef = TagLayer & {
   dependencies?: FamilyDependency[];
   /** Preferred CLIPLoader / DualCLIPLoader `type` for split stack */
   defaultClipType?: string;
+  /** clip = "N preset + M / 75"; encoder = plain count vs promptMaxTokens */
+  promptTokenMode?: PromptTokenMode;
+  /** Max tokens for encoder families (T5 / LLM). CLIP mode uses 75. */
+  promptMaxTokens?: number;
+  /** Latent / pixel size multiple (8 for SD1.5, 64 for SDXL/Flux) */
+  sizeMultiple?: number;
+  /** Instruction-based Edit mode (Kontext / Qwen Image Edit, …) */
+  supportsEdit?: boolean;
+  /** Which edit graph strategy to use when supportsEdit */
+  editStrategy?: 'kontext' | 'qwen';
+  /** Preferred inpaint / fill model filename hint for outpaint */
+  preferredInpaintModel?: string;
   styles: Record<string, StyleDef>;
 };
 

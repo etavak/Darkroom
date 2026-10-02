@@ -1,25 +1,22 @@
+import { applyEditModule } from './edit/index.js';
 import { baseModule, createEmptyContext } from './modules/base.js';
 import { controlnetModule } from './modules/controlnet.js';
 import { detailerModule } from './modules/detailer.js';
 import { hiresFixModule } from './modules/hiresFix.js';
 import { lorasModule } from './modules/loras.js';
+import { applyOutpaint } from './modules/outpaint.js';
 import { upscaleModule } from './modules/upscale.js';
 import type { ComfyPrompt, GenerationSettings, WorkflowModule } from './types.js';
 
-/**
- * Module order:
- *   base.load → loras → controlnet → base.sample → hiresFix → detailer → upscale
- *
- * Each optional module rewires PipelineContext ports; SaveImage always tracks final image.
- */
 const postSampleModules: WorkflowModule[] = [
   hiresFixModule,
   detailerModule,
   upscaleModule,
 ];
 
-export function buildWorkflow(settings: GenerationSettings): ComfyPrompt {
+export async function buildWorkflow(settings: GenerationSettings): Promise<ComfyPrompt> {
   const ctx = createEmptyContext(settings);
+  const mode = settings.generationMode ?? 'txt2img';
 
   baseModule.load(ctx);
 
@@ -30,7 +27,19 @@ export function buildWorkflow(settings: GenerationSettings): ComfyPrompt {
     controlnetModule.apply(ctx);
   }
 
-  baseModule.sample(ctx);
+  if (mode === 'edit' && settings.sourceImage) {
+    const strategy = settings.editStrategy ?? 'kontext';
+    await applyEditModule(ctx, strategy);
+  } else if (mode === 'outpaint' && settings.sourceImage) {
+    await applyOutpaint(ctx);
+  } else if (mode === 'upscale' && settings.sourceImage) {
+    baseModule.loadSourceImage(ctx);
+  } else if (mode === 'img2img' && settings.sourceImage) {
+    await baseModule.loadSourceLatent(ctx);
+    baseModule.sample(ctx);
+  } else {
+    baseModule.sample(ctx);
+  }
 
   for (const mod of postSampleModules) {
     if (mod.shouldApply(settings)) {

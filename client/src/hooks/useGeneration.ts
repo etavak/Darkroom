@@ -47,6 +47,7 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
   const activeJobId = useRef<string | null>(null);
   const cancelledRef = useRef(false);
   const livePreviewRef = useRef(true);
+  const inFlightRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -93,6 +94,10 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
   }, []);
 
   const generate = useCallback(async (settings: GenerationSettings, opts?: GenerateOptions) => {
+    if (inFlightRef.current) {
+      throw new Error('A generation is already running');
+    }
+    inFlightRef.current = true;
     cancelledRef.current = false;
     const livePreview = opts?.livePreview !== false;
     livePreviewRef.current = livePreview;
@@ -177,6 +182,8 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
       }));
       wsRef.current?.close();
       throw err;
+    } finally {
+      inFlightRef.current = false;
     }
   }, []);
 

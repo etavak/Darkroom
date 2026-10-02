@@ -3,9 +3,13 @@
   "name": "SD 1.5",
   "settings": {
     "cfg": 7,
+    "steps": 25,
     "clipSkip": 2,
     "baseRes": 512
   },
+  "promptTokenMode": "clip",
+  "promptMaxTokens": 75,
+  "sizeMultiple": 8,
   "supportsGguf": false,
   "loaderKind": "checkpoint",
   "requiredComponents": {},
