@@ -1,6 +1,9 @@
-import type { NodeRef, WorkflowModule } from '../types.js';
+import type { ControlNetSettings, GenerationSettings, NodeRef, WorkflowModule } from '../types.js';
+import { MAX_CONTROLNETS } from '../types.js';
 import type { PipelineContext } from '../graph.js';
 import { loadObjectInfo, resolveNodeClass } from '../objectInfo.js';
+
+type Preprocessor = NonNullable<ControlNetSettings['preprocessor']>;
 
 const PREPROCESSOR_CANDIDATES: Record<string, string[]> = {
   canny: ['CannyEdgePreprocessor', 'CannyPreprocessor', 'AIO_Preprocessor'],
@@ -11,56 +14,72 @@ const PREPROCESSOR_CANDIDATES: Record<string, string[]> = {
     'AIO_Preprocessor',
   ],
   openpose: ['OpenposePreprocessor', 'DWPreprocessor', 'AIO_Preprocessor'],
+  lineart: ['LineArtPreprocessor', 'AnimeLineArtPreprocessor', 'AIO_Preprocessor'],
+  tile: ['TilePreprocessor', 'AIO_Preprocessor'],
 };
 
+/** AIO_Preprocessor picks the method from a combo */
+const AIO_NAMES: Record<string, string> = {
+  canny: 'CannyEdgePreprocessor',
+  depth: 'DepthAnythingPreprocessor',
+  openpose: 'OpenposePreprocessor',
+  lineart: 'LineArtPreprocessor',
+  tile: 'TilePreprocessor',
+};
+
+/** Tile works on the plain image too, so it doesn't require ControlNet Aux. */
+const OPTIONAL_PREPROCESS = new Set<string>(['tile']);
+
+/** The guides to apply, in order (the old single `controlnet` field still works). */
+export function controlNetList(settings: GenerationSettings): ControlNetSettings[] {
+  const list = settings.controlnets?.length ? settings.controlnets : settings.controlnet ? [settings.controlnet] : [];
+  return list.filter((cn) => cn.name && cn.image).slice(0, MAX_CONTROLNETS);
+}
+
+export type PreprocessNode = { className: string; inputs: Record<string, unknown> };
+
 /**
- * Applies a ControlNet to the positive conditioning.
- * Expects `controlnet.image` to be a filename already in ComfyUI's input folder.
+ * The ComfyUI node that turns a photo into a pose / depth / edge map, or null when the
+ * image is used as-is. Throws when the type needs ControlNet Aux and it isn't installed.
+ */
+export async function resolvePreprocessor(kind: ControlNetSettings['preprocessor']): Promise<PreprocessNode | null> {
+  if (!kind || kind === 'none') return null;
+  const info = await loadObjectInfo();
+  const className = resolveNodeClass(info, PREPROCESSOR_CANDIDATES[kind] || []);
+  if (!className) {
+    if (OPTIONAL_PREPROCESS.has(kind)) return null;
+    throw new Error(
+      `ControlNet type "${kind}" needs ControlNet Aux. Install comfyui_controlnet_aux (launcher → Components → Custom nodes), or use a ready-made map.`,
+    );
+  }
+  return { className, inputs: className === 'AIO_Preprocessor' ? { preprocessor: AIO_NAMES[kind as Preprocessor] ?? kind } : {} };
+}
+
+/**
+ * Applies the ControlNet guides to the conditioning, one after another.
+ * Each `image` is a filename already in ComfyUI's input folder.
  */
 export const controlnetModule: WorkflowModule = {
   name: 'controlnet',
 
   shouldApply(settings) {
-    return Boolean(settings.controlnet?.name && settings.controlnet?.image);
+    return controlNetList(settings).length > 0;
   },
 
   apply(ctx) {
-    // Sync path without preprocessor — builder prefers applyControlNet when possible.
-    applyControlNetSync(ctx, null);
+    // Sync path without preprocessors — builder prefers applyControlNet when possible.
+    for (const cn of controlNetList(ctx.settings)) applyOne(ctx, cn, null);
   },
 };
 
-/**
- * Async ControlNet apply with optional aux preprocessor (object_info lookup).
- */
+/** Async apply with optional aux preprocessors (object_info lookup). */
 export async function applyControlNet(ctx: PipelineContext): Promise<void> {
-  const cn = ctx.settings.controlnet;
-  if (!cn?.name || !cn.image) return;
-
-  const preprocessor = cn.preprocessor && cn.preprocessor !== 'none' ? cn.preprocessor : null;
-  let preprocessClass: string | null = null;
-  if (preprocessor) {
-    const info = await loadObjectInfo();
-    const candidates = PREPROCESSOR_CANDIDATES[preprocessor] || [];
-    preprocessClass = resolveNodeClass(info, candidates);
-    if (!preprocessClass) {
-      throw new Error(
-        `ControlNet preprocessor "${preprocessor}" needs ControlNet Aux. ` +
-          `Install comfyui_controlnet_aux, or set preprocessor to none.`,
-      );
-    }
+  for (const cn of controlNetList(ctx.settings)) {
+    applyOne(ctx, cn, await resolvePreprocessor(cn.preprocessor));
   }
-  applyControlNetSync(ctx, preprocessClass ? { className: preprocessClass, kind: preprocessor! } : null);
 }
 
-/**
- * @param preprocess null = raw image; otherwise run named preprocessor class
- */
-function applyControlNetSync(
-  ctx: PipelineContext,
-  preprocess: { className: string; kind: string } | null,
-) {
-  const cn = ctx.settings.controlnet!;
+function applyOne(ctx: PipelineContext, cn: ControlNetSettings, preprocess: PreprocessNode | null) {
   const loader = ctx.graph.add('ControlNetLoader', {
     control_net_name: cn.name,
   });
@@ -68,22 +87,9 @@ function applyControlNetSync(
     image: cn.image,
   });
 
-  /** @type {NodeRef} */
   let imageRef: NodeRef = [image, 0];
   if (preprocess) {
-    const inputs: Record<string, unknown> = {
-      image: imageRef,
-    };
-    // AIO_Preprocessor uses `preprocessor` combo; dedicated nodes usually only need image.
-    if (preprocess.className === 'AIO_Preprocessor') {
-      const aioMap: Record<string, string> = {
-        canny: 'CannyEdgePreprocessor',
-        depth: 'DepthAnythingPreprocessor',
-        openpose: 'OpenposePreprocessor',
-      };
-      inputs.preprocessor = aioMap[preprocess.kind] || preprocess.kind;
-    }
-    const pre = ctx.graph.add(preprocess.className, inputs);
+    const pre = ctx.graph.add(preprocess.className, { ...preprocess.inputs, image: imageRef });
     imageRef = [pre, 0];
   }
 

@@ -12,9 +12,11 @@ export type ControlNetSettings = {
   strength: number;
   start_percent?: number;
   end_percent?: number;
-  /** Optional aux preprocessor (requires controlnet_aux). */
-  preprocessor?: 'none' | 'canny' | 'depth' | 'openpose';
+  /** Optional aux preprocessor (requires controlnet_aux; tile works without it). */
+  preprocessor?: ControlNetPreprocessor;
 };
+
+export type ControlNetPreprocessor = 'none' | 'canny' | 'depth' | 'openpose' | 'lineart' | 'tile';
 
 export type HiresFixSettings = {
   enabled: boolean;
@@ -105,7 +107,9 @@ export type GenerationSettings = {
   editStrategy?: EditStrategy;
   inpaintModel?: string;
   loras?: LoraSettings[];
+  /** Older records have only this; `controlnets` holds every guide (the first is also here). */
   controlnet?: ControlNetSettings | null;
+  controlnets?: ControlNetSettings[];
   hiresFix?: HiresFixSettings | null;
   detailer?: DetailerSettings | null;
   upscale?: UpscaleSettings | null;

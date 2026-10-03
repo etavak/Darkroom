@@ -7,7 +7,8 @@ import { expandWildcards } from '../lib/wildcards.js';
 import * as comfy from './comfyClient.js';
 import { loadServerSettings, processPromptText, touchActivity } from './appSettings.js';
 import { supportsPerPromptPreviewMethod } from './envSettings.js';
-import { buildWorkflow, type GenerationSettings } from '../workflow/index.js';
+import { buildWorkflow, type ControlNetSettings, type GenerationSettings } from '../workflow/index.js';
+import { MAX_CONTROLNETS } from '../workflow/types.js';
 import * as history from './history.js';
 
 export type { GenerationSettings };
@@ -24,12 +25,27 @@ function asObject(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
+const PREPROCESSORS = new Set(['canny', 'depth', 'openpose', 'lineart', 'tile']);
+
+function parseControlNet(v: unknown): ControlNetSettings | null {
+  const cn = asObject(v);
+  if (!cn || typeof cn.name !== 'string' || typeof cn.image !== 'string' || !cn.name || !cn.image) return null;
+  return {
+    name: cn.name,
+    image: cn.image,
+    strength: typeof cn.strength === 'number' ? cn.strength : 1,
+    start_percent: typeof cn.start_percent === 'number' ? cn.start_percent : undefined,
+    end_percent: typeof cn.end_percent === 'number' ? cn.end_percent : undefined,
+    preprocessor: typeof cn.preprocessor === 'string' && PREPROCESSORS.has(cn.preprocessor) ? (cn.preprocessor as ControlNetSettings['preprocessor']) : undefined,
+  };
+}
+
 function parseOptionalModules(
   b: Record<string, unknown>,
-): Pick<GenerationSettings, 'loras' | 'controlnet' | 'hiresFix' | 'detailer' | 'upscale'> {
+): Pick<GenerationSettings, 'loras' | 'controlnet' | 'controlnets' | 'hiresFix' | 'detailer' | 'upscale'> {
   const out: Pick<
     GenerationSettings,
-    'loras' | 'controlnet' | 'hiresFix' | 'detailer' | 'upscale'
+    'loras' | 'controlnet' | 'controlnets' | 'hiresFix' | 'detailer' | 'upscale'
   > = {};
 
   if (Array.isArray(b.loras)) {
@@ -46,23 +62,11 @@ function parseOptionalModules(
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }
 
-  const cn = asObject(b.controlnet);
-  if (cn && typeof cn.name === 'string' && typeof cn.image === 'string') {
-    const pre =
-      cn.preprocessor === 'canny' ||
-      cn.preprocessor === 'depth' ||
-      cn.preprocessor === 'openpose' ||
-      cn.preprocessor === 'none'
-        ? cn.preprocessor
-        : undefined;
-    out.controlnet = {
-      name: cn.name,
-      image: cn.image,
-      strength: typeof cn.strength === 'number' ? cn.strength : 1,
-      start_percent: typeof cn.start_percent === 'number' ? cn.start_percent : undefined,
-      end_percent: typeof cn.end_percent === 'number' ? cn.end_percent : undefined,
-      preprocessor: pre === 'none' ? undefined : pre,
-    };
+  const list = Array.isArray(b.controlnets) ? b.controlnets.map(parseControlNet) : [parseControlNet(b.controlnet)];
+  const guides = list.filter((x): x is ControlNetSettings => x !== null).slice(0, MAX_CONTROLNETS);
+  if (guides.length) {
+    out.controlnets = guides;
+    out.controlnet = guides[0];
   }
 
   const hf = asObject(b.hiresFix);

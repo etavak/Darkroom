@@ -14,13 +14,18 @@ export type LoraSettings = {
   strength_clip: number;
 };
 
+export type ControlNetPreprocessor = 'none' | 'canny' | 'depth' | 'openpose' | 'lineart' | 'tile';
+
+/** At most this many guides are applied (in order). */
+export const MAX_CONTROLNETS = 3;
+
 export type ControlNetSettings = {
   name: string;
   image: string;
   strength: number;
   start_percent?: number;
   end_percent?: number;
-  preprocessor?: 'none' | 'canny' | 'depth' | 'openpose';
+  preprocessor?: ControlNetPreprocessor;
 };
 
 export type HiresFixSettings = {
@@ -118,7 +123,9 @@ export type GenerationSettings = {
   /** Optional preferred inpaint / fill model filename for outpaint families */
   inpaintModel?: string;
   loras?: LoraSettings[];
+  /** Older single-guide field; `controlnets` wins when both are present. */
   controlnet?: ControlNetSettings | null;
+  controlnets?: ControlNetSettings[];
   hiresFix?: HiresFixSettings | null;
   detailer?: DetailerSettings | null;
   upscale?: UpscaleSettings | null;

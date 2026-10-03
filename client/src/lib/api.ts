@@ -294,6 +294,17 @@ export function fetchLoraMeta(): Promise<{ items: LoraMeta[] }> {
 
 export const loraThumbUrl = (name: string) => `/api/models/loras/thumb?name=${encodeURIComponent(name)}`;
 
+/** Runs a guide's preprocessor in ComfyUI; resolves to an object URL of the map (revoke when done). */
+export async function controlNetMapApi(image: string, preprocessor: string): Promise<string> {
+  const res = await fetch('/api/source/controlnet-map', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image, preprocessor }),
+  });
+  if (!res.ok) await throwForResponse(res);
+  return URL.createObjectURL(await res.blob());
+}
+
 export function emptyTrashApi(): Promise<{
   ok: boolean;
   removed: number;

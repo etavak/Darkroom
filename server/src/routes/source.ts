@@ -4,6 +4,7 @@ import { Router, raw } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config.js';
 import { uploadImage } from '../services/comfyClient.js';
+import { renderControlNetMap } from '../services/controlnetMap.js';
 
 export const sourceRouter = Router();
 
@@ -73,6 +74,24 @@ sourceRouter.post('/upload', expressRawUpload, async (req, res) => {
 });
 
 /** Re-upload an existing gallery image into Comfy input. */
+/** What a ControlNet guide sees: the pose / depth / edge map made from its image (PNG). */
+sourceRouter.post('/controlnet-map', async (req, res) => {
+  const image = typeof req.body?.image === 'string' ? req.body.image : '';
+  const kind = req.body?.preprocessor;
+  if (!image || !['canny', 'depth', 'openpose', 'lineart', 'tile'].includes(kind)) {
+    res.status(400).json({ error: 'image and preprocessor are required' });
+    return;
+  }
+  try {
+    const png = await renderControlNetMap(image, kind);
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(png);
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : 'Could not make the map' });
+  }
+});
+
 sourceRouter.post('/from-gallery', async (req, res) => {
   try {
     const filename = typeof req.body?.filename === 'string' ? path.basename(req.body.filename) : '';

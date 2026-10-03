@@ -17,6 +17,8 @@ type Props = {
   inline?: boolean;
 };
 
+const GUIDE_NAMES: Record<string, string> = { openpose: 'Pose', depth: 'Depth', canny: 'Edges', lineart: 'Line art', tile: 'Tile' };
+
 const MODE_NAMES: Record<string, string> = {
   txt2img: 'Text to image',
   img2img: 'Image to image',
@@ -39,6 +41,7 @@ export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReus
   const typedNeg = s ? (s.userNegative ?? s.negativeTemplate ?? s.negative_prompt) : '';
   const model = s ? shortModelName(s.modelMode === 'split' ? s.unet || s.checkpoint : s.checkpoint) : '';
   const usesGuidance = s ? s.guidance !== undefined && s.guidance !== null && s.cfg <= 1.01 : false;
+  const guides = s ? (s.controlnets?.length ? s.controlnets : s.controlnet ? [s.controlnet] : []) : [];
   const rows: Array<{ k: string; v: string | null | undefined; mono?: boolean }> = s
     ? [
         { k: 'Model', v: model },
@@ -52,6 +55,9 @@ export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReus
         s.qualityPreset ? { k: 'Quality', v: s.qualityPreset[0].toUpperCase() + s.qualityPreset.slice(1) } : { k: '', v: null },
         s.negativePreset ? { k: 'Negative', v: s.negativePreset[0].toUpperCase() + s.negativePreset.slice(1) } : { k: '', v: null },
         s.denoise !== undefined && s.generationMode !== 'txt2img' && s.generationMode ? { k: 'Strength', v: String(s.denoise), mono: true } : { k: '', v: null },
+        guides.length
+          ? { k: guides.length > 1 ? 'Guides' : 'Guide', v: guides.map((g) => `${GUIDE_NAMES[g.preprocessor ?? ''] ?? 'Map'} ${g.strength}`).join(' + ') }
+          : { k: '', v: null },
         { k: 'Took', v: formatTook(record?.durationMs), mono: true },
         { k: 'Made', v: record ? new Date(record.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null },
       ].filter((r) => r.k && r.v)

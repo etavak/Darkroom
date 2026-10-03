@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AddModelDialog } from '@/components/controls/AddModelDialog';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
-import { DEFAULT_CONTROLNET_UI, DEFAULT_DETAILER, controlNetPayload, type ControlNetUiState } from '@/lib/generationDefaults';
+import { DEFAULT_CONTROLNET_UI, DEFAULT_DETAILER, MAX_CONTROLNETS, controlNetFields, controlNetsFromSettings, type ControlNetUiState } from '@/lib/generationDefaults';
 import { DependencyResolver } from '@/components/controls/DependencyResolver';
 import { MapFamilyDialog } from '@/components/controls/MapFamilyDialog';
 import { ModelStackPanel } from '@/components/controls/ModelStackPanel';
@@ -84,7 +84,6 @@ import {
 } from '@/lib/sourceImage';
 import { eventMatchesShortcut, qualityToPreviewMethod } from '@/lib/uiSettings';
 import type {
-  ControlNetSettings,
   DetailerSettings,
   GenerationRecord,
   GenerationSettings,
@@ -311,7 +310,7 @@ export default function App() {
     steps: 15,
     denoise: 0.45,
   });
-  const [controlNet, setControlNet] = useState<ControlNetUiState>(DEFAULT_CONTROLNET_UI);
+  const [controlNets, setControlNets] = useState<ControlNetUiState[]>([]);
   const [detailer, setDetailer] = useState<DetailerSettings>(DEFAULT_DETAILER);
   const detailerDefaultApplied = useRef(false);
   const [source, setSource] = useState<SourceImageState | null>(null);
@@ -669,7 +668,7 @@ export default function App() {
         guidance,
         loras: activeLoras.length ? activeLoras : undefined,
         hiresFix: hiresFix.enabled && workMode === 'generate' ? hiresFix : undefined,
-        controlnet: controlNetPayload(controlNet) ?? undefined,
+        ...controlNetFields(controlNets),
         detailer: detailer.enabled ? detailer : undefined,
         generationMode,
         sourceImage: workMode === 'generate' ? undefined : source?.comfyName,
@@ -703,7 +702,7 @@ export default function App() {
       clipName2,
       clipSkip,
       clipType,
-      controlNet,
+      controlNets,
       detailer,
       dismissedNegative,
       dismissedPositive,
@@ -1089,20 +1088,9 @@ export default function App() {
         scheduler: hf.scheduler,
       });
     }
-    if (s?.controlnet && typeof s.controlnet === 'object') {
-      const cn = s.controlnet as ControlNetSettings;
-      setControlNet({
-        enabled: Boolean(cn.name && cn.image),
-        name: typeof cn.name === 'string' ? cn.name : '',
-        image: typeof cn.image === 'string' ? cn.image : '',
-        previewUrl: null,
-        strength: typeof cn.strength === 'number' ? cn.strength : 1,
-        start_percent: typeof cn.start_percent === 'number' ? cn.start_percent : 0,
-        end_percent: typeof cn.end_percent === 'number' ? cn.end_percent : 1,
-        preprocessor: cn.preprocessor === 'canny' || cn.preprocessor === 'depth' || cn.preprocessor === 'openpose'
-          ? cn.preprocessor
-          : 'none',
-      });
+    if (s && (s.controlnets || s.controlnet)) {
+      const guides = controlNetsFromSettings(s as { controlnets?: unknown; controlnet?: unknown });
+      if (guides.length) setControlNets(guides);
     }
     if (s?.detailer && typeof s.detailer === 'object') {
       const d = s.detailer as DetailerSettings;
@@ -1297,25 +1285,7 @@ export default function App() {
         scheduler: s.hiresFix.scheduler,
       });
     }
-    if (s.controlnet) {
-      setControlNet({
-        enabled: Boolean(s.controlnet.name && s.controlnet.image),
-        name: s.controlnet.name,
-        image: s.controlnet.image,
-        previewUrl: null,
-        strength: s.controlnet.strength ?? 1,
-        start_percent: s.controlnet.start_percent ?? 0,
-        end_percent: s.controlnet.end_percent ?? 1,
-        preprocessor:
-          s.controlnet.preprocessor === 'canny' ||
-          s.controlnet.preprocessor === 'depth' ||
-          s.controlnet.preprocessor === 'openpose'
-            ? s.controlnet.preprocessor
-            : 'none',
-      });
-    } else {
-      setControlNet(DEFAULT_CONTROLNET_UI);
-    }
+    setControlNets(controlNetsFromSettings(s));
     if (s.detailer) {
       setDetailer({
         enabled: Boolean(s.detailer.enabled),
@@ -1700,8 +1670,8 @@ export default function App() {
         />
         )}
         <ControlNetCard
-          value={controlNet}
-          onChange={setControlNet}
+          value={controlNets}
+          onChange={setControlNets}
           models={catalog.controlnet}
           available={Boolean(catalog.available.controlnet)}
           auxAvailable={Boolean(catalog.available.controlnetAux)}
@@ -2071,15 +2041,17 @@ export default function App() {
     if (kind === 'cn') {
       try {
         const up = await uploadFileAsSource(file);
-        setControlNet((cur) => ({
-          ...cur,
-          enabled: true,
-          image: up.comfyName,
-          previewUrl: up.previewUrl,
-          name: cur.name || catalog.controlnet[0] || '',
-          preprocessor: cur.enabled ? cur.preprocessor : catalog.available.controlnetAux ? 'openpose' : 'none',
-          end_percent: cur.enabled ? cur.end_percent : 0.8,
-        }));
+        setControlNets((cur) => {
+          const image = { image: up.comfyName, previewUrl: up.previewUrl };
+          // Fill a guide that has no image yet, else add one, else replace the last guide's image
+          const empty = cur.findIndex((g) => !g.image);
+          if (empty >= 0) return cur.map((g, i) => (i === empty ? { ...g, ...image } : g));
+          if (cur.length < MAX_CONTROLNETS) {
+            const pre = catalog.available.controlnetAux ? 'openpose' : 'none';
+            return [...cur, { ...DEFAULT_CONTROLNET_UI, ...image, enabled: true, name: catalog.controlnet[0] || '', preprocessor: pre, end_percent: 0.8 }];
+          }
+          return cur.map((g, i) => (i === cur.length - 1 ? { ...g, ...image } : g));
+        });
         flash(`${name} added as the ControlNet guide`, 2400);
       } catch (err) {
         flash(err instanceof Error ? err.message : 'Upload failed', 3000);

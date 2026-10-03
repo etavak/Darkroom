@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CheckSquare, ChevronDown, ImageIcon, PersonStanding, Plus, TriangleAlert, Upload, X } from 'lucide-react';
-import { DEFAULT_CONTROLNET_UI, type ControlNetUiState } from '@/lib/generationDefaults';
+import { controlNetMapApi } from '@/lib/api';
+import { DEFAULT_CONTROLNET_UI, MAX_CONTROLNETS, type ControlNetUiState } from '@/lib/generationDefaults';
 import { shortModelName } from '@/lib/modelProfiles';
 import type { SourceFitMode, SourceImageState, SourceSizeMode, WorkMode } from '@/types/generation';
 import { StCard, StCardBtn, StMenuButton, StMenuItem, StSeg, StSlider } from './primitives';
@@ -196,14 +197,17 @@ type GuideType = ControlNetUiState['preprocessor'];
 const CN_TYPES: Array<{ id: GuideType; name: string; desc: string; keys: string[]; aux: boolean }> = [
   { id: 'openpose', name: 'Pose', desc: 'Copies the body pose found in the guide', keys: ['openpose', 'pose'], aux: true },
   { id: 'depth', name: 'Depth', desc: 'Keeps the layout and distances of the guide', keys: ['depth'], aux: true },
-  { id: 'canny', name: 'Edges', desc: 'Follows the outlines of the guide', keys: ['canny', 'lineart', 'edge', 'scribble'], aux: true },
+  { id: 'canny', name: 'Edges', desc: 'Follows the outlines of the guide', keys: ['canny', 'edge', 'scribble'], aux: true },
+  { id: 'lineart', name: 'Line art', desc: 'Follows clean lines — good for sketches and anime art', keys: ['lineart', 'line_art', 'anime'], aux: true },
+  { id: 'tile', name: 'Tile', desc: 'Keeps the colours and composition and adds detail — good for upscales', keys: ['tile'], aux: false },
   { id: 'none', name: 'Ready-made map', desc: 'The guide already is a pose, depth or edge map — used as-is', keys: [], aux: false },
 ];
+const typeOf = (id: GuideType) => CN_TYPES.find((t) => t.id === id) ?? CN_TYPES[CN_TYPES.length - 1];
 
 /** Best installed model for a guide type (by filename), else a union model, else the first. */
 function pickModel(models: string[], type: GuideType, current: string): string {
   const lower = (m: string) => m.toLowerCase();
-  const keys = CN_TYPES.find((t) => t.id === type)?.keys ?? [];
+  const keys = typeOf(type).keys;
   if (current && (keys.length === 0 || keys.some((k) => lower(current).includes(k)) || lower(current).includes('union'))) {
     return current;
   }
@@ -214,45 +218,39 @@ function pickModel(models: string[], type: GuideType, current: string): string {
   );
 }
 
+type GuideImage = { comfyName: string; previewUrl: string };
+
 type ControlNetProps = {
-  value: ControlNetUiState;
-  onChange: (v: ControlNetUiState) => void;
+  value: ControlNetUiState[];
+  onChange: (v: ControlNetUiState[]) => void;
   models: string[];
   available: boolean;
   auxAvailable: boolean;
   disabled?: boolean;
   canUseSelected: boolean;
-  onUseSelected: () => Promise<{ comfyName: string; previewUrl: string } | null>;
-  onUpload: (f: File) => Promise<{ comfyName: string; previewUrl: string }>;
+  onUseSelected: () => Promise<GuideImage | null>;
+  onUpload: (f: File) => Promise<GuideImage>;
   onAddModel: () => void;
 };
 
-/** One ControlNet guide: type, model, guide image, strength and the step range it applies to. */
+/** ControlNet guides (up to 3, applied in order): type, model, guide image, strength and step range. */
 export function ControlNetCard(p: ControlNetProps) {
-  const v = p.value;
-  const [busy, setBusy] = useState(false);
-  const patch = (partial: Partial<ControlNetUiState>) => p.onChange({ ...v, ...partial });
-  const type = CN_TYPES.find((t) => t.id === v.preprocessor) ?? CN_TYPES[3];
+  const guides = p.value;
+  const full = guides.length >= MAX_CONTROLNETS;
 
   const add = () => {
-    const pre: GuideType = p.auxAvailable ? 'openpose' : 'none';
-    p.onChange({ ...DEFAULT_CONTROLNET_UI, enabled: true, preprocessor: pre, end_percent: 0.8, name: pickModel(p.models, pre, '') });
-  };
-  const setImage = async (get: () => Promise<{ comfyName: string; previewUrl: string } | null>) => {
-    setBusy(true);
-    try {
-      const res = await get();
-      if (res) p.onChange({ ...v, image: res.comfyName, previewUrl: res.previewUrl });
-    } finally {
-      setBusy(false);
-    }
+    // A second guide defaults to a different type than the ones already there
+    const used = new Set(guides.map((g) => g.preprocessor));
+    const order: GuideType[] = p.auxAvailable ? ['openpose', 'depth', 'lineart', 'canny', 'tile'] : ['none', 'tile'];
+    const pre = order.find((t) => !used.has(t)) ?? order[0];
+    p.onChange([...guides, { ...DEFAULT_CONTROLNET_UI, enabled: true, preprocessor: pre, end_percent: 0.8, name: pickModel(p.models, pre, '') }]);
   };
 
   const sub = !p.available
     ? 'Not available in this ComfyUI'
-    : v.enabled
-      ? `${type.name} guide · ${v.strength.toFixed(2)}`
-      : 'Guide pose, depth or edges';
+    : guides.length
+      ? guides.map((g) => `${g.preprocessor === 'none' ? 'Map' : typeOf(g.preprocessor).name} ${g.strength.toFixed(2)}`).join(' + ')
+      : 'Guide pose, depth, edges or line art';
 
   return (
     <StCard>
@@ -267,182 +265,291 @@ export function ControlNetCard(p: ControlNetProps) {
       >
         <StCardBtn
           label="Add a guide"
-          tip={!p.available ? 'ComfyUI has no ControlNet loader — update ComfyUI' : v.enabled ? 'One guide at a time' : 'Add a guide image (pose, depth, edges…)'}
+          tip={
+            !p.available
+              ? 'ComfyUI has no ControlNet loader — update ComfyUI'
+              : full
+                ? `Up to ${MAX_CONTROLNETS} guides`
+                : guides.length
+                  ? 'Add another guide — they apply in order'
+                  : 'Add a guide image (pose, depth, edges…)'
+          }
           onClick={add}
-          disabled={p.disabled || !p.available || v.enabled}
+          disabled={p.disabled || !p.available || full}
         >
           <Plus />
         </StCardBtn>
       </CardHeader>
 
-      {v.enabled && p.available ? (
-        <div className="st-card-sec">
-          <div className="flex gap-3">
-            {v.previewUrl ? (
-              <span className="st-thumb h-20 w-16" data-tip="Guide image" tabIndex={0}>
-                <img src={v.previewUrl} alt="Guide" />
-              </span>
-            ) : (
-              <span className="st-thumb empty h-20 w-16">{busy ? '…' : 'No image'}</span>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <div className="flex items-center gap-1">
-                <StMenuButton
-                  className="min-w-0 flex-1"
-                  tip={type.desc}
-                  label={`Guide type: ${type.name}`}
-                  disabled={p.disabled}
-                  menuStyle={{ left: 0, width: 250 }}
-                  button={
-                    <span className="st-chip h-[34px] w-full font-semibold" style={{ background: 'var(--s-raised)' }}>
-                      <span className="truncate">{type.name}</span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                    </span>
-                  }
-                >
-                  {(close) =>
-                    CN_TYPES.map((t) => {
-                      const locked = t.aux && !p.auxAvailable;
-                      return (
-                        <StMenuItem
-                          key={t.id}
-                          title={t.name}
-                          detail={locked ? 'Needs ControlNet Aux — install it from Components → Custom nodes' : t.desc}
-                          selected={t.id === v.preprocessor}
-                          onClick={() => {
-                            if (locked) return;
-                            patch({ preprocessor: t.id, name: pickModel(p.models, t.id, v.name) });
-                            close();
-                          }}
-                        />
-                      );
-                    })
-                  }
-                </StMenuButton>
-                <button type="button" className="st-ibtn h-8 w-8" onClick={() => p.onChange({ ...DEFAULT_CONTROLNET_UI })} disabled={p.disabled} aria-label="Remove guide" data-tip="Remove this guide">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              {p.models.length > 0 ? (
-                <StMenuButton
-                  tip="ControlNet model"
-                  label="ControlNet model"
-                  disabled={p.disabled}
-                  menuStyle={{ left: 0, width: 280 }}
-                  button={
-                    <span className="st-mono inline-flex max-w-full items-center gap-1 text-[11px]" style={{ color: v.name ? 'var(--s-faint)' : '#e2b44f' }}>
-                      <span className="truncate">{v.name ? shortModelName(v.name) : 'Choose a model'}</span>
-                      <ChevronDown className="h-3 w-3 shrink-0" />
-                    </span>
-                  }
-                >
-                  {(close) => (
-                    <>
-                      {p.models.map((m) => (
-                        <StMenuItem
-                          key={m}
-                          title={shortModelName(m)}
-                          selected={m === v.name}
-                          onClick={() => {
-                            patch({ name: m });
-                            close();
-                          }}
-                        />
-                      ))}
-                      <StMenuItem
-                        title={<span style={{ color: 'var(--s-accent)' }}>Add a ControlNet model…</span>}
-                        onClick={() => {
-                          close();
-                          p.onAddModel();
-                        }}
-                      />
-                    </>
-                  )}
-                </StMenuButton>
-              ) : null}
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  className="st-pill h-[26px] text-xs"
-                  disabled={p.disabled || busy || !p.canUseSelected}
-                  onClick={() => void setImage(p.onUseSelected)}
-                  data-tip={p.canUseSelected ? 'Use the selected image as the guide' : 'Select an image in History first'}
-                >
-                  Use selected
-                </button>
-                <label className="st-pill h-[26px] text-xs" data-tip="Upload a guide image" style={p.disabled || busy ? { opacity: 0.5 } : { cursor: 'pointer' }}>
-                  Upload
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="hidden"
-                    disabled={p.disabled || busy}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void setImage(() => p.onUpload(f));
-                      e.target.value = '';
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-          <StSlider
-            label="Strength"
-            value={v.strength}
-            onChange={(n) => patch({ strength: n })}
-            min={0}
-            max={2}
-            step={0.05}
-            format={(n) => n.toFixed(2)}
-            resetTo={1}
-            tip="How strongly the guide steers the image"
-            disabled={p.disabled}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <StSlider
-              small
-              label="Start"
-              value={Math.round(v.start_percent * 100)}
-              onChange={(n) => patch({ start_percent: Math.min(n, Math.round(v.end_percent * 100) - 5) / 100 })}
-              min={0}
-              max={100}
-              step={5}
-              format={(n) => `${n}%`}
-              resetTo={0}
-              tip="When in the steps the guide starts applying"
-              disabled={p.disabled}
+      {p.available
+        ? guides.map((g, i) => (
+            <GuideSection
+              key={i}
+              index={i}
+              count={guides.length}
+              v={g}
+              props={p}
+              onChange={(next) => p.onChange(guides.map((x, j) => (j === i ? next : x)))}
+              onRemove={() => p.onChange(guides.filter((_, j) => j !== i))}
             />
-            <StSlider
-              small
-              label="End"
-              value={Math.round(v.end_percent * 100)}
-              onChange={(n) => patch({ end_percent: Math.max(n, Math.round(v.start_percent * 100) + 5) / 100 })}
-              min={0}
-              max={100}
-              step={5}
-              format={(n) => `${n}%`}
-              resetTo={100}
-              tip="When it stops — ending early leaves the last steps free for detail"
-              disabled={p.disabled}
-            />
-          </div>
-          {p.models.length === 0 ? (
-            <div className="st-warn">
-              <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
-              <span className="flex-1">No ControlNet models installed yet.</span>
-              <button type="button" className="st-pill h-[26px] text-xs" onClick={p.onAddModel} data-tip="Add a ControlNet model">
-                Add
-              </button>
-            </div>
-          ) : !v.image ? (
-            <p className="m-0 text-[12px]" style={{ color: 'var(--s-muted)' }}>
-              Add a guide image — the guide is skipped until it has one.
-            </p>
-          ) : null}
+          ))
+        : null}
+    </StCard>
+  );
+}
+
+function GuideSection({
+  index,
+  count,
+  v,
+  props: p,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  count: number;
+  v: ControlNetUiState;
+  props: ControlNetProps;
+  onChange: (v: ControlNetUiState) => void;
+  onRemove: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [map, setMap] = useState<{ key: string; url: string | null; busy: boolean; error: string | null } | null>(null);
+  const [showMap, setShowMap] = useState(false);
+  const patch = (partial: Partial<ControlNetUiState>) => onChange({ ...v, ...partial });
+  const type = typeOf(v.preprocessor);
+  const mapKey = `${v.preprocessor}|${v.image}`;
+  const canMap = Boolean(v.image) && v.preprocessor !== 'none' && (p.auxAvailable || !type.aux) && !(v.preprocessor === 'tile' && !p.auxAvailable);
+  const current = map && map.key === mapKey ? map : null;
+
+  // A new image or type makes the old map stale
+  useEffect(() => {
+    setShowMap(false);
+  }, [mapKey]);
+  useEffect(() => {
+    const url = map?.url;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [map?.url]);
+
+  const setImage = async (get: () => Promise<GuideImage | null>) => {
+    setBusy(true);
+    try {
+      const res = await get();
+      if (res) onChange({ ...v, image: res.comfyName, previewUrl: res.previewUrl });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const toggleMap = () => {
+    if (showMap) {
+      setShowMap(false);
+      return;
+    }
+    setShowMap(true);
+    if (current?.url || current?.busy) return;
+    const key = mapKey;
+    setMap({ key, url: null, busy: true, error: null });
+    controlNetMapApi(v.image, v.preprocessor)
+      .then((url) => setMap((m) => (m && m.key === key ? { key, url, busy: false, error: null } : (URL.revokeObjectURL(url), m))))
+      .catch((e: unknown) => setMap((m) => (m && m.key === key ? { key, url: null, busy: false, error: e instanceof Error ? e.message : 'Could not make the map' } : m)));
+  };
+
+  const thumbSrc = showMap && current?.url ? current.url : v.previewUrl;
+
+  return (
+    <div className="st-card-sec">
+      {count > 1 ? (
+        <div className="st-sec -mb-1" style={{ fontSize: 11 }}>
+          Guide {index + 1}
         </div>
       ) : null}
-    </StCard>
+      <div className="flex gap-3">
+        <div className="flex shrink-0 flex-col items-center gap-1">
+          {thumbSrc ? (
+            <span className="st-thumb h-20 w-16" data-tip={showMap ? `${type.name} map — what ControlNet follows` : 'Guide image'} tabIndex={0}>
+              <img src={thumbSrc} alt={showMap ? `${type.name} map` : 'Guide'} />
+            </span>
+          ) : (
+            <span className="st-thumb empty h-20 w-16">{busy ? '…' : 'No image'}</span>
+          )}
+          {canMap ? (
+            <button
+              type="button"
+              className="border-0 bg-transparent p-0 text-[11px]"
+              style={{ color: showMap ? 'var(--s-accent)' : 'var(--s-muted)', cursor: 'pointer' }}
+              disabled={p.disabled}
+              aria-pressed={showMap}
+              onClick={toggleMap}
+              data-tip={showMap ? 'Show the guide image' : `Show the ${type.name.toLowerCase()} map ControlNet will follow (runs in ComfyUI)`}
+            >
+              {showMap && current?.busy ? 'Making…' : showMap ? 'Show image' : 'Show map'}
+            </button>
+          ) : null}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-center gap-1">
+            <StMenuButton
+              className="min-w-0 flex-1"
+              tip={type.desc}
+              label={`Guide type: ${type.name}`}
+              disabled={p.disabled}
+              menuStyle={{ left: 0, width: 260 }}
+              button={
+                <span className="st-chip h-[34px] w-full font-semibold" style={{ background: 'var(--s-raised)' }}>
+                  <span className="truncate">{type.name}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </span>
+              }
+            >
+              {(close) =>
+                CN_TYPES.map((t) => {
+                  const locked = t.aux && !p.auxAvailable;
+                  return (
+                    <StMenuItem
+                      key={t.id}
+                      title={t.name}
+                      detail={locked ? 'Needs ControlNet Aux — install it from Components → Custom nodes' : t.desc}
+                      selected={t.id === v.preprocessor}
+                      onClick={() => {
+                        if (locked) return;
+                        patch({ preprocessor: t.id, name: pickModel(p.models, t.id, v.name) });
+                        close();
+                      }}
+                    />
+                  );
+                })
+              }
+            </StMenuButton>
+            <button type="button" className="st-ibtn h-8 w-8" onClick={onRemove} disabled={p.disabled} aria-label="Remove guide" data-tip="Remove this guide">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {p.models.length > 0 ? (
+            <StMenuButton
+              tip="ControlNet model"
+              label="ControlNet model"
+              disabled={p.disabled}
+              menuStyle={{ left: 0, width: 280 }}
+              button={
+                <span className="st-mono inline-flex max-w-full items-center gap-1 text-[11px]" style={{ color: v.name ? 'var(--s-faint)' : '#e2b44f' }}>
+                  <span className="truncate">{v.name ? shortModelName(v.name) : 'Choose a model'}</span>
+                  <ChevronDown className="h-3 w-3 shrink-0" />
+                </span>
+              }
+            >
+              {(close) => (
+                <>
+                  {p.models.map((m) => (
+                    <StMenuItem
+                      key={m}
+                      title={shortModelName(m)}
+                      selected={m === v.name}
+                      onClick={() => {
+                        patch({ name: m });
+                        close();
+                      }}
+                    />
+                  ))}
+                  <StMenuItem
+                    title={<span style={{ color: 'var(--s-accent)' }}>Add a ControlNet model…</span>}
+                    onClick={() => {
+                      close();
+                      p.onAddModel();
+                    }}
+                  />
+                </>
+              )}
+            </StMenuButton>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              className="st-pill h-[26px] text-xs"
+              disabled={p.disabled || busy || !p.canUseSelected}
+              onClick={() => void setImage(p.onUseSelected)}
+              data-tip={p.canUseSelected ? 'Use the selected image as the guide' : 'Select an image in History first'}
+            >
+              Use selected
+            </button>
+            <label className="st-pill h-[26px] text-xs" data-tip="Upload a guide image" style={p.disabled || busy ? { opacity: 0.5 } : { cursor: 'pointer' }}>
+              Upload
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                disabled={p.disabled || busy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void setImage(() => p.onUpload(f));
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+      {showMap && current?.error ? (
+        <div className="st-warn" role="alert">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
+          <span className="flex-1">{current.error}</span>
+        </div>
+      ) : null}
+      <StSlider
+        label="Strength"
+        value={v.strength}
+        onChange={(n) => patch({ strength: n })}
+        min={0}
+        max={2}
+        step={0.05}
+        format={(n) => n.toFixed(2)}
+        resetTo={1}
+        tip="How strongly the guide steers the image"
+        disabled={p.disabled}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <StSlider
+          small
+          label="Start"
+          value={Math.round(v.start_percent * 100)}
+          onChange={(n) => patch({ start_percent: Math.min(n, Math.round(v.end_percent * 100) - 5) / 100 })}
+          min={0}
+          max={100}
+          step={5}
+          format={(n) => `${n}%`}
+          resetTo={0}
+          tip="When in the steps the guide starts applying"
+          disabled={p.disabled}
+        />
+        <StSlider
+          small
+          label="End"
+          value={Math.round(v.end_percent * 100)}
+          onChange={(n) => patch({ end_percent: Math.max(n, Math.round(v.start_percent * 100) + 5) / 100 })}
+          min={0}
+          max={100}
+          step={5}
+          format={(n) => `${n}%`}
+          resetTo={100}
+          tip="When it stops — ending early leaves the last steps free for detail"
+          disabled={p.disabled}
+        />
+      </div>
+      {p.models.length === 0 && index === 0 ? (
+        <div className="st-warn">
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
+          <span className="flex-1">No ControlNet models installed yet.</span>
+          <button type="button" className="st-pill h-[26px] text-xs" onClick={p.onAddModel} data-tip="Add a ControlNet model">
+            Add
+          </button>
+        </div>
+      ) : p.models.length > 0 && !v.image ? (
+        <p className="m-0 text-[12px]" style={{ color: 'var(--s-muted)' }}>
+          Add a guide image — the guide is skipped until it has one.
+        </p>
+      ) : null}
+    </div>
   );
 }
 
