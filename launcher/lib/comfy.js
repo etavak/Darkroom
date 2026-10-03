@@ -137,7 +137,8 @@ export function startComfyProcess(cfg = getConfig()) {
   if (process.platform === 'win32') {
     const python = path.join(portable, 'python_embeded', 'python.exe');
     if (!fs.existsSync(python)) throw new Error(`Windows portable Python not found: ${python}`);
-    pid = spawnDetached(python, ['-s', mainPy, '--windows-standalone-build', ...serveArgs], {
+    // --windows-standalone-build also opens ComfyUI's own page in the browser; Darkroom is the UI
+    pid = spawnDetached(python, ['-s', mainPy, '--windows-standalone-build', '--disable-auto-launch', ...serveArgs], {
       cwd: portable,
       logFile,
     });

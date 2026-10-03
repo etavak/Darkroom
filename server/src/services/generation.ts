@@ -263,11 +263,13 @@ async function resolveSourceImage(settings: GenerationSettings): Promise<Generat
 
 export async function startGeneration(
   settings: GenerationSettings,
-  opts?: { previewMethod?: PreviewMethod },
+  opts?: { previewMethod?: PreviewMethod; clientId?: string },
 ): Promise<GenerateResult> {
   touchActivity();
   const resolved = await resolveSourceImage(preparePrompts(settings));
-  const clientId = uuidv4();
+  // The browser opens its progress socket with this id *before* the job is queued, so a fast
+  // GPU can't finish (or start) the job before anyone is listening
+  const clientId = opts?.clientId && /^[A-Za-z0-9-]{8,64}$/.test(opts.clientId) ? opts.clientId : uuidv4();
   const workflow = await buildWorkflow(resolved);
   const previewMethod =
     opts?.previewMethod && supportsPerPromptPreviewMethod() ? opts.previewMethod : undefined;

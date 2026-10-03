@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ComfyError, cancelPrompt } from '../services/comfyClient.js';
+import { ComfyError, cancelPrompt, getPromptQueuePosition } from '../services/comfyClient.js';
 import { startGeneration, validateSettings } from '../services/generation.js';
 import * as history from '../services/history.js';
 
@@ -15,7 +15,8 @@ generateRouter.post('/', async (req, res) => {
       req.body?.previewMethod === 'auto'
         ? req.body.previewMethod
         : undefined;
-    const result = await startGeneration(settings, { previewMethod });
+    const clientId = typeof req.body?.clientId === 'string' ? req.body.clientId : undefined;
+    const result = await startGeneration(settings, { previewMethod, clientId });
     res.status(202).json(result);
   } catch (err) {
     if (err instanceof ComfyError) {
@@ -25,6 +26,25 @@ generateRouter.post('/', async (req, res) => {
     const message = err instanceof Error ? err.message : 'Generation failed';
     const status = message.startsWith('Missing') || message.startsWith('Invalid') ? 400 : 500;
     res.status(status).json({ error: message });
+  }
+});
+
+/** Where a job stands in ComfyUI (for "why isn't it moving?"): queued behind N, running, done, failed or gone. */
+generateRouter.get('/status/:jobId', async (req, res) => {
+  const job = history.getGeneration(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: 'No such job' });
+    return;
+  }
+  if (job.status !== 'pending') {
+    res.json({ state: job.status === 'completed' ? 'done' : 'failed', ahead: 0 });
+    return;
+  }
+  try {
+    const q = await getPromptQueuePosition(job.promptId);
+    res.json({ state: q.state === 'pending' ? 'queued' : q.state === 'running' ? 'running' : 'missing', ahead: q.ahead });
+  } catch {
+    res.json({ state: 'unreachable', ahead: 0 });
   }
 });
 

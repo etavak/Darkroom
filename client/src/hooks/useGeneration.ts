@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { cancelGenerate, fetchHistoryItem, startGenerate } from '../lib/api';
+import { cancelGenerate, fetchHistoryItem, fetchJobStatus, startGenerate } from '../lib/api';
+import { newId } from '../lib/uid';
 import { ComfyWsClient } from '../lib/ws';
 import type { GenerationRecord, GenerationSettings } from '../types/generation';
 
@@ -13,6 +14,8 @@ export type GenerationRuntime = {
   error: string | null;
   promptId: string | null;
   jobId: string | null;
+  /** Why a running job isn't moving (no ComfyUI messages for a while), else null */
+  stall: string | null;
 };
 
 const initialRuntime: GenerationRuntime = {
@@ -25,6 +28,7 @@ const initialRuntime: GenerationRuntime = {
   error: null,
   promptId: null,
   jobId: null,
+  stall: null,
 };
 
 export class CancelledError extends Error {
@@ -110,26 +114,21 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
     revokePreview();
 
     try {
-      const { jobId, promptId, clientId } = await startGenerate({
-        ...settings,
-        ...(opts?.previewMethod ? { previewMethod: opts.previewMethod } : {}),
-      });
-      if (cancelledRef.current) {
-        // Cancel was pressed before we had a job id — drop the prompt we just queued
-        void cancelGenerate(jobId).catch(() => {});
-        throw new CancelledError();
-      }
-
-      activePromptId.current = promptId;
-      activeJobId.current = jobId;
-
+      // Listen first, then queue: ComfyUI only reports progress to a socket that's already
+      // connected, and a fast GPU can start (or finish) the job within milliseconds
+      const clientId = newId();
       const client = new ComfyWsClient();
       wsRef.current?.close();
       wsRef.current = client;
-      client.connect(clientId, { preview: livePreview });
-
+      let lastActivity = Date.now();
       client.onEvent((event) => {
         if (cancelledRef.current) return;
+        if (event.type === 'activity' || event.type === 'preview') {
+          if (event.type === 'preview' || !event.promptId || event.promptId === activePromptId.current || !activePromptId.current) {
+            lastActivity = Date.now();
+            setRuntime((r) => (r.stall ? { ...r, stall: null } : r));
+          }
+        }
         if (event.type === 'progress') {
           if (event.promptId && event.promptId !== activePromptId.current) return;
           const pct = event.max > 0 ? (event.value / event.max) * 100 : 0;
@@ -147,6 +146,23 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
           setRuntime((r) => ({ ...r, previewUrl: url }));
         }
       });
+      await client.connect(clientId, { preview: livePreview });
+      if (cancelledRef.current) throw new CancelledError();
+
+      const { jobId, promptId } = await startGenerate({
+        ...settings,
+        clientId,
+        ...(opts?.previewMethod ? { previewMethod: opts.previewMethod } : {}),
+      });
+      if (cancelledRef.current) {
+        // Cancel was pressed before we had a job id — drop the prompt we just queued
+        void cancelGenerate(jobId).catch(() => {});
+        throw new CancelledError();
+      }
+
+      activePromptId.current = promptId;
+      activeJobId.current = jobId;
+      lastActivity = Date.now();
 
       setRuntime((r) => ({
         ...r,
@@ -154,7 +170,27 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
         promptId,
       }));
 
-      const record = await pollJob(jobId, () => cancelledRef.current);
+      // No word from ComfyUI for a while: ask where the job is, and say so
+      const watchdog = window.setInterval(() => {
+        if (cancelledRef.current || Date.now() - lastActivity < 30_000) return;
+        void fetchJobStatus(jobId)
+          .then((st) => {
+            const stall =
+              st.state === 'queued'
+                ? `Waiting in ComfyUI's queue — ${st.ahead} job${st.ahead === 1 ? '' : 's'} ahead (maybe from another app or device)`
+                : st.state === 'running'
+                  ? 'ComfyUI is running this job but hasn\'t reported progress for a while — it may be loading a model, or stuck (check ComfyUI\'s log)'
+                  : st.state === 'unreachable'
+                    ? 'Can\'t reach ComfyUI right now'
+                    : st.state === 'missing'
+                      ? 'ComfyUI no longer has this job — it will be marked failed shortly'
+                      : null;
+            setRuntime((r) => (r.stall === stall ? r : { ...r, stall }));
+          })
+          .catch(() => {});
+      }, 10_000);
+
+      const record = await pollJob(jobId, () => cancelledRef.current).finally(() => window.clearInterval(watchdog));
       if (cancelledRef.current) throw new CancelledError();
 
       setRuntime((r) => ({

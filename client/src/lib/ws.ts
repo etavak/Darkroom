@@ -26,7 +26,13 @@ export type PreviewEvent = {
   blob: Blob;
 };
 
-export type WsEvent = ProgressEvent | StatusEvent | ExecutingEvent | ExecutedEvent | PreviewEvent;
+/** Any ComfyUI message about a prompt (start, cached, node finished…) — proof it's moving. */
+export type ActivityEvent = {
+  type: 'activity';
+  promptId?: string;
+};
+
+export type WsEvent = ProgressEvent | StatusEvent | ExecutingEvent | ExecutedEvent | PreviewEvent | ActivityEvent;
 
 type Listener = (event: WsEvent) => void;
 
@@ -42,21 +48,39 @@ export class ComfyWsClient {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
 
-  connect(clientId: string, opts?: { preview?: boolean }): void {
+  /**
+   * Opens the socket; resolves once Darkroom's relay is connected to ComfyUI (or after
+   * `waitMs` / on failure — the job then still runs, just possibly without progress).
+   * Queue the job only after this, so a fast GPU can't start it before anyone listens.
+   */
+  connect(clientId: string, opts?: { preview?: boolean; waitMs?: number }): Promise<void> {
     this.close();
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const preview = opts?.preview !== false;
     const url = `${proto}//${window.location.host}/ws?clientId=${encodeURIComponent(clientId)}&preview=${preview ? '1' : '0'}`;
-    this.ws = new WebSocket(url);
-    this.ws.binaryType = 'arraybuffer';
-
-    this.ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string') {
-        this.handleText(ev.data);
-        return;
-      }
-      this.handleBinary(ev.data as ArrayBuffer);
-    };
+    const ws = new WebSocket(url);
+    this.ws = ws;
+    ws.binaryType = 'arraybuffer';
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      const timer = window.setTimeout(done, opts?.waitMs ?? 3000);
+      ws.onerror = done;
+      ws.onclose = done;
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === 'string') {
+          if (ev.data.includes('"darkroom_ready"')) {
+            done();
+            return;
+          }
+          this.handleText(ev.data);
+          return;
+        }
+        this.handleBinary(ev.data as ArrayBuffer);
+      };
+    });
   }
 
   /** Ask the Darkroom proxy to start/stop relaying preview frames. */
@@ -88,6 +112,8 @@ export class ComfyWsClient {
         data?: Record<string, unknown>;
       };
       const data = msg.data ?? {};
+
+      if (typeof data.prompt_id === 'string') this.emit({ type: 'activity', promptId: data.prompt_id });
 
       if (msg.type === 'progress') {
         this.emit({

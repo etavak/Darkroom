@@ -54,7 +54,8 @@ export function attachComfyWsProxy(server: import('node:http').Server): WebSocke
     };
 
     upstream.on('open', () => {
-      // ready
+      // Tell the page it's listening to ComfyUI now — it queues the job only after this
+      if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: 'darkroom_ready' }));
     });
 
     upstream.on('message', (data, isBinary) => {

@@ -20,6 +20,8 @@ type Props = {
   running: boolean;
   progressStep: number;
   progressMax: number;
+  /** Why the running job isn't moving (shown instead of the step counter) */
+  stall?: string | null;
   onStop: () => void;
   queue: QueuedJob[];
   activeQueueId: string | null;
@@ -142,9 +144,15 @@ export function SamplingFooter(p: Props) {
 
       {busy ? (
         <div className="relative flex items-center justify-between gap-2 px-0.5">
-          <span className="st-mono text-[12.5px]" style={{ color: 'var(--s-muted)' }}>
-            {p.running ? (p.progressMax ? `Step ${p.progressStep} / ${p.progressMax} · ${pct}%` : 'Starting…') : 'Waiting…'}
-          </span>
+          {p.running && p.stall ? (
+            <span className="min-w-0 flex-1 text-[12px] leading-snug" style={{ color: '#e2b44f' }} role="status">
+              {p.stall}
+            </span>
+          ) : (
+            <span className="st-mono text-[12.5px]" style={{ color: 'var(--s-muted)' }}>
+              {p.running ? (p.progressMax ? `Step ${p.progressStep} / ${p.progressMax} · ${pct}%` : 'Starting…') : 'Waiting…'}
+            </span>
+          )}
           <button type="button" className="st-pill" onClick={() => setQueueOpen((o) => !o)} aria-expanded={queueOpen} data-tip="See and manage the queue">
             {waiting.length ? `${waiting.length} queued` : 'Queue'}
             {queueOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}

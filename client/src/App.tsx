@@ -1840,6 +1840,7 @@ export default function App() {
           running={runtime.running}
           progressStep={runtime.progressStep}
           progressMax={runtime.progressMax}
+          stall={runtime.stall}
           onStop={stopCurrent}
           queue={queue}
           activeQueueId={activeQueueId}

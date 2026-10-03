@@ -111,6 +111,23 @@ export async function getQueueState(): Promise<{ running: Set<string>; pending: 
   return { running: ids(data.queue_running), pending: ids(data.queue_pending) };
 }
 
+/**
+ * Where a prompt is in ComfyUI's queue: running, waiting (with how many jobs are ahead —
+ * including ones from other apps), or not there.
+ */
+export async function getPromptQueuePosition(promptId: string): Promise<{ state: 'running' | 'pending' | 'absent'; ahead: number; running: number }> {
+  const res = await comfyFetch('/queue');
+  if (!res.ok) throw new ComfyError(`queue failed: ${res.status}`, res.status);
+  const data = (await res.json()) as { queue_running?: unknown[][]; queue_pending?: unknown[][] };
+  const running = data.queue_running ?? [];
+  if (running.some((e) => Array.isArray(e) && e[1] === promptId)) return { state: 'running', ahead: 0, running: running.length };
+  // Pending entries run in order of their number
+  const pending = [...(data.queue_pending ?? [])].filter(Array.isArray).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const at = pending.findIndex((e) => e[1] === promptId);
+  if (at < 0) return { state: 'absent', ahead: 0, running: running.length };
+  return { state: 'pending', ahead: at + running.length, running: running.length };
+}
+
 /** prompt_ids currently running or waiting in ComfyUI's queue. */
 export async function getQueuedPromptIds(): Promise<Set<string>> {
   const { running, pending } = await getQueueState();

@@ -223,8 +223,15 @@ export function startComfyApi(): Promise<{ ok: boolean; alreadyRunning?: boolean
   return request('/api/comfy/start', { method: 'POST', body: '{}' });
 }
 
+/** Where a running job stands in ComfyUI — for explaining a job that isn't moving. */
+export type JobStatus = { state: 'queued' | 'running' | 'done' | 'failed' | 'missing' | 'unreachable'; ahead: number };
+
+export function fetchJobStatus(jobId: string): Promise<JobStatus> {
+  return request(`/api/generate/status/${encodeURIComponent(jobId)}`);
+}
+
 export function startGenerate(
-  settings: GenerationSettings & { previewMethod?: 'latent2rgb' | 'taesd' },
+  settings: GenerationSettings & { previewMethod?: 'latent2rgb' | 'taesd'; clientId?: string },
 ): Promise<GenerateResponse> {
   return request('/api/generate', {
     method: 'POST',
