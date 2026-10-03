@@ -1,6 +1,7 @@
 import * as p from '@clack/prompts';
 import { httpGetOk } from '../lib/http.js';
 import { getConfig } from '../lib/env.js';
+import { findLocalComfy } from '../lib/comfy.js';
 import { clearPid, isPidAlive, killTree, readPids } from '../lib/process.js';
 import { handleCancel } from '../lib/prompt.js';
 
@@ -45,9 +46,25 @@ export async function stopEverything() {
     p.log.success('Darkroom server stopped (or was not running)');
   }
   if (comfyUp) {
-    p.log.warn(
-      'ComfyUI still responds — only processes Darkroom started are killed. Stop external ComfyUI manually if needed.',
-    );
+    // Not started by this launcher (or its record was lost) — stop it too if it's this install's ComfyUI
+    const stray = findLocalComfy(cfg);
+    if (stray) {
+      const ok = await p.confirm({
+        message: `ComfyUI is still running (pid ${stray.pid}) from this install, but this launcher has no record of starting it. Stop it too?`,
+        initialValue: true,
+      });
+      if (!handleCancel(ok) && ok) {
+        killTree(stray.pid);
+        // Python can take a few seconds to unload models and exit
+        for (let i = 0; i < 20 && isPidAlive(stray.pid); i++) await new Promise((r) => setTimeout(r, 500));
+        if (!(await httpGetOk(`${cfg.comfyUrl}/system_stats`))) {
+          clearPid('comfy');
+          p.log.success('ComfyUI stopped');
+          return;
+        }
+      }
+    }
+    p.log.warn('ComfyUI still responds — stop it where it was started (it isn’t this install’s ComfyUI, or it ignored the stop).');
   } else {
     p.log.success('ComfyUI stopped (or was not running)');
   }

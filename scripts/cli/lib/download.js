@@ -39,6 +39,29 @@ function writeProgress(stream, transferred, total) {
  *   quiet?: boolean,
  * }} [opts]
  */
+/**
+ * What to tell the user when a download is refused.
+ * @param {number} code
+ * @param {string} host
+ * @param {boolean} sentKey
+ */
+export function downloadErrorMessage(code, host, sentKey) {
+  if ((code === 401 || code === 403) && /(^|\.)civitai\.com$/i.test(host)) {
+    if (!sentKey && getConfig().civitaiTokenInvalid) {
+      return `The saved Civitai key isn't a valid key (it looks like a link or has spaces), so it wasn't used — and this file needs sign-in (HTTP ${code}). Paste the key itself from civitai.com → Account settings → API keys.`;
+    }
+    return sentKey
+      ? `Civitai refused your API key (HTTP ${code}). Check the key in Preferences → Models & folders — or the file is early access and needs a supporter account.`
+      : `No Civitai API key is saved, and this file's creator requires sign-in to download it (HTTP ${code}). Add your key in Preferences → Models & folders — get one at civitai.com → Account settings → API keys.`;
+  }
+  if ((code === 401 || code === 403) && /(^|\.)huggingface\.co$/i.test(host)) {
+    return sentKey
+      ? `Hugging Face refused the download (HTTP ${code}) — accept the model's licence on its page, then check your token.`
+      : `No Hugging Face token is saved, and this file is gated (HTTP ${code}). Accept its licence on the model page, then add a token in Preferences → Models & folders.`;
+  }
+  return `Download failed HTTP ${code}`;
+}
+
 export function downloadFile(url, destPath, opts = {}) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
@@ -46,6 +69,7 @@ export function downloadFile(url, destPath, opts = {}) {
     /** @type {http.ClientRequest} */
     let req;
 
+    const firstHost = new URL(url).hostname;
     const go = (currentUrl, redirects = 0) => {
       if (redirects > 10) {
         reject(new Error('Too many redirects'));
@@ -53,13 +77,14 @@ export function downloadFile(url, destPath, opts = {}) {
       }
       const u = new URL(currentUrl);
       const lib = u.protocol === 'https:' ? https : http;
+      // Keys stay with the site they belong to: Civitai / HF redirect to signed storage URLs,
+      // which reject (and must not see) an extra Authorization header
+      const headers = { 'User-Agent': 'Darkroom/1.0', ...(opts.headers ?? {}) };
+      if (u.hostname !== firstHost) delete headers.Authorization;
       req = lib.get(
         currentUrl,
         {
-          headers: {
-            'User-Agent': 'Darkroom/1.0',
-            ...(opts.headers ?? {}),
-          },
+          headers,
           timeout: 120_000,
         },
         (res) => {
@@ -72,7 +97,7 @@ export function downloadFile(url, destPath, opts = {}) {
           }
           if (code < 200 || code >= 300) {
             res.resume();
-            reject(new Error(`Download failed HTTP ${code}`));
+            reject(new Error(downloadErrorMessage(code, u.hostname, Boolean(opts.headers?.Authorization))));
             return;
           }
           const ctype = String(res.headers['content-type'] || '');
@@ -192,7 +217,11 @@ async function resolveCivitai(pageUrl, token) {
       headers,
     });
     if (res.status !== 200 || !res.json) {
-      throw new Error(`Civitai version lookup failed (${res.status}). Check CIVITAI_TOKEN for early-access files.`);
+      throw new Error(
+        res.status === 401 || res.status === 403
+          ? downloadErrorMessage(res.status, 'civitai.com', Boolean(token))
+          : `Civitai version lookup failed (${res.status}).`,
+      );
     }
     version = res.json;
   } else if (modelMatch) {
@@ -200,7 +229,11 @@ async function resolveCivitai(pageUrl, token) {
       headers,
     });
     if (res.status !== 200 || !res.json) {
-      throw new Error(`Civitai model lookup failed (${res.status})`);
+      throw new Error(
+        res.status === 401 || res.status === 403
+          ? downloadErrorMessage(res.status, 'civitai.com', Boolean(token))
+          : `Civitai model lookup failed (${res.status})`,
+      );
     }
     version = res.json.modelVersions?.[0];
     if (!version) throw new Error('No model versions found on Civitai');
@@ -245,6 +278,8 @@ async function resolveCivitai(pageUrl, token) {
     modelName: version.model?.name || version.name || file.name,
     baseModel: typeof version.baseModel === 'string' ? version.baseModel : null,
     companions: companions.length ? companions : undefined,
+    // Files whose creator requires sign-in only download with the key
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   };
 }
 

@@ -17,11 +17,26 @@ import {
   fetchModelJob,
   fetchModelTypes,
   fetchSystemStats,
+  apiKeyProblem,
   resolveModelUrlApi,
+  saveDownloadTokens,
   startModelDownloadApi,
   uploadModelFileApi,
 } from '@/lib/api';
 import type { ModelInstallJob } from '@/types/generation';
+
+/** Which site's key a download error asks for (the server names the site in its message). */
+function keyNeededFor(message: string | null): 'civitai' | 'huggingface' | null {
+  if (!message || !/HTTP 40[13]/.test(message)) return null;
+  if (/civitai/i.test(message)) return 'civitai';
+  if (/hugging ?face/i.test(message)) return 'huggingface';
+  return null;
+}
+
+const KEY_HELP = {
+  civitai: { name: 'Civitai API key', where: 'civitai.com → Account settings → API keys', placeholder: 'Paste your Civitai key' },
+  huggingface: { name: 'Hugging Face token', where: 'huggingface.co → Settings → Access tokens (accept the model’s licence first)', placeholder: 'hf_…' },
+} as const;
 import type { FamilySummary } from '@/types/presets';
 
 type Props = {
@@ -47,6 +62,8 @@ export function AddModelDialog({ open, onClose, onInstalled, families, preferTyp
   const [error, setError] = useState<string | null>(null);
   const [depPhase, setDepPhase] = useState(false);
   const [vramTotal, setVramTotal] = useState<number | null>(null);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [keySaving, setKeySaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -138,6 +155,23 @@ export function AddModelDialog({ open, onClose, onInstalled, families, preferTyp
       setError(err instanceof Error ? err.message : 'Resolve failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const keyNeeded = keyNeededFor(error);
+  /** Save the key, then try the same step again (download if it got that far, else resolve) */
+  const saveKeyAndRetry = async () => {
+    if (!keyNeeded || !keyDraft.trim() || apiKeyProblem(keyDraft)) return;
+    setKeySaving(true);
+    try {
+      await saveDownloadTokens({ [keyNeeded]: keyDraft.trim() });
+      setKeyDraft('');
+      if (job?.downloadUrl || job?.candidates?.length) await handleDownload();
+      else await handleResolve();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the key');
+    } finally {
+      setKeySaving(false);
     }
   };
 
@@ -395,6 +429,33 @@ export function AddModelDialog({ open, onClose, onInstalled, families, preferTyp
           ) : null}
 
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
+          {keyNeeded ? (
+            <div className="space-y-1.5 rounded-md border border-border p-3">
+              <Label htmlFor="download-key">{KEY_HELP[keyNeeded].name}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="download-key"
+                  type="password"
+                  autoComplete="off"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void saveKeyAndRetry();
+                  }}
+                  placeholder={KEY_HELP[keyNeeded].placeholder}
+                  disabled={keySaving}
+                />
+                <Button type="button" disabled={keySaving || !keyDraft.trim() || Boolean(apiKeyProblem(keyDraft))} onClick={() => void saveKeyAndRetry()}>
+                  {keySaving ? 'Saving…' : 'Save key and retry'}
+                </Button>
+              </div>
+              {apiKeyProblem(keyDraft) ? <p className="text-xs text-destructive">{apiKeyProblem(keyDraft)}</p> : null}
+              <p className="text-xs text-muted-foreground">
+                Get one at {KEY_HELP[keyNeeded].where}. It’s saved on the computer running Darkroom and never shown again
+                (also in Preferences → Models &amp; folders).
+              </p>
+            </div>
+          ) : null}
 
           {depPhase ? (
             <DependencyResolver

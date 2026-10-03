@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfig, loadEnvFile } from './env.js';
@@ -9,7 +10,7 @@ import {
   getComfyUiRoot,
   logsDir,
 } from './paths.js';
-import { clearPid, isPidAlive, setPid, spawnDetached } from './process.js';
+import { clearPid, isPidAlive, readPids, setPid, spawnDetached } from './process.js';
 
 const COMFY_TIMEOUT_MS = 120_000;
 
@@ -141,6 +142,7 @@ export async function ensureComfyRunning() {
   }
 
   if (await httpGetOk(statsUrl)) {
+    adoptRunningComfy(cfg);
     return { started: false, alreadyRunning: true };
   }
 
@@ -158,4 +160,75 @@ export async function ensureComfyRunning() {
   const { pid, logFile } = startComfyProcess(cfg);
   await waitForComfyReady(statsUrl, pid, logFile);
   return { started: true, alreadyRunning: false };
+}
+
+/**
+ * The process serving ComfyUI on this machine's port, when it runs this install's
+ * ComfyUI (main.py under COMFY_DIR — also a copy of this folder that was since replaced,
+ * as long as it ran from the same path). Works without a pid record.
+ * @param {ReturnType<typeof getConfig>} [cfg]
+ * @returns {{ pid: number } | null}
+ */
+export function findLocalComfy(cfg = getConfig()) {
+  if (cfg.remote || !cfg.comfyDir) return null;
+  let port;
+  try {
+    const u = new URL(cfg.comfyUrl);
+    if (!['127.0.0.1', 'localhost', '[::1]', '::1'].includes(u.hostname)) return null;
+    port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  } catch {
+    return null;
+  }
+  const dir = path.resolve(cfg.comfyDir).toLowerCase();
+  const ours = (/** @type {string} */ cmd) => {
+    const c = cmd.toLowerCase().replace(/\\/g, '/');
+    return c.includes('main.py') && c.includes(dir.replace(/\\/g, '/'));
+  };
+
+  if (process.platform === 'win32') {
+    // netstat: "  TCP    127.0.0.1:8188    0.0.0.0:0    LISTENING    1234"
+    const net = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8', windowsHide: true }).stdout || '';
+    const pids = new Set(
+      net
+        .split(/\r?\n/)
+        .filter((l) => /LISTENING/i.test(l) && new RegExp(`:${port}\\s`).test(l))
+        .map((l) => Number(l.trim().split(/\s+/).pop()))
+        .filter(Boolean),
+    );
+    for (const pid of pids) {
+      const ps = spawnSync(
+        'powershell',
+        ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`],
+        { encoding: 'utf8', windowsHide: true },
+      );
+      // The portable build runs main.py by its full path, which includes COMFY_DIR
+      if (ours(ps.stdout || '')) return { pid };
+    }
+    return null;
+  }
+
+  const lsof = spawnSync('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' });
+  for (const line of (lsof.stdout || '').split('\n')) {
+    const pid = Number(line.trim());
+    if (!pid) continue;
+    const cmd = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '';
+    // macOS / Linux run "python main.py" from inside ComfyUI, so also check the working folder
+    const cwd = spawnSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' }).stdout || '';
+    const cwdPath = cwd.split('\n').find((l) => l.startsWith('n'))?.slice(1) ?? '';
+    if (ours(cmd) || (cmd.includes('main.py') && cwdPath && path.resolve(cwdPath).toLowerCase().startsWith(dir))) return { pid };
+  }
+  return null;
+}
+
+/**
+ * ComfyUI was already running: if it's this install's and no launcher has it on record
+ * (e.g. it was started from a copy of this folder that was since replaced), record it so
+ * Stop everything can stop it.
+ * @param {ReturnType<typeof getConfig>} cfg
+ */
+export function adoptRunningComfy(cfg) {
+  const rec = readPids().comfy;
+  if (rec?.pid && isPidAlive(rec.pid)) return;
+  const found = findLocalComfy(cfg);
+  if (found) setPid('comfy', found.pid, true);
 }

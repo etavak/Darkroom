@@ -9,7 +9,7 @@ import {
   civitaiAutoFetchEnabled,
   saveModelSidecars,
 } from '../lib/download.js';
-import { getConfig } from '../lib/env.js';
+import { getConfig, upsertEnvValue } from '../lib/env.js';
 import { handleCancel } from '../lib/prompt.js';
 import { confirmAndInstallModel } from './installModel.js';
 
@@ -31,7 +31,17 @@ export async function downloadModelFromUrl() {
 
   const pageUrl = String(raw).trim();
   if (/civitai\.com/i.test(pageUrl) && !cfg.civitaiToken) {
-    p.log.warn('CIVITAI_TOKEN not set in .env — public files may still work; early-access will fail.');
+    const key = await p.password({
+      message: 'Civitai API key (optional — some files need sign-in; Enter to skip). civitai.com → Account settings → API keys',
+    });
+    if (handleCancel(key)) return;
+    const k = String(key ?? '').trim();
+    if (k) {
+      upsertEnvValue('CIVITAI_TOKEN', k);
+      process.env.CIVITAI_TOKEN = k;
+      cfg.civitaiToken = k;
+      p.log.success('Saved the Civitai key in .env');
+    }
   }
   if (/huggingface\.co/i.test(pageUrl) && !cfg.hfToken) {
     p.log.info('Tip: set HF_TOKEN in .env for gated Hugging Face repos.');

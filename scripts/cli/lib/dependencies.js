@@ -23,6 +23,10 @@ import { familiesDir, modelComponentsPath, modelDirForType } from './paths.js';
  *   gated?: boolean,
  *   licenseUrl?: string,
  *   notes?: string,
+ *   title?: string,
+ *   arch?: string[],
+ *   guides?: string[],
+ *   recommended?: boolean,
  * }} ComponentDef
  *
  * @typedef {{
@@ -84,6 +88,10 @@ export function loadComponents() {
           gated: Boolean(c.gated),
           licenseUrl: c.licenseUrl || undefined,
           notes: c.notes || undefined,
+          title: c.title || undefined,
+          arch: Array.isArray(c.arch) ? c.arch : undefined,
+          guides: Array.isArray(c.guides) ? c.guides : undefined,
+          recommended: Boolean(c.recommended),
         });
       }
     }
@@ -556,7 +564,10 @@ export async function downloadAndInstallComponent(comp, opts = {}) {
 
   const cache = downloadsCacheDir();
   const safeName = comp.filename.replace(/[\\/]/g, '__');
-  const tempPath = path.join(cache, `dep-${safeName}`);
+  // The install keeps the temp file's name, so download under the real one
+  const tempDir = path.join(cache, 'components');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const tempPath = path.join(tempDir, safeName);
 
   await downloadFile(comp.url, tempPath, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

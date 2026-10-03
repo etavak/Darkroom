@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as p from '@clack/prompts';
 import { envFileExists, isRemoteMode, loadAndApplyEnv } from './lib/env.js';
 import { printBanner } from './lib/banner.js';
@@ -14,6 +17,7 @@ import { installModelFromFile } from './actions/installModel.js';
 import { downloadModelFromUrl } from './actions/downloadModel.js';
 import { manageModels } from './actions/manageModels.js';
 import { customNodes } from './actions/customNodes.js';
+import { controlnetModels } from './actions/controlnetModels.js';
 import { updateAll } from './actions/update.js';
 import { diagnostics } from './actions/diagnostics.js';
 import {
@@ -22,7 +26,29 @@ import {
   installEverythingAction,
 } from './actions/components.js';
 
+const cliDir = path.dirname(fileURLToPath(import.meta.url));
+
+/** Newest modification time of the launcher's own files (they load once, at startup). */
+function launcherStamp() {
+  let newest = 0;
+  const walk = (/** @type {string} */ dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(js|json)$/.test(e.name)) newest = Math.max(newest, fs.statSync(full).mtimeMs);
+    }
+  };
+  try {
+    walk(cliDir);
+  } catch {
+    // unreadable — skip the check
+  }
+  return newest;
+}
+
 async function menuLoop() {
+  const startedStamp = launcherStamp();
   if (!envFileExists()) {
     await runSetupWizard();
   }
@@ -32,6 +58,9 @@ async function menuLoop() {
   p.intro('Darkroom');
 
   while (true) {
+    if (launcherStamp() > startedStamp) {
+      p.log.warn('The launcher was updated while it was open. Choose Quit and open it again to use the new version.');
+    }
     const remote = isRemoteMode();
     const status = await getServiceStatus();
     p.note(
@@ -74,6 +103,7 @@ async function menuLoop() {
         { value: 'install', label: 'Install model from file' },
         { value: 'download', label: 'Download model from URL' },
         { value: 'manage', label: 'Manage models' },
+        { value: 'controlnet', label: 'ControlNet models', hint: 'pose · depth · edges guides' },
         { value: 'nodes', label: 'Custom nodes' },
       );
     }
@@ -118,6 +148,7 @@ async function menuLoop() {
       install: installModelFromFile,
       download: downloadModelFromUrl,
       manage: manageModels,
+      controlnet: controlnetModels,
       nodes: customNodes,
       install_all: installEverythingAction,
       components: componentsMenu,

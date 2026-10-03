@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { getComfyUiRoot } from '../../services/envSettings.js';
 import type { ControlNetSettings, GenerationSettings, NodeRef, WorkflowModule } from '../types.js';
 import { MAX_CONTROLNETS } from '../types.js';
 import type { PipelineContext } from '../graph.js';
@@ -27,8 +30,26 @@ const AIO_NAMES: Record<string, string> = {
   tile: 'TilePreprocessor',
 };
 
+/** SetUnionControlNetType names for each guide type (union models cover several). */
+const UNION_TYPES: Record<string, string> = {
+  openpose: 'openpose',
+  depth: 'depth',
+  canny: 'canny/lineart/anime_lineart/mlsd',
+  lineart: 'canny/lineart/anime_lineart/mlsd',
+  tile: 'tile',
+  none: 'auto',
+};
+
+/** SDXL union models (xinsir and similar) take a type; Flux union Pro 2.0 has no type input. */
+const isTypedUnion = (name: string) => /union/i.test(name) && !/flux/i.test(name);
+
 /** Tile works on the plain image too, so it doesn't require ControlNet Aux. */
 const OPTIONAL_PREPROCESS = new Set<string>(['tile']);
+
+function auxInstalledButNotLoaded(): boolean {
+  const root = getComfyUiRoot();
+  return Boolean(root && fs.existsSync(path.join(root, 'custom_nodes', 'comfyui_controlnet_aux')));
+}
 
 /** The guides to apply, in order (the old single `controlnet` field still works). */
 export function controlNetList(settings: GenerationSettings): ControlNetSettings[] {
@@ -49,7 +70,9 @@ export async function resolvePreprocessor(kind: ControlNetSettings['preprocessor
   if (!className) {
     if (OPTIONAL_PREPROCESS.has(kind)) return null;
     throw new Error(
-      `ControlNet type "${kind}" needs ControlNet Aux. Install comfyui_controlnet_aux (launcher → Components → Custom nodes), or use a ready-made map.`,
+      auxInstalledButNotLoaded()
+        ? `ControlNet Aux is installed but ComfyUI hasn't loaded it — restart ComfyUI (launcher → Stop everything, then Start Darkroom). If it still doesn't load, check ComfyUI's log for an import error.`
+        : `ControlNet type "${kind}" needs ControlNet Aux. Install comfyui_controlnet_aux (launcher → Custom nodes or ControlNet models), or use a ready-made map.`,
     );
   }
   return { className, inputs: className === 'AIO_Preprocessor' ? { preprocessor: AIO_NAMES[kind as Preprocessor] ?? kind } : {} };
@@ -68,21 +91,34 @@ export const controlnetModule: WorkflowModule = {
 
   apply(ctx) {
     // Sync path without preprocessors — builder prefers applyControlNet when possible.
-    for (const cn of controlNetList(ctx.settings)) applyOne(ctx, cn, null);
+    for (const cn of controlNetList(ctx.settings)) applyOne(ctx, cn, null, false);
   },
 };
 
 /** Async apply with optional aux preprocessors (object_info lookup). */
 export async function applyControlNet(ctx: PipelineContext): Promise<void> {
-  for (const cn of controlNetList(ctx.settings)) {
-    applyOne(ctx, cn, await resolvePreprocessor(cn.preprocessor));
+  const guides = controlNetList(ctx.settings);
+  const unionNode = guides.some((g) => isTypedUnion(g.name))
+    ? Boolean(resolveNodeClass(await loadObjectInfo(), ['SetUnionControlNetType']))
+    : false;
+  for (const cn of guides) {
+    applyOne(ctx, cn, await resolvePreprocessor(cn.preprocessor), unionNode);
   }
 }
 
-function applyOne(ctx: PipelineContext, cn: ControlNetSettings, preprocess: PreprocessNode | null) {
+function applyOne(ctx: PipelineContext, cn: ControlNetSettings, preprocess: PreprocessNode | null, unionNode: boolean) {
   const loader = ctx.graph.add('ControlNetLoader', {
     control_net_name: cn.name,
   });
+  let controlNet: NodeRef = [loader, 0];
+  // A union model follows whichever type it's told (it would otherwise guess from the map)
+  if (unionNode && isTypedUnion(cn.name)) {
+    const typed = ctx.graph.add('SetUnionControlNetType', {
+      control_net: controlNet,
+      type: UNION_TYPES[cn.preprocessor ?? 'none'] ?? 'auto',
+    });
+    controlNet = [typed, 0];
+  }
   const image = ctx.graph.add('LoadImage', {
     image: cn.image,
   });
@@ -99,7 +135,7 @@ function applyOne(ctx: PipelineContext, cn: ControlNetSettings, preprocess: Prep
     end_percent: cn.end_percent ?? 1,
     positive: ctx.positive,
     negative: ctx.negative,
-    control_net: [loader, 0],
+    control_net: controlNet,
     image: imageRef,
     vae: ctx.vae,
   });

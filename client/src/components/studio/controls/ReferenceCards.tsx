@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { CheckSquare, ChevronDown, ImageIcon, PersonStanding, Plus, TriangleAlert, Upload, X } from 'lucide-react';
-import { controlNetMapApi } from '@/lib/api';
+import { controlNetMapApi, fetchControlNetJob, fetchControlNetOptions, installControlNetApi, type ControlNetInstallJob, type ControlNetOption } from '@/lib/api';
 import { DEFAULT_CONTROLNET_UI, MAX_CONTROLNETS, type ControlNetUiState } from '@/lib/generationDefaults';
 import { shortModelName } from '@/lib/modelProfiles';
 import type { SourceFitMode, SourceImageState, SourceSizeMode, WorkMode } from '@/types/generation';
@@ -204,19 +204,24 @@ const CN_TYPES: Array<{ id: GuideType; name: string; desc: string; keys: string[
 ];
 const typeOf = (id: GuideType) => CN_TYPES.find((t) => t.id === id) ?? CN_TYPES[CN_TYPES.length - 1];
 
-/** Best installed model for a guide type (by filename), else a union model, else the first. */
-function pickModel(models: string[], type: GuideType, current: string): string {
+/**
+ * Best installed model for a guide type (by filename), else a union model, else the first.
+ * `preferred` (models known to fit the current model) are tried before the rest.
+ */
+function pickModel(models: string[], type: GuideType, current: string, preferred: string[] = []): string {
   const lower = (m: string) => m.toLowerCase();
   const keys = typeOf(type).keys;
-  if (current && (keys.length === 0 || keys.some((k) => lower(current).includes(k)) || lower(current).includes('union'))) {
-    return current;
+  const fits = (m: string) => keys.length === 0 || keys.some((k) => lower(m).includes(k)) || lower(m).includes('union');
+  if (current && fits(current) && (!preferred.length || preferred.includes(current))) return current;
+  for (const pool of preferred.length ? [preferred, models] : [models]) {
+    const hit = pool.find((m) => keys.some((k) => lower(m).includes(k))) ?? pool.find((m) => lower(m).includes('union'));
+    if (hit) return hit;
   }
-  return (
-    models.find((m) => keys.some((k) => lower(m).includes(k))) ??
-    models.find((m) => lower(m).includes('union')) ??
-    (current || models[0] || '')
-  );
+  return current || preferred[0] || models[0] || '';
 }
+
+const gb = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`);
+const stemOf = (n: string) => n.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '').toLowerCase().replace(/^dep-/, '');
 
 type GuideImage = { comfyName: string; previewUrl: string };
 
@@ -226,24 +231,83 @@ type ControlNetProps = {
   models: string[];
   available: boolean;
   auxAvailable: boolean;
+  /** Aux is in custom_nodes but ComfyUI hasn't loaded it (needs a restart, or failed to import) */
+  auxNeedsRestart?: boolean;
   disabled?: boolean;
   canUseSelected: boolean;
   onUseSelected: () => Promise<GuideImage | null>;
   onUpload: (f: File) => Promise<GuideImage>;
   onAddModel: () => void;
+  /** The current model's family, for the recommended download */
+  familyId: string | null;
+  familyName: string | null;
+  /** A ControlNet model finished downloading (reload the model list) */
+  onModelsChanged: () => void;
 };
 
 /** ControlNet guides (up to 3, applied in order): type, model, guide image, strength and step range. */
 export function ControlNetCard(p: ControlNetProps) {
   const guides = p.value;
   const full = guides.length >= MAX_CONTROLNETS;
+  const [opts, setOpts] = useState<ControlNetOption[] | null>(null);
+  const [job, setJob] = useState<ControlNetInstallJob | null>(null);
+  const [jobError, setJobError] = useState<string | null>(null);
+  const { familyId, onModelsChanged } = p;
+  const modelCount = p.models.length;
+
+  // Which curated downloads fit this model (re-read when the installed list changes)
+  useEffect(() => {
+    let live = true;
+    fetchControlNetOptions(familyId)
+      .then((r) => live && setOpts(r.items))
+      .catch(() => live && setOpts(null));
+    return () => {
+      live = false;
+    };
+  }, [familyId, modelCount]);
+
+  // Follow a download until it finishes
+  useEffect(() => {
+    if (!job || job.status !== 'running') return;
+    const t = window.setInterval(() => {
+      fetchControlNetJob(job.id)
+        .then((j) => {
+          setJob(j);
+          if (j.status === 'done') onModelsChanged();
+          if (j.status === 'error') setJobError(j.error ?? 'Download failed');
+        })
+        .catch(() => {});
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [job, onModelsChanged]);
+
+  // Installed models known to fit the current model, tried first when picking
+  const fitStems = new Set((opts ?? []).map((o) => stemOf(o.filename)));
+  const preferred = familyId ? p.models.filter((m) => fitStems.has(stemOf(m))) : [];
+  const suggestions = opts && familyId && !preferred.length ? opts.filter((o) => o.recommended && !o.installed) : [];
+  // Guides added before any model was installed get one as soon as a fitting model appears
+  const preferredKey = preferred.join('|');
+  const { onChange } = p;
+  useEffect(() => {
+    if (!guides.some((g) => !g.name) || !modelCount) return;
+    const next = guides.map((g) => (g.name ? g : { ...g, name: pickModel(p.models, g.preprocessor, '', preferred) }));
+    if (next.some((g, i) => g.name !== guides[i].name)) onChange(next);
+    // Runs when the installed models change (not on every guide edit)
+  }, [preferredKey, modelCount]);
+
+  const install = (o: ControlNetOption) => {
+    setJobError(null);
+    installControlNetApi(o.id)
+      .then(setJob)
+      .catch((e: unknown) => setJobError(e instanceof Error ? e.message : 'Download failed'));
+  };
 
   const add = () => {
     // A second guide defaults to a different type than the ones already there
     const used = new Set(guides.map((g) => g.preprocessor));
     const order: GuideType[] = p.auxAvailable ? ['openpose', 'depth', 'lineart', 'canny', 'tile'] : ['none', 'tile'];
     const pre = order.find((t) => !used.has(t)) ?? order[0];
-    p.onChange([...guides, { ...DEFAULT_CONTROLNET_UI, enabled: true, preprocessor: pre, end_percent: 0.8, name: pickModel(p.models, pre, '') }]);
+    p.onChange([...guides, { ...DEFAULT_CONTROLNET_UI, enabled: true, preprocessor: pre, end_percent: 0.8, name: pickModel(p.models, pre, '', preferred) }]);
   };
 
   const sub = !p.available
@@ -289,11 +353,75 @@ export function ControlNetCard(p: ControlNetProps) {
               count={guides.length}
               v={g}
               props={p}
+              preferred={preferred}
+              noModelNote={!suggestions.length}
               onChange={(next) => p.onChange(guides.map((x, j) => (j === i ? next : x)))}
               onRemove={() => p.onChange(guides.filter((_, j) => j !== i))}
             />
           ))
         : null}
+
+      {p.available && guides.length > 0 && p.auxNeedsRestart ? (
+        <div className="st-card-sec">
+          <div className="st-warn" role="note">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
+            <span className="flex-1">
+              ControlNet Aux is installed, but ComfyUI hasn’t loaded it. Restart ComfyUI to use Pose, Depth, Edges and Line art on photos.
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      {p.available && guides.length > 0 && (suggestions.length > 0 || job) ? (
+        <div className="st-card-sec" role="region" aria-label="Recommended ControlNet model">
+          {job && job.status !== 'error' ? (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[12.5px]">
+                {job.status === 'done' ? `${job.title} installed — guides use it automatically.` : `Downloading ${job.title}… ${Math.floor(job.progress)}%`}
+              </span>
+              {job.status === 'running' ? (
+                <span className="h-1 overflow-hidden rounded-full" style={{ background: 'var(--s-raised2)' }}>
+                  <span className="block h-full" style={{ width: `${job.progress}%`, background: 'var(--s-accent)', transition: 'width .4s' }} />
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <span className="text-[12.5px]" style={{ color: 'var(--s-muted)' }}>
+                {p.models.length
+                  ? `None of your ControlNet models fit ${p.familyName ?? 'this model'}.`
+                  : `No ControlNet model for ${p.familyName ?? 'this model'} yet.`}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestions.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    className={`st-pill h-[28px] text-xs ${suggestions.length === 1 ? 'st-pill-accent' : ''}`}
+                    disabled={p.disabled}
+                    onClick={() => install(o)}
+                    data-tip={`${o.notes ?? o.filename}${o.nonCommercial ? '\nNon-commercial licence' : ''}\nDownloads ${gb(o.sizeBytes)} into ComfyUI/models/controlnet`}
+                  >
+                    Install {o.title} · {gb(o.sizeBytes)}
+                  </button>
+                ))}
+                <button type="button" className="st-pill h-[28px] text-xs" onClick={p.onAddModel} data-tip="Download or import another ControlNet file">
+                  Other…
+                </button>
+              </div>
+              {suggestions.some((o) => o.nonCommercial) ? (
+                <span className="text-[11.5px]" style={{ color: 'var(--s-faint)' }}>FLUX.1-dev non-commercial licence.</span>
+              ) : null}
+            </>
+          )}
+          {jobError ? (
+            <div className="st-warn" role="alert">
+              <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
+              <span className="flex-1">{jobError}</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </StCard>
   );
 }
@@ -303,6 +431,8 @@ function GuideSection({
   count,
   v,
   props: p,
+  preferred,
+  noModelNote,
   onChange,
   onRemove,
 }: {
@@ -310,6 +440,9 @@ function GuideSection({
   count: number;
   v: ControlNetUiState;
   props: ControlNetProps;
+  preferred: string[];
+  /** Show "No ControlNet models installed" (off when the card offers a download instead) */
+  noModelNote: boolean;
   onChange: (v: ControlNetUiState) => void;
   onRemove: () => void;
 }) {
@@ -410,11 +543,17 @@ function GuideSection({
                     <StMenuItem
                       key={t.id}
                       title={t.name}
-                      detail={locked ? 'Needs ControlNet Aux — install it from Components → Custom nodes' : t.desc}
+                      detail={
+                        locked
+                          ? p.auxNeedsRestart
+                            ? 'ControlNet Aux is installed — restart ComfyUI to load it'
+                            : 'Needs ControlNet Aux — launcher → ControlNet models (or Custom nodes)'
+                          : t.desc
+                      }
                       selected={t.id === v.preprocessor}
                       onClick={() => {
                         if (locked) return;
-                        patch({ preprocessor: t.id, name: pickModel(p.models, t.id, v.name) });
+                        patch({ preprocessor: t.id, name: pickModel(p.models, t.id, v.name, preferred) });
                         close();
                       }}
                     />
@@ -536,7 +675,7 @@ function GuideSection({
           disabled={p.disabled}
         />
       </div>
-      {p.models.length === 0 && index === 0 ? (
+      {p.models.length === 0 && index === 0 && noModelNote ? (
         <div className="st-warn">
           <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: '#e2b44f' }} />
           <span className="flex-1">No ControlNet models installed yet.</span>

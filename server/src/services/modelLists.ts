@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { getObjectInfo } from './comfyClient.js';
+import { getComfyUiRoot } from './envSettings.js';
 
 export type ModelCatalog = {
   checkpoints: string[];
@@ -34,6 +37,8 @@ export type ModelCatalog = {
     faceDetailer: boolean;
     /** comfyui_controlnet_aux preprocessors */
     controlnetAux: boolean;
+    /** The ControlNet Aux folder is in custom_nodes (loaded or not — ComfyUI needs a restart, or it failed to import) */
+    controlnetAuxInstalled?: boolean;
   };
 };
 
@@ -59,6 +64,11 @@ function hasNode(info: Record<string, unknown>, node: string): boolean {
 
 let cache: { at: number; value: ModelCatalog } | null = null;
 const CACHE_MS = 15_000;
+
+function auxFolderExists(): boolean {
+  const root = getComfyUiRoot();
+  return Boolean(root && fs.existsSync(path.join(root, 'custom_nodes', 'comfyui_controlnet_aux')));
+}
 
 export async function listModelCatalog(force = false): Promise<ModelCatalog> {
   if (!force && cache && Date.now() - cache.at < CACHE_MS) {
@@ -122,6 +132,7 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
         hasNode(info, 'CannyEdgePreprocessor') ||
         hasNode(info, 'DepthAnythingPreprocessor') ||
         hasNode(info, 'OpenposePreprocessor'),
+      controlnetAuxInstalled: auxFolderExists(),
     },
   };
 

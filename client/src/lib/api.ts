@@ -294,6 +294,33 @@ export function fetchLoraMeta(): Promise<{ items: LoraMeta[] }> {
 
 export const loraThumbUrl = (name: string) => `/api/models/loras/thumb?name=${encodeURIComponent(name)}`;
 
+export type ControlNetOption = {
+  id: string;
+  title: string;
+  filename: string;
+  sizeBytes: number;
+  guides: string[];
+  notes: string | null;
+  licenseUrl: string | null;
+  nonCommercial: boolean;
+  recommended: boolean;
+  installed: boolean;
+};
+export type ControlNetInstallJob = { id: string; componentId: string; title: string; status: 'running' | 'done' | 'error'; progress: number; error?: string };
+
+/** Curated ControlNet downloads that fit a family, with what's installed. */
+export function fetchControlNetOptions(family: string | null): Promise<{ arch: string | null; items: ControlNetOption[] }> {
+  return request(`/api/models/controlnet/options${family ? `?family=${encodeURIComponent(family)}` : ''}`);
+}
+
+export function installControlNetApi(id: string): Promise<ControlNetInstallJob> {
+  return request('/api/models/controlnet/install', { method: 'POST', body: JSON.stringify({ id }) });
+}
+
+export function fetchControlNetJob(id: string): Promise<ControlNetInstallJob> {
+  return request(`/api/models/controlnet/jobs/${encodeURIComponent(id)}`);
+}
+
 /** Runs a guide's preprocessor in ComfyUI; resolves to an object URL of the map (revoke when done). */
 export async function controlNetMapApi(image: string, preprocessor: string): Promise<string> {
   const res = await fetch('/api/source/controlnet-map', {
@@ -303,6 +330,29 @@ export async function controlNetMapApi(image: string, preprocessor: string): Pro
   });
   if (!res.ok) await throwForResponse(res);
   return URL.createObjectURL(await res.blob());
+}
+
+export type DownloadTokens = { civitai: boolean; huggingface: boolean };
+/** Flags from the server; civitaiInvalid = something is saved but it isn't a key */
+export type DownloadTokenFlags = DownloadTokens & { civitaiInvalid?: boolean };
+
+/** Why a pasted value isn't a key (null when it looks like one). */
+export function apiKeyProblem(v: string): string | null {
+  const t = v.trim();
+  if (!t) return null;
+  if (/:\/\/|\.(com|co)\b/i.test(t)) return 'That’s a link, not a key — copy the key itself.';
+  if (!/^[A-Za-z0-9_-]{20,200}$/.test(t)) return 'A key is letters and numbers only, no spaces.';
+  return null;
+}
+
+/** Which download keys are saved (the keys never come back). */
+export function fetchDownloadTokens(): Promise<DownloadTokenFlags> {
+  return request('/api/settings/tokens');
+}
+
+/** Host only: save a key, or '' to remove it. */
+export function saveDownloadTokens(patch: Partial<Record<keyof DownloadTokens, string>>): Promise<DownloadTokenFlags> {
+  return request('/api/settings/tokens', { method: 'PUT', body: JSON.stringify(patch) });
 }
 
 export function emptyTrashApi(): Promise<{

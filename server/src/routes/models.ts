@@ -3,6 +3,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { Router } from 'express';
 import { ComfyError } from '../services/comfyClient.js';
+import { controlNetOptions, getControlNetInstallJob, startControlNetInstall } from '../services/controlnetInstall.js';
 import { listLoraMeta, loraThumbFile } from '../services/loraMeta.js';
 import { listModelCatalog } from '../services/modelLists.js';
 import {
@@ -40,6 +41,34 @@ modelsRouter.get('/', async (_req, res) => {
 });
 
 /** Installed files on disk (with link metadata for Manage models). */
+/** Curated ControlNet downloads that fit a family (?family=), with what's installed. */
+modelsRouter.get('/controlnet/options', async (req, res) => {
+  try {
+    const family = typeof req.query.family === 'string' && req.query.family ? req.query.family : null;
+    res.json(await controlNetOptions(family));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Could not list ControlNet models' });
+  }
+});
+
+modelsRouter.post('/controlnet/install', async (req, res) => {
+  const id = typeof req.body?.id === 'string' ? req.body.id : '';
+  try {
+    res.json(await startControlNetInstall(id));
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Could not start the download' });
+  }
+});
+
+modelsRouter.get('/controlnet/jobs/:id', (req, res) => {
+  const job = getControlNetInstallJob(req.params.id);
+  if (!job) {
+    res.status(404).json({ error: 'No such download' });
+    return;
+  }
+  res.json(job);
+});
+
 /** LoRAs on disk: what they were made for, trigger words, preview. */
 modelsRouter.get('/loras/meta', (_req, res) => {
   try {

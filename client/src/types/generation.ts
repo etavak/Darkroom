@@ -167,6 +167,8 @@ export type ModelCatalog = {
     ggufDualClip?: boolean;
     faceDetailer?: boolean;
     controlnetAux?: boolean;
+    /** The ControlNet Aux folder exists (ComfyUI may still need a restart to load it) */
+    controlnetAuxInstalled?: boolean;
   };
 };
 

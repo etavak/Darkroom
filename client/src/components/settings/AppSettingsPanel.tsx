@@ -51,6 +51,8 @@ import {
   fetchLanAccess,
   fetchLanDevices,
   fetchVersionInfo,
+  fetchDownloadTokens,
+  saveDownloadTokens,
   checkUpdatesApi,
   testEnhanceApi,
   regenerateLanPin,
@@ -58,6 +60,9 @@ import {
   signOutThisDevice,
   type LanAccessInfo,
   type LanDevice,
+  apiKeyProblem,
+  type DownloadTokenFlags,
+  type DownloadTokens,
   type UpdateCheck,
   type VersionInfo,
 } from '@/lib/api';
@@ -219,6 +224,9 @@ export function usePreferenceEntries({
   const [keyTest, setKeyTest] = useState<{ busy: boolean; ok?: boolean; message?: string } | null>(null);
   const [trashState, setTrashState] = useState<'idle' | 'confirm' | 'busy' | string>('idle');
   const [version, setVersion] = useState<VersionInfo | null>(null);
+  const [tokens, setTokens] = useState<DownloadTokenFlags | null>(null);
+  const [tokenDraft, setTokenDraft] = useState<Record<keyof DownloadTokens, string>>({ civitai: '', huggingface: '' });
+  const [tokenNote, setTokenNote] = useState<Partial<Record<keyof DownloadTokens, string>>>({});
   const [update, setUpdate] = useState<{ busy: boolean; result?: UpdateCheck } | null>(null);
   const [lan, setLan] = useState<LanAccessInfo | null>(null);
   /** host = the computer running Darkroom; guest = a phone / other computer signed in with the PIN */
@@ -240,6 +248,27 @@ export function usePreferenceEntries({
       })
       .catch(() => setRole(null));
   }, []);
+
+  useEffect(() => {
+    fetchDownloadTokens()
+      .then(setTokens)
+      .catch(() => setTokens(null));
+  }, []);
+
+  const saveToken = (which: keyof DownloadTokens, value: string) => {
+    const problem = apiKeyProblem(value);
+    if (problem) {
+      setTokenNote((n) => ({ ...n, [which]: problem }));
+      return;
+    }
+    saveDownloadTokens({ [which]: value })
+      .then((t) => {
+        setTokens(t);
+        setTokenNote((n) => ({ ...n, [which]: value ? 'Saved' : 'Removed' }));
+      })
+      .catch((e: unknown) => setTokenNote((n) => ({ ...n, [which]: e instanceof Error ? e.message : 'Could not save' })));
+    setTokenDraft((d) => ({ ...d, [which]: '' }));
+  };
 
   useEffect(() => {
     fetchVersionInfo()
@@ -725,6 +754,66 @@ export function usePreferenceEntries({
           />
         ),
       },
+      ...(
+        [
+          {
+            which: 'civitai',
+            label: 'Civitai API key',
+            about: 'Needed for Civitai files whose creator requires sign-in (otherwise HTTP 401). civitai.com → Account settings → API keys.',
+            placeholder: 'Paste your Civitai key',
+          },
+          {
+            which: 'huggingface',
+            label: 'Hugging Face token',
+            about: 'For gated Hugging Face files — accept the model’s licence on its page first. huggingface.co → Settings → Access tokens.',
+            placeholder: 'hf_…',
+          },
+        ] as const
+      ).map(
+        (t): PrefEntry => ({
+          id: `token-${t.which}`,
+          category: 'models',
+          scope: 'server',
+          label: t.label,
+          description:
+            t.which === 'civitai' && tokens?.civitaiInvalid
+              ? `What's saved isn't a key (it looks like a link), so it's ignored — paste the key again. ${t.about}`
+              : tokens?.[t.which]
+                ? `Saved on the computer running Darkroom — never shown again. ${t.about}`
+                : t.about,
+          hint: tokenNote[t.which],
+          keywords: ['token', 'key', 'download', '401', 'login', 'sign in', 'gated'],
+          icon: <Shield />,
+          control:
+            role !== 'host' ? (
+              <span className="text-[11px] text-muted-foreground">{tokens?.[t.which] ? 'Saved · set on the computer' : 'Set on the computer'}</span>
+            ) : (
+              <div className="flex items-center gap-1">
+                {/* Write-only: the saved key never comes back to the browser */}
+                <Input
+                  id={`token-${t.which}`}
+                  type="password"
+                  autoComplete="off"
+                  className="h-8 w-[12rem] text-xs"
+                  placeholder={tokens?.[t.which] ? 'Saved — paste to replace' : t.placeholder}
+                  value={tokenDraft[t.which]}
+                  onChange={(e) => setTokenDraft((d) => ({ ...d, [t.which]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && tokenDraft[t.which].trim()) saveToken(t.which, tokenDraft[t.which].trim());
+                  }}
+                  onBlur={() => {
+                    if (tokenDraft[t.which].trim()) saveToken(t.which, tokenDraft[t.which].trim());
+                  }}
+                />
+                {tokens?.[t.which] || (t.which === 'civitai' && tokens?.civitaiInvalid) ? (
+                  <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-tip="Delete the saved key" onClick={() => saveToken(t.which, '')}>
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+            ),
+        }),
+      ),
       {
         id: 'civitai-auto',
         category: 'models',
@@ -1206,6 +1295,9 @@ export function usePreferenceEntries({
     backupFlash,
     diagFlash,
     keyTest,
+    tokens,
+    tokenDraft,
+    tokenNote,
     trashState,
     version,
     update,

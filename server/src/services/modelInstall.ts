@@ -9,6 +9,7 @@ import {
   type GuessedModelType,
   repoRoot,
 } from './cliShared.js';
+import { readEnvValue } from './envSettings.js';
 import { invalidateModelCatalog } from './modelLists.js';
 import { invalidatePresetCache } from '../presets/catalog.js';
 import { loadServerSettings } from './appSettings.js';
@@ -94,6 +95,14 @@ export async function resolveModelFromUrl(pageUrl: string): Promise<InstallJob> 
   return job;
 }
 
+function safeHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
 export async function startDownloadJob(
   jobId: string,
   opts?: { candidatePath?: string },
@@ -104,7 +113,13 @@ export async function startDownloadJob(
 
   let downloadUrl = job.downloadUrl!;
   let filename = job.filename!;
-  const headers = job.headers;
+  // A key saved after the link was resolved (e.g. after a 401) applies on retry
+  const rawKey = (process.env.CIVITAI_TOKEN || readEnvValue('CIVITAI_TOKEN') || '').trim();
+  const civitaiKey = /^[A-Za-z0-9_-]{20,200}$/.test(rawKey) ? rawKey : '';
+  const headers =
+    job.headers?.Authorization || !civitaiKey || !/(^|\.)civitai\.com$/i.test(safeHost(downloadUrl))
+      ? job.headers
+      : { ...(job.headers ?? {}), Authorization: `Bearer ${civitaiKey}` };
 
   if (opts?.candidatePath && job.candidates?.length) {
     const chosen = job.candidates.find((c) => c.path === opts.candidatePath);

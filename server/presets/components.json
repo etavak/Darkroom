@@ -92,6 +92,148 @@
       "sha256": "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4",
       "gated": false,
       "notes": "OpenCLIP bigG text encoder (SD3 / SD3.5)"
+    },
+    {
+      "id": "cn_sdxl_union_promax",
+      "type": "controlnet",
+      "filename": "xinsir-controlnet-union-sdxl-promax.safetensors",
+      "url": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/801a4a3fa3d4c936f4feea95b98607bc6726f80c/diffusion_pytorch_model_promax.safetensors",
+      "sizeBytes": 2513342408,
+      "sha256": "9fae2e50cb431bfcbe05822b59ec2228df545ef27f711dea8949e9f4ed9f7cdc",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0",
+      "arch": [
+        "sdxl"
+      ],
+      "guides": [
+        "openpose",
+        "depth",
+        "canny",
+        "lineart",
+        "tile",
+        "none"
+      ],
+      "recommended": true,
+      "title": "SDXL Union (ProMax)",
+      "notes": "One model for every guide type — SDXL, Illustrious, NoobAI and Pony (xinsir, Apache-2.0)"
+    },
+    {
+      "id": "cn_sd15_openpose",
+      "type": "controlnet",
+      "filename": "control_v11p_sd15_openpose_fp16.safetensors",
+      "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11p_sd15_openpose_fp16.safetensors",
+      "sizeBytes": 722601100,
+      "sha256": "4003c1da17b0e4ba444e02140e1c0d83bb24b79e4dcfd613c3a554d38f0f89c7",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/lllyasviel/ControlNet-v1-1",
+      "arch": [
+        "sd15"
+      ],
+      "guides": [
+        "openpose"
+      ],
+      "recommended": true,
+      "title": "SD 1.5 Pose",
+      "notes": "ControlNet 1.1 pose for SD 1.5 models (lllyasviel, fp16)"
+    },
+    {
+      "id": "cn_sd15_depth",
+      "type": "controlnet",
+      "filename": "control_v11f1p_sd15_depth_fp16.safetensors",
+      "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11f1p_sd15_depth_fp16.safetensors",
+      "sizeBytes": 722601100,
+      "sha256": "1c4a79aa52fb63f607cb9ff479ea5aa1923b6ceb21267bd14b69bd05d7b617be",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/lllyasviel/ControlNet-v1-1",
+      "arch": [
+        "sd15"
+      ],
+      "guides": [
+        "depth"
+      ],
+      "recommended": true,
+      "title": "SD 1.5 Depth",
+      "notes": "ControlNet 1.1 depth for SD 1.5 models (lllyasviel, fp16)"
+    },
+    {
+      "id": "cn_sd15_lineart",
+      "type": "controlnet",
+      "filename": "control_v11p_sd15_lineart_fp16.safetensors",
+      "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11p_sd15_lineart_fp16.safetensors",
+      "sizeBytes": 722601100,
+      "sha256": "10559106d1bb8196298b7a81565ede9279295d2b2df15165b9dbe189994def56",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/lllyasviel/ControlNet-v1-1",
+      "arch": [
+        "sd15"
+      ],
+      "guides": [
+        "lineart"
+      ],
+      "recommended": true,
+      "title": "SD 1.5 Line art",
+      "notes": "ControlNet 1.1 line art for SD 1.5 models (lllyasviel, fp16)"
+    },
+    {
+      "id": "cn_sd15_canny",
+      "type": "controlnet",
+      "filename": "control_v11p_sd15_canny_fp16.safetensors",
+      "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11p_sd15_canny_fp16.safetensors",
+      "sizeBytes": 722601100,
+      "sha256": "8932b66e15aae835b3490dbf989f56c253104cee08a88bf21283762f557c9f10",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/lllyasviel/ControlNet-v1-1",
+      "arch": [
+        "sd15"
+      ],
+      "guides": [
+        "canny"
+      ],
+      "recommended": false,
+      "title": "SD 1.5 Edges",
+      "notes": "ControlNet 1.1 edges for SD 1.5 models (lllyasviel, fp16)"
+    },
+    {
+      "id": "cn_sd15_tile",
+      "type": "controlnet",
+      "filename": "control_v11f1e_sd15_tile_fp16.safetensors",
+      "url": "https://huggingface.co/comfyanonymous/ControlNet-v1-1_fp16_safetensors/resolve/ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7/control_v11f1e_sd15_tile_fp16.safetensors",
+      "sizeBytes": 722601104,
+      "sha256": "2f31868eedb243a77932e3c63907a6ba0a2058b6d65b5c27b89ee1b7f618ea33",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/lllyasviel/ControlNet-v1-1",
+      "arch": [
+        "sd15"
+      ],
+      "guides": [
+        "tile"
+      ],
+      "recommended": false,
+      "title": "SD 1.5 Tile",
+      "notes": "ControlNet 1.1 tile for SD 1.5 models (lllyasviel, fp16)"
+    },
+    {
+      "id": "cn_flux_union_pro2",
+      "type": "controlnet",
+      "filename": "shakker-flux-controlnet-union-pro-2.safetensors",
+      "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Union-Pro-2.0/resolve/5d700aaad96c5ddcdf8a38ef9b22a82aac2c38e5/diffusion_pytorch_model.safetensors",
+      "sizeBytes": 4281779224,
+      "sha256": "9d03f63f36206bab2f36aed5cfedc8693c2881397534e9d5f9ae9a0a41362517",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/LICENSE.md",
+      "arch": [
+        "flux"
+      ],
+      "guides": [
+        "openpose",
+        "depth",
+        "canny",
+        "lineart",
+        "none"
+      ],
+      "recommended": true,
+      "title": "Flux Union Pro 2.0",
+      "notes": "Pose, depth and edges for Flux.1 dev (Shakker Labs) — FLUX.1-dev non-commercial licence"
     }
   ]
 }

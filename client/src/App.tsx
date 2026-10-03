@@ -1672,9 +1672,13 @@ export default function App() {
         <ControlNetCard
           value={controlNets}
           onChange={setControlNets}
+          familyId={resolved.familyId}
+          familyName={resolved.familyName}
+          onModelsChanged={reloadModels}
           models={catalog.controlnet}
           available={Boolean(catalog.available.controlnet)}
           auxAvailable={Boolean(catalog.available.controlnetAux)}
+          auxNeedsRestart={Boolean(catalog.available.controlnetAuxInstalled && !catalog.available.controlnetAux)}
           disabled={runtime.running}
           canUseSelected={Boolean(selectedRecord?.images[0])}
           onUseSelected={async () => {

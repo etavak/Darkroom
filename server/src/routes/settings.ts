@@ -100,6 +100,47 @@ settingsRouter.post('/trash/empty', (req, res) => {
   }
 });
 
+const TOKEN_KEYS = { civitai: 'CIVITAI_TOKEN', huggingface: 'HF_TOKEN' } as const;
+const KEY_RE = /^[A-Za-z0-9_-]{20,200}$/;
+const tokenValue = (k: string) => (process.env[k] || readEnvValue(k) || '').trim();
+const tokenSet = (k: string) => KEY_RE.test(tokenValue(k));
+/** Flags only; `civitaiInvalid` = something is saved but it isn't a key (e.g. a pasted link) */
+const tokenFlags = () => ({
+  civitai: tokenSet('CIVITAI_TOKEN'),
+  civitaiInvalid: Boolean(tokenValue('CIVITAI_TOKEN')) && !tokenSet('CIVITAI_TOKEN'),
+  huggingface: tokenSet('HF_TOKEN') || tokenSet('HUGGING_FACE_HUB_TOKEN'),
+});
+
+/** Which download keys are saved (never the keys themselves). */
+settingsRouter.get('/tokens', (_req, res) => {
+  res.json(tokenFlags());
+});
+
+/** Host only: save or remove ('' ) the Civitai / Hugging Face keys in .env. */
+settingsRouter.put('/tokens', (req, res) => {
+  if (!isLocalRequest(req)) {
+    res.status(403).json({ error: 'Set download keys on the computer running Darkroom.' });
+    return;
+  }
+  for (const [field, key] of Object.entries(TOKEN_KEYS)) {
+    const v = req.body?.[field];
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    if (t && !KEY_RE.test(t)) {
+      res.status(400).json({
+        error: /:\/\/|\.(com|co)\b/i.test(t)
+          ? 'That’s a link, not a key. Copy the key itself (civitai.com → Account settings → API keys).'
+          : 'That doesn’t look like a key — it should be letters and numbers only, no spaces.',
+      });
+      return;
+    }
+    upsertEnvValue(key, t);
+    process.env[key] = t;
+    if (key === 'HF_TOKEN' && !t) process.env.HUGGING_FACE_HUB_TOKEN = '';
+  }
+  res.json(tokenFlags());
+});
+
 settingsRouter.get('/version', (_req, res) => {
   res.json(currentVersion());
 });

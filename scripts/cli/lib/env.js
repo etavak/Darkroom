@@ -55,6 +55,15 @@ export function isRemoteMode() {
   return (process.env.COMFY_MODE || 'local').toLowerCase() === 'remote';
 }
 
+/**
+ * Civitai keys are 32 hex characters and HF tokens look like hf_…; anything with spaces,
+ * "://" or dots (a pasted link, a sentence) isn't a key.
+ * @param {string} v
+ */
+export function looksLikeApiKey(v) {
+  return /^[A-Za-z0-9_-]{20,200}$/.test(v.trim());
+}
+
 export function getConfig() {
   loadAndApplyEnv();
   const comfyUrl = (process.env.COMFY_URL || 'http://127.0.0.1:8188').replace(/\/$/, '');
@@ -65,7 +74,9 @@ export function getConfig() {
     comfyDir: process.env.COMFY_DIR || '',
     port,
     appUrl: `http://127.0.0.1:${port}`,
-    civitaiToken: process.env.CIVITAI_TOKEN || '',
+    // A saved value that isn't a key (e.g. a pasted link) is ignored rather than sent
+    civitaiToken: looksLikeApiKey(process.env.CIVITAI_TOKEN || '') ? (process.env.CIVITAI_TOKEN || '').trim() : '',
+    civitaiTokenInvalid: Boolean((process.env.CIVITAI_TOKEN || '').trim()) && !looksLikeApiKey(process.env.CIVITAI_TOKEN || ''),
     hfToken: process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN || '',
     mode,
     remote: mode === 'remote',
