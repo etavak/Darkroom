@@ -3,6 +3,7 @@ import { Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, S
 import type { PreferenceProps } from '@/components/settings/AppSettingsPanel';
 import type { UiSettings } from '@/lib/uiSettings';
 import { LogoMark, PreferencesScreen } from './PreferencesScreen';
+import { KeysSheet } from './KeysSheet';
 import { TooltipRoot } from './TooltipLayer';
 import './studio.css';
 
@@ -21,6 +22,10 @@ type Props = {
   overlay?: ReactNode;
   historyCount: number;
   comfyOk: boolean | null;
+  /** Connection just dropped and is being retried */
+  reconnecting?: boolean;
+  /** The Darkroom server itself isn't answering */
+  serverDown?: boolean;
   systemLabel?: string | null;
   vramTooltip?: string | null;
   running: boolean;
@@ -45,6 +50,8 @@ export function StudioShell({
   overlay,
   historyCount,
   comfyOk,
+  reconnecting,
+  serverDown,
   systemLabel,
   vramTooltip,
   running,
@@ -57,6 +64,7 @@ export function StudioShell({
   preferences,
 }: Props) {
   // Widths follow the pointer locally while dragging and are saved once on release
+  const [keysOpen, setKeysOpen] = useState(false);
   const [drag, setDrag] = useState<{ which: 'left' | 'history'; width: number } | null>(null);
   const edge = useRef<{ which: 'left' | 'history'; sx: number; w0: number; f: number } | null>(null);
   const raf = useRef(0);
@@ -80,6 +88,18 @@ export function StudioShell({
     root.style.setProperty('--st-left-w', `${w}px`);
     root.style.setProperty('--st-pop-left', `${w + 12}px`);
   }, [leftW, ui.studioLeftCollapsed]);
+
+  // ? opens the shortcuts sheet (not while typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== '?' || keysOpen || (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable))) return;
+      e.preventDefault();
+      setKeysOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [keysOpen]);
 
   // Ctrl/⌘ + \ shows or hides the controls column
   useEffect(() => {
@@ -146,7 +166,11 @@ export function StudioShell({
       ? { dot: 'var(--s-faint)', label: 'Checking…', tip: 'Checking the ComfyUI connection' }
       : comfyOk
         ? { dot: '#5bd18b', label: systemLabel || 'Connected', tip: vramTooltip || 'ComfyUI is connected' }
-        : { dot: '#e5534b', label: 'ComfyUI offline', tip: 'Can’t reach ComfyUI — start it from the launcher' };
+        : serverDown
+          ? { dot: '#e5534b', label: 'Darkroom offline', tip: 'The Darkroom server isn’t answering — it may be restarting' }
+          : reconnecting
+          ? { dot: '#e2b44f', label: 'Reconnecting…', tip: 'Lost the connection to ComfyUI — retrying' }
+          : { dot: '#e5534b', label: 'ComfyUI offline', tip: 'Can’t reach ComfyUI — start it from the launcher' };
   const narrowChip = leftW < 360;
 
   const edgeEl = (which: 'left' | 'history', style: React.CSSProperties) =>
@@ -264,7 +288,8 @@ export function StudioShell({
       )}
 
       {overlay}
-      {prefsOpen ? <PreferencesScreen {...preferences} onClose={() => onPrefsOpenChange(false)} /> : null}
+      {prefsOpen ? <PreferencesScreen {...preferences} onClose={() => onPrefsOpenChange(false)} onOpenKeys={() => setKeysOpen(true)} /> : null}
+      {keysOpen ? <KeysSheet onClose={() => setKeysOpen(false)} /> : null}
     </TooltipRoot>
   );
 }

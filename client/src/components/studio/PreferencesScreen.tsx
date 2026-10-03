@@ -22,7 +22,7 @@ const DESCRIPTIONS: Record<PrefCategory, string> = {
  * Full-screen Preferences for the studio: section list + search across everything.
  * Rows come from the same entries as the classic panel, so every control is live.
  */
-export function PreferencesScreen({ onClose, ...props }: PreferenceProps & { onClose: () => void }) {
+export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceProps & { onClose: () => void; onOpenKeys?: () => void }) {
   const entries = usePreferenceEntries(props);
   const [category, setCategory] = useState<PrefCategory>('general');
   const [query, setQuery] = useState('');
@@ -92,6 +92,15 @@ export function PreferencesScreen({ onClose, ...props }: PreferenceProps & { onC
             </button>
           );
         })}
+        {onOpenKeys ? (
+          <>
+            <span className="flex-1" />
+            <button type="button" className="st-navitem" onClick={onOpenKeys}>
+              <span>Keyboard shortcuts</span>
+              <span className="st-kbd">?</span>
+            </button>
+          </>
+        ) : null}
       </nav>
 
       <div className="min-w-0 flex-1 overflow-y-auto">

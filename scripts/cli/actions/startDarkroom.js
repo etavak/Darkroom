@@ -3,7 +3,7 @@ import { ensureComfyRunning } from '../lib/comfy.js';
 import { getConfig } from '../lib/env.js';
 import { httpGetJson } from '../lib/http.js';
 import { openBrowser } from '../lib/process.js';
-import { ensureServerRunning } from '../lib/server.js';
+import { buildStale, ensureServerRunning, restartServer } from '../lib/server.js';
 import { listLanUrls } from '../lib/status.js';
 
 /**
@@ -32,7 +32,20 @@ export async function startStack(opts = {}) {
   s.start('Starting Darkroom server…');
   try {
     const server = await ensureServerRunning();
-    s.stop(server.alreadyRunning ? 'Server already running' : 'Server ready');
+    if (server.alreadyRunning) {
+      // Running an older build: apply the update without touching ComfyUI
+      const stale = buildStale();
+      if (stale.server || stale.client) {
+        s.message('Applying the update — restarting the server…');
+        const r = await restartServer();
+        s.stop(r.restarted ? 'Server restarted with the update' : 'Server already running');
+        if (!r.restarted && r.reason) p.log.warn(r.reason);
+      } else {
+        s.stop('Server already running');
+      }
+    } else {
+      s.stop('Server ready');
+    }
   } catch (err) {
     s.stop('Server failed');
     p.log.error(err instanceof Error ? err.message : String(err));

@@ -52,7 +52,16 @@ import type {
   VramMode,
 } from '@/types/serverSettings';
 import { cn } from '@/lib/utils';
-import { fetchLanAccess, regenerateLanPin, type LanAccessInfo } from '@/lib/api';
+import {
+  fetchAuthStatus,
+  fetchLanAccess,
+  fetchLanDevices,
+  regenerateLanPin,
+  revokeLanDevice,
+  signOutThisDevice,
+  type LanAccessInfo,
+  type LanDevice,
+} from '@/lib/api';
 
 export type PrefCategory =
   | 'general'
@@ -185,12 +194,24 @@ export function usePreferenceEntries({
   const [foldersText, setFoldersText] = useState(server.extraModelFolders.join('\n'));
   const [keyDraft, setKeyDraft] = useState('');
   const [lan, setLan] = useState<LanAccessInfo | null>(null);
+  /** host = the computer running Darkroom; guest = a phone / other computer signed in with the PIN */
+  const [role, setRole] = useState<'host' | 'guest' | null>(null);
+  const [devices, setDevices] = useState<LanDevice[]>([]);
 
-  // PIN + URLs only answer on the computer running Darkroom (403 elsewhere)
+  // PIN, URLs and devices only answer on the computer running Darkroom (403 elsewhere)
   useEffect(() => {
-    fetchLanAccess()
-      .then(setLan)
-      .catch(() => setLan(null));
+    fetchAuthStatus()
+      .then((st) => {
+        setRole(st.local ? 'host' : 'guest');
+        if (!st.local) return;
+        fetchLanAccess()
+          .then(setLan)
+          .catch(() => setLan(null));
+        fetchLanDevices()
+          .then((r) => setDevices(r.items))
+          .catch(() => setDevices([]));
+      })
+      .catch(() => setRole(null));
   }, []);
 
   useEffect(() => {
@@ -786,37 +807,110 @@ export function usePreferenceEntries({
         ),
       },
 
-      {
-        id: 'lan-access',
-        category: 'network',
-        scope: 'server',
-        label: 'Other devices',
-        description: lan
-          ? `Open ${lan.urls[0] ?? 'this computer\'s address'} on your phone or tablet and enter this PIN. Regenerating signs every device out.`
-          : 'Shown only on the computer running Darkroom.',
-        keywords: ['pin', 'phone', 'tablet', 'lan', 'wifi', 'remote', 'password'],
-        icon: <Shield />,
-        control: lan ? (
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-sm tracking-[0.2em]">
-              {lan.pin}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                if (!window.confirm('Make a new PIN? Phones and tablets will need to enter it again.')) return;
-                void regenerateLanPin().then(setLan).catch(() => {});
-              }}
-            >
-              Regenerate
-            </Button>
-          </div>
-        ) : (
-          <span className="text-[11px] text-muted-foreground">—</span>
-        ),
-      },
+      ...(role === 'guest'
+        ? [
+            {
+              id: 'lan-this-device',
+              category: 'network' as const,
+              scope: 'device' as const,
+              label: 'This device',
+              description: `Signed in to Darkroom on ${window.location.host} with the PIN. Signing out means entering the PIN again next time.`,
+              keywords: ['pin', 'sign out', 'log out', 'phone', 'tablet', 'lan'],
+              icon: <Shield />,
+              control: (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!window.confirm('Sign this device out? You’ll need the PIN to get back in.')) return;
+                    void signOutThisDevice().finally(() => window.location.reload());
+                  }}
+                >
+                  Sign out of this device
+                </Button>
+              ),
+            },
+          ]
+        : [
+            {
+              id: 'lan-access',
+              category: 'network' as const,
+              scope: 'server' as const,
+              label: 'Other devices',
+              description: lan
+                ? `Open ${lan.urls[0] ?? 'this computer’s address'} on your phone or tablet and enter this PIN. Regenerating signs every device out.`
+                : 'Shown only on the computer running Darkroom.',
+              keywords: ['pin', 'phone', 'tablet', 'lan', 'wifi', 'remote', 'password'],
+              icon: <Shield />,
+              control: lan ? (
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-sm tracking-[0.2em]">{lan.pin}</span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (!window.confirm('Make a new PIN? Phones and tablets will need to enter it again.')) return;
+                      void regenerateLanPin()
+                        .then((next) => {
+                          setLan(next);
+                          setDevices([]);
+                        })
+                        .catch(() => {});
+                    }}
+                  >
+                    Regenerate
+                  </Button>
+                </div>
+              ) : (
+                <span className="text-[11px] text-muted-foreground">—</span>
+              ),
+            },
+            ...(role === 'host'
+              ? [
+                  {
+                    id: 'lan-devices',
+                    category: 'network' as const,
+                    scope: 'server' as const,
+                    label: 'Signed-in devices',
+                    description: devices.length
+                      ? 'Phones, tablets and other computers using Darkroom with the PIN.'
+                      : 'No other devices have signed in yet.',
+                    keywords: ['devices', 'sessions', 'sign out', 'phone', 'tablet'],
+                    icon: <Network />,
+                    control: devices.length ? (
+                      <div className="flex min-w-[260px] flex-col gap-1.5">
+                        {devices.map((d) => (
+                          <div key={d.id} className="flex items-center justify-between gap-3">
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate text-[13px] font-semibold">{d.device}</span>
+                              <span className="text-[11.5px] text-muted-foreground">
+                                Last seen {new Date(d.lastSeen).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                              </span>
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                void revokeLanDevice(d.id)
+                                  .then(() => setDevices((list) => list.filter((x) => x.id !== d.id)))
+                                  .catch(() => {})
+                              }
+                            >
+                              Sign out
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">—</span>
+                    ),
+                  },
+                ]
+              : []),
+          ]),
 
       // —— Advanced ——
       {
@@ -976,6 +1070,8 @@ export function usePreferenceEntries({
     foldersText,
     keyDraft,
     lan,
+    role,
+    devices,
     onLivePreviewChange,
     onPreviewQualityChange,
     onBackupNow,

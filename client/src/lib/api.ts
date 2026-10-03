@@ -62,6 +62,22 @@ export function regenerateLanPin(): Promise<LanAccessInfo> {
   return request('/api/auth/lan/regenerate', { method: 'POST', body: '{}' });
 }
 
+export type LanDevice = { id: string; device: string; createdAt: number; lastSeen: number };
+
+/** Devices signed in with the PIN; only answers on the computer running Darkroom. */
+export function fetchLanDevices(): Promise<{ items: LanDevice[] }> {
+  return request('/api/auth/devices');
+}
+
+export function revokeLanDevice(id: string): Promise<{ ok: boolean }> {
+  return request(`/api/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** This device signs itself out (it will need the PIN again). */
+export function signOutThisDevice(): Promise<{ ok: boolean }> {
+  return request('/api/auth/signout', { method: 'POST', body: '{}' });
+}
+
 export function fetchModels(): Promise<ModelCatalog> {
   return request('/api/models');
 }
@@ -348,11 +364,18 @@ export function fetchWildcards(): Promise<{
   return request('/api/prompt/wildcards');
 }
 
-export function enhancePromptApi(prompt: string): Promise<{ prompt: string }> {
+/** family: tag-trained families get tags back, others a description */
+export function enhancePromptApi(prompt: string, family?: string | null): Promise<{ prompt: string }> {
   return request('/api/prompt/enhance', {
     method: 'POST',
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, family: family ?? undefined }),
   });
+}
+
+/** A random starting prompt that suits the family (its own tags, or a sentence). */
+export function fetchRandomPrompt(family?: string | null): Promise<{ prompt: string }> {
+  const qs = family ? `?family=${encodeURIComponent(family)}` : '';
+  return request(`/api/prompt/random${qs}`);
 }
 
 export type SourceUploadResult = {

@@ -187,6 +187,63 @@ export function attemptPin(
   return { ok: true, cookie };
 }
 
+/** A short, readable device description from a user agent ("iPhone · Safari"). */
+function describeDevice(ua: string): string {
+  const os = /iPhone/.test(ua)
+    ? 'iPhone'
+    : /iPad/.test(ua)
+      ? 'iPad'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /Macintosh|Mac OS X/.test(ua)
+          ? 'Mac'
+          : /Windows/.test(ua)
+            ? 'Windows'
+            : /Linux/.test(ua)
+              ? 'Linux'
+              : 'Device';
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /Firefox\//.test(ua)
+      ? 'Firefox'
+      : /Chrome\//.test(ua)
+        ? 'Chrome'
+        : /Safari\//.test(ua)
+          ? 'Safari'
+          : '';
+  return browser ? `${os} · ${browser}` : os;
+}
+
+/** Devices signed in with the PIN (ids are a prefix of the session hash, never the token). */
+export function listSessions(): Array<{ id: string; device: string; createdAt: number; lastSeen: number }> {
+  return load()
+    .sessions.map((s) => ({ id: s.hash.slice(0, 16), device: describeDevice(s.userAgent), createdAt: s.createdAt, lastSeen: s.lastSeen }))
+    .sort((a, b) => b.lastSeen - a.lastSeen);
+}
+
+/** Sign one device out (host only). */
+export function revokeSession(id: string): boolean {
+  const file = load();
+  const before = file.sessions.length;
+  file.sessions = file.sessions.filter((s) => !s.hash.startsWith(id) || id.length < 8);
+  if (file.sessions.length === before) return false;
+  save();
+  return true;
+}
+
+/** Sign this device out; returns the Set-Cookie value that clears its cookie. */
+export function endOwnSession(req: IncomingMessage): string {
+  const token = readCookie(req, SESSION_COOKIE);
+  if (token) {
+    const hash = hashToken(token);
+    const file = load();
+    const before = file.sessions.length;
+    file.sessions = file.sessions.filter((s) => s.hash !== hash);
+    if (file.sessions.length !== before) save();
+  }
+  return `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+}
+
 export function lanUrls(): string[] {
   const urls: string[] = [];
   for (const entries of Object.values(os.networkInterfaces())) {

@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import {
   attemptPin,
+  endOwnSession,
+  listSessions,
+  revokeSession,
   getLanPin,
   hasValidSession,
   isLocalRequest,
@@ -43,4 +46,27 @@ authRouter.post('/lan/regenerate', (req, res) => {
     return;
   }
   res.json({ pin: regenerateLanPin(), urls: lanUrls() });
+});
+
+/** Devices signed in with the PIN — host only. */
+authRouter.get('/devices', (req, res) => {
+  if (!isLocalRequest(req)) {
+    res.status(403).json({ error: 'Only available on the computer running Darkroom' });
+    return;
+  }
+  res.json({ items: listSessions() });
+});
+
+authRouter.delete('/devices/:id', (req, res) => {
+  if (!isLocalRequest(req)) {
+    res.status(403).json({ error: 'Only available on the computer running Darkroom' });
+    return;
+  }
+  res.json({ ok: revokeSession(String(req.params.id)) });
+});
+
+/** This device signs itself out (it will need the PIN again). */
+authRouter.post('/signout', (req, res) => {
+  res.setHeader('Set-Cookie', endOwnSession(req));
+  res.json({ ok: true });
 });

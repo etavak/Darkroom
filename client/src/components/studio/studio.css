@@ -1188,4 +1188,117 @@ html[data-ui='studio'] .legacy-tip {
       0 0 0 2px var(--s-raised),
       0 0 0 4px var(--s-text);
   }
+
+  /* ---------- Keyboard shortcuts sheet ---------- */
+  .st-keys {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .st-keys-card {
+    width: 860px;
+    max-width: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    padding: 24px 28px 28px;
+    box-sizing: border-box;
+    border-radius: 16px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+  }
+  .st-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    background: var(--s-raised2);
+    border: 1px solid var(--s-line);
+    border-bottom-width: 2px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--s-text);
+  }
+
+  /* ---------- Drop / paste an image ---------- */
+  .st-drop {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(3px);
+  }
+  .st-droptarget {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 220px;
+    height: 170px;
+    padding: 16px;
+    box-sizing: border-box;
+    border-radius: 16px;
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    background: rgba(18, 19, 22, 0.88);
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+  .st-droptarget:hover:not(:disabled),
+  .st-droptarget.on {
+    border-style: solid;
+    border-color: var(--s-accent);
+    background: rgba(40, 34, 22, 0.92);
+  }
+  .st-droptarget:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  /* ---------- First run ---------- */
+  .st-onboard {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 6;
+    transform: translate(-50%, -50%);
+    width: 460px;
+    max-width: calc(100% - 48px);
+    max-height: calc(100% - 48px);
+    box-sizing: border-box;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 24px;
+    border-radius: 16px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+  }
+  /* Connection trouble, above the sampling row */
+  .st-conn {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 12px;
+  }
 }

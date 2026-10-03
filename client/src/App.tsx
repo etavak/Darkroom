@@ -43,12 +43,15 @@ import { ExtrasCard, LoraCard, LoraPicker } from '@/components/studio/controls/E
 import { ImageSettings } from '@/components/studio/controls/ImageSettings';
 import { ControlNetCard, ImageToImageCard, InpaintCard } from '@/components/studio/controls/ReferenceCards';
 import { MaskEditor, type MaskResult, type Pad } from '@/components/studio/editor/MaskEditor';
+import { DropDialog, type DropTarget } from '@/components/studio/DropDialog';
 import { PromptPopout } from '@/components/studio/controls/PromptPopout';
 import { SamplingFooter } from '@/components/studio/controls/SamplingFooter';
 import { ContextMenu, type CtxItem } from '@/components/studio/plane/ContextMenu';
 import { DetailsPanel } from '@/components/studio/plane/DetailsPanel';
 import { HistoryPanel, type HistoryThumb } from '@/components/studio/plane/HistoryPanel';
 import { ImagePlane } from '@/components/studio/plane/ImagePlane';
+import { Onboarding } from '@/components/studio/plane/Onboarding';
+import { randomPrompt } from '@/components/studio/controls/randomPrompt';
 import { derivedKind, outputSize, tileId, type FailedJob, type PlaneEntry, type Tile } from '@/components/studio/plane/layout';
 import { downloadZip } from '@/lib/zip';
 import {
@@ -171,6 +174,8 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   /** Inpaint & extend editor (open), and the saved mask that goes with the base image */
   const [maskEditor, setMaskEditor] = useState<{ src: string; record?: GenerationRecord; index?: number } | null>(null);
   const [inpaint, setInpaint] = useState<{ sourceName: string; fromImage: string | null; mask: HTMLCanvasElement | null; maskName: string | null; pad: Pad; coverage: number; W: number; H: number } | null>(null);
+  /** A file being dragged over the studio, or a pasted image waiting for a choice */
+  const [drop, setDrop] = useState<{ via: 'drop' | 'paste'; png: boolean; name: string | null; over: DropTarget | null; file: File | null } | null>(null);
   /** Mask being uploaded after "Add to references" (reopening waits for it) */
   const [savingMask, setSavingMask] = useState(false);
   const [planeSel, setPlaneSel] = useState<string | null>(null);
@@ -193,6 +198,38 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     pendingDelete,
   } = useHistory();
   const [comfyOk, setComfyOk] = useState<boolean | null>(null);
+  /** The Darkroom server itself didn't answer (e.g. restarting) — not the same as ComfyUI being down */
+  const [serverDown, setServerDown] = useState(false);
+  /** ComfyUI was reachable and just dropped: show "Reconnecting…" for a while before "offline" */
+  const [reconnecting, setReconnecting] = useState(false);
+  const [retryingComfy, setRetryingComfy] = useState(false);
+  const prevComfy = useRef<boolean | null>(null);
+  useEffect(() => {
+    const was = prevComfy.current;
+    prevComfy.current = comfyOk;
+    if (comfyOk) {
+      setReconnecting(false);
+      return;
+    }
+    if (was === true && comfyOk === false) {
+      setReconnecting(true);
+      const t = window.setTimeout(() => setReconnecting(false), 20_000);
+      return () => window.clearTimeout(t);
+    }
+  }, [comfyOk]);
+  const retryComfy = async () => {
+    setRetryingComfy(true);
+    try {
+      const h = await fetchHealth();
+      setServerDown(false);
+      setComfyOk(h.comfy);
+    } catch {
+      setServerDown(true);
+      setComfyOk(false);
+    } finally {
+      window.setTimeout(() => setRetryingComfy(false), 500);
+    }
+  };
   const [remoteMode, setRemoteMode] = useState(false);
   const [startingComfy, setStartingComfy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -495,6 +532,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       try {
         const h = await fetchHealth();
         if (!cancelled) {
+          setServerDown(false);
           setComfyOk(h.comfy);
           setRemoteMode(h.mode === 'remote');
           if (h.comfy) {
@@ -512,19 +550,20 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         }
       } catch {
         if (!cancelled) {
+          setServerDown(true);
           setComfyOk(false);
           setSystemStats(null);
         }
       }
     };
     void check();
-    const intervalMs = comfyOk === false ? 5_000 : 10_000;
+    const intervalMs = startingComfy ? 2_000 : comfyOk === false ? 5_000 : 10_000;
     const id = window.setInterval(check, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [reloadModels, comfyOk]);
+  }, [reloadModels, comfyOk, startingComfy]);
 
   useEffect(() => {
     try {
@@ -1028,15 +1067,40 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const handleStartComfy = useCallback(async () => {
     setStartingComfy(true);
     try {
-      await startComfyApi();
-      // health poll will pick it up
+      const r = await startComfyApi();
+      if (r.alreadyRunning) {
+        setServerDown(false);
+        setComfyOk(true);
+        setStartingComfy(false);
+      }
+      // Otherwise "Starting…" stays until the health poll sees ComfyUI (or gives up below)
     } catch (err) {
-      setCopyFlash(err instanceof Error ? err.message : 'Failed to start ComfyUI');
-      window.setTimeout(() => setCopyFlash(null), 2500);
-    } finally {
       setStartingComfy(false);
+      const unreachable = err instanceof TypeError || /NetworkError|Failed to fetch|Load failed/i.test(String(err));
+      setCopyFlash(
+        unreachable
+          ? 'Can’t reach the Darkroom server — it may be restarting. Try again in a moment.'
+          : err instanceof Error
+            ? err.message
+            : 'Failed to start ComfyUI',
+      );
+      window.setTimeout(() => setCopyFlash(null), 4000);
     }
   }, []);
+  // ComfyUI answered (or it's been too long): stop showing "Starting…"
+  useEffect(() => {
+    if (!startingComfy) return;
+    if (comfyOk) {
+      setStartingComfy(false);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setStartingComfy(false);
+      setCopyFlash('ComfyUI didn’t start within 3 minutes — check logs/comfyui.log');
+      window.setTimeout(() => setCopyFlash(null), 5000);
+    }, 180_000);
+    return () => window.clearTimeout(t);
+  }, [startingComfy, comfyOk]);
 
   const applyDroppedSettings = useCallback(async (file: File) => {
     const meta = await parseImageSettings(file);
@@ -1162,7 +1226,8 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           const file = item.getAsFile();
           if (file) {
             e.preventDefault();
-            void setSourceFromFile(file);
+            if (studioRef.current) setDrop({ via: 'paste', png: file.type === 'image/png', name: file.name || 'Pasted image', over: null, file });
+            else void setSourceFromFile(file);
           }
           break;
         }
@@ -2143,6 +2208,27 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       </StScrollArea>
 
       <SamplingFooter
+        connection={
+          serverDown
+            ? {
+                kind: 'server',
+                remote: remoteMode,
+                retrying: retryingComfy,
+                onRetry: () => void retryComfy(),
+                starting: false,
+                onStart: () => {},
+              }
+            : comfyOk === false
+            ? {
+                kind: startingComfy ? 'starting' : reconnecting ? 'reconnecting' : 'offline',
+                remote: remoteMode,
+                retrying: retryingComfy,
+                onRetry: () => void retryComfy(),
+                starting: startingComfy,
+                onStart: () => void handleStartComfy(),
+              }
+            : null
+        }
         steps={steps}
         cfgLabel={usingGuidance ? 'Guidance' : 'CFG'}
         cfgValue={usingGuidance ? (guidance as number) : cfg}
@@ -2358,6 +2444,94 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       if (mode === 'edit') window.setTimeout(() => document.getElementById('prompt')?.focus(), 50);
     }
   };
+  // ---------- Drop / paste an image ----------
+  const applyDrop = async (kind: DropTarget, file: File | null) => {
+    setDrop(null);
+    if (!file || !file.type.startsWith('image/')) {
+      flash('That isn’t an image');
+      return;
+    }
+    const name = file.name || 'Pasted image';
+    if (kind === 'reuse') {
+      await applyDroppedSettings(file);
+      return;
+    }
+    if (kind === 'cn') {
+      try {
+        const up = await uploadFileAsSource(file);
+        setControlNet((cur) => ({
+          ...cur,
+          enabled: true,
+          image: up.comfyName,
+          previewUrl: up.previewUrl,
+          name: cur.name || catalog.controlnet[0] || '',
+          preprocessor: cur.enabled ? cur.preprocessor : catalog.available.controlnetAux ? 'openpose' : 'none',
+          end_percent: cur.enabled ? cur.end_percent : 0.8,
+        }));
+        flash(`${name} added as the ControlNet guide`, 2400);
+      } catch (err) {
+        flash(err instanceof Error ? err.message : 'Upload failed', 3000);
+      }
+      return;
+    }
+    await setSourceFromFile(file);
+    flash(`${name} set as the base image`, 2400);
+  };
+  const dropBlocked = Boolean(maskEditor) || uiSettingsOpen;
+  const dropRef = useRef(drop);
+  dropRef.current = drop;
+  const dragDepth = useRef(0);
+  const dropApply = useRef(applyDrop);
+  dropApply.current = applyDrop;
+  useEffect(() => {
+    if (!(variant === 'studio' && !narrow) || dropBlocked) return;
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const targetOf = (e: DragEvent): DropTarget | null => {
+      const el = (e.target as Element | null)?.closest?.('[data-drop]') as HTMLButtonElement | null;
+      return el && !el.disabled ? (el.dataset.drop as DropTarget) : null;
+    };
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current += 1;
+      if (!dropRef.current) {
+        const it = e.dataTransfer?.items?.[0];
+        setDrop({ via: 'drop', png: !it || it.type === 'image/png', name: null, over: null, file: null });
+      }
+    };
+    const over = (e: DragEvent) => {
+      if (!dropRef.current || dropRef.current.via !== 'drop') return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      const t = targetOf(e);
+      if (t !== dropRef.current.over) setDrop({ ...dropRef.current, over: t });
+    };
+    const leave = () => {
+      if (!dropRef.current || dropRef.current.via !== 'drop') return;
+      dragDepth.current -= 1;
+      if (dragDepth.current <= 0) {
+        dragDepth.current = 0;
+        setDrop(null);
+      }
+    };
+    const dropped = (e: DragEvent) => {
+      if (!dropRef.current) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      void dropApply.current(targetOf(e) ?? 'base', e.dataTransfer?.files?.[0] ?? null);
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragover', over);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('drop', dropped);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('drop', dropped);
+    };
+  }, [variant, narrow, dropBlocked]);
+
   // ---------- Inpaint & extend ----------
   // A different base image (or none) makes the saved mask meaningless
   const sourceName = source?.comfyName ?? null;
@@ -2574,41 +2748,21 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       : null;
 
   const planeOverlay =
-    comfyOk === false ? (
-      <div className="st-errcard" style={{ position: 'absolute', left: '50%', top: 84, transform: 'translateX(-50%)', width: 380, borderColor: 'var(--s-line)', zIndex: 6 }} role="alert">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className="st-dot" style={{ background: '#e5534b' }} /> ComfyUI is offline
-        </div>
-        <span className="text-[12.5px] leading-snug" style={{ color: 'var(--s-muted)' }}>
-          {remoteMode ? 'Start ComfyUI on the remote host — Darkroom reconnects on its own.' : 'Start ComfyUI to generate. Your images stay browsable meanwhile.'}
-        </span>
-        {!remoteMode ? (
-          <div className="flex justify-end">
-            <button type="button" className="st-pill st-pill-accent" disabled={startingComfy} onClick={() => void handleStartComfy()}>
-              {startingComfy ? 'Starting…' : 'Start ComfyUI'}
-            </button>
-          </div>
-        ) : null}
-      </div>
-    ) : planeEntries.length === 0 && !histLoading ? (
+    items.length === 0 && !histLoading && !runtime.running && failedJobs.length === 0 ? (
+      <Onboarding
+        comfyOk={comfyOk}
+        systemLabel={systemStats?.ok ? systemStats.label : null}
+        remote={remoteMode}
+        starting={startingComfy}
+        onStartComfy={() => void handleStartComfy()}
+        modelName={readiness.nothingInstalled || !primaryModel ? null : shortModelName(primaryModel.replace(/\.(safetensors|ckpt|gguf|pt)$/i, ''))}
+        onAddModel={() => openAddModel()}
+        onExample={() => setPrompt(randomPrompt(resolved.tagsEnabled))}
+      />
+    ) : planeEntries.length === 0 && !histLoading && (histQuery || histModel !== 'all' || pinnedOnly) ? (
       <div className="st-hint">
-        {readiness.nothingInstalled ? (
-          <>
-            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>Add a model to start</span>
-            <span className="text-[13px]">Install a checkpoint or a diffusion stack, then write a prompt and press Generate.</span>
-            <button type="button" className="st-pill st-pill-accent mt-2" onClick={() => openAddModel()}>Add model</button>
-          </>
-        ) : histQuery || histModel !== 'all' || pinnedOnly ? (
-          <>
-            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>No images match</span>
-            <button type="button" className="st-pill mt-2" onClick={() => { setHistQuery(''); setHistModel('all'); setPinnedOnly(false); }}>Clear filters</button>
-          </>
-        ) : (
-          <>
-            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>No images yet</span>
-            <span className="text-[13px]">Write a prompt on the left and press Generate (Ctrl ↵).</span>
-          </>
-        )}
+        <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>No images match</span>
+        <button type="button" className="st-pill mt-2" onClick={() => { setHistQuery(''); setHistModel('all'); setPinnedOnly(false); }}>Clear filters</button>
       </div>
     ) : null;
 
@@ -2649,7 +2803,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       toast={planeToast}
       background={uiSettings.canvasBackground}
       overlay={planeOverlay}
-      onDropFile={(file) => void applyDroppedSettings(file)}
     />
   );
 
@@ -2765,8 +2918,20 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           stage={studioPlane}
           history={studioHistory}
           historyCount={items.reduce((a, r) => a + r.images.length, 0)}
+          reconnecting={reconnecting}
+          serverDown={serverDown}
           overlay={
-            maskEditor ? (
+            drop ? (
+              <DropDialog
+                via={drop.via}
+                name={drop.name}
+                png={drop.png}
+                over={drop.over}
+                guideAvailable={Boolean(catalog.available.controlnet)}
+                onPick={(t) => void applyDrop(t, drop.file)}
+                onCancel={() => setDrop(null)}
+              />
+            ) : maskEditor ? (
               <MaskEditor
                 key={maskEditor.src}
                 src={maskEditor.src}

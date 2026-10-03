@@ -8,6 +8,8 @@ import { runSetupWizard } from './setup/wizard.js';
 import { startDarkroom } from './actions/startDarkroom.js';
 import { startBackend } from './actions/startBackend.js';
 import { stopEverything } from './actions/stopEverything.js';
+import { restartServerAction } from './actions/restartServer.js';
+import { phonesAndTablets } from './actions/devices.js';
 import { installModelFromFile } from './actions/installModel.js';
 import { downloadModelFromUrl } from './actions/downloadModel.js';
 import { manageModels } from './actions/manageModels.js';
@@ -39,19 +41,33 @@ async function menuLoop() {
     );
 
     /** @type {{ value: string, label: string, hint?: string }[]} */
+    const allUp = status.server && (status.comfy || remote);
+    const updateReady = status.server && (status.stale.server || status.stale.client);
     const options = [
       {
         value: 'start',
         label: 'Start Darkroom',
-        hint: remote ? 'server + browser (remote ComfyUI)' : 'ComfyUI + server + browser',
+        hint: allUp
+          ? updateReady
+            ? 'applies the update · opens the browser'
+            : 'already running · opens the browser'
+          : remote
+            ? 'server + browser (remote ComfyUI)'
+            : 'ComfyUI + server + browser',
       },
       {
         value: 'backend',
         label: 'Start backend only',
-        hint: remote ? 'server only · print LAN URL' : 'no browser · print LAN URL',
+        hint: remote ? 'server only · print phone address + PIN' : 'no browser · print phone address + PIN',
       },
-      { value: 'stop', label: 'Stop everything' },
     ];
+    if (status.server) {
+      options.push(
+        { value: 'restart', label: 'Restart server', hint: updateReady ? 'update ready · ComfyUI keeps running' : 'ComfyUI keeps running' },
+        { value: 'devices', label: 'Phones & tablets', hint: 'address · PIN · signed-in devices' },
+      );
+    }
+    options.push({ value: 'stop', label: 'Stop everything' });
 
     if (!remote) {
       options.push(
@@ -97,6 +113,8 @@ async function menuLoop() {
       start: startDarkroom,
       backend: startBackend,
       stop: stopEverything,
+      restart: restartServerAction,
+      devices: phonesAndTablets,
       install: installModelFromFile,
       download: downloadModelFromUrl,
       manage: manageModels,

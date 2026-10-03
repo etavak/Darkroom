@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronUp, Lock, Shuffle, Square, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Lock, Shuffle, Square, TriangleAlert, X } from 'lucide-react';
 import type { QueuedJob } from '@/components/controls/JobQueue';
 
 type Props = {
@@ -27,6 +27,16 @@ type Props = {
   onClearQueue: () => void;
   error?: string | null;
   notice?: string | null;
+  /** ComfyUI unreachable: just dropped (reconnecting) or not running (offline) */
+  connection?: {
+    /** server = the Darkroom server isn't answering (ComfyUI may be fine) */
+    kind: 'offline' | 'reconnecting' | 'starting' | 'server';
+    remote: boolean;
+    retrying: boolean;
+    onRetry: () => void;
+    starting: boolean;
+    onStart: () => void;
+  } | null;
 };
 
 /**
@@ -43,6 +53,51 @@ export function SamplingFooter(p: Props) {
 
   return (
     <div className="relative flex flex-col gap-2.5 px-3.5 pb-3.5 pt-3" style={{ borderTop: '1px solid var(--s-line)', background: 'var(--s-ground)' }}>
+      {p.connection ? (
+        <div
+          className="st-conn"
+          role="alert"
+          style={
+            p.connection.kind === 'offline' || p.connection.kind === 'server'
+              ? { background: 'rgba(229,83,75,.08)', border: '1px solid rgba(229,83,75,.4)' }
+              : { background: 'rgba(226,180,79,.08)', border: '1px solid rgba(226,180,79,.4)' }
+          }
+        >
+          <TriangleAlert className="mt-px h-5 w-5 shrink-0" style={{ color: p.connection.kind === 'offline' || p.connection.kind === 'server' ? '#e5534b' : '#e2b44f' }} />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-sm font-semibold">
+              {p.connection.kind === 'server'
+                ? 'Can’t reach Darkroom'
+                : p.connection.kind === 'starting'
+                  ? 'Starting ComfyUI…'
+                  : p.connection.kind === 'offline'
+                    ? 'ComfyUI isn’t running'
+                    : 'Reconnecting to ComfyUI…'}
+            </span>
+            <span className="text-[12.5px] leading-snug" style={{ color: 'var(--s-muted)' }}>
+              {p.connection.kind === 'server'
+                ? 'The Darkroom server isn’t answering — it may be restarting. This page reconnects on its own.'
+                : p.connection.kind === 'starting'
+                  ? 'Loading models can take a minute the first time. Generate unlocks when it’s ready.'
+                  : p.connection.kind === 'reconnecting'
+                ? 'The connection dropped. Darkroom keeps retrying on its own.'
+                : p.connection.remote
+                  ? 'Start ComfyUI on the remote computer. Your images stay browsable meanwhile.'
+                  : 'Start it here or from the Darkroom launcher. Your images stay browsable meanwhile.'}
+            </span>
+            <span className="flex gap-1.5 pt-1.5">
+              {(p.connection.kind === 'offline' || p.connection.kind === 'starting') && !p.connection.remote ? (
+                <button type="button" className="st-pill st-pill-accent h-7 text-xs" disabled={p.connection.starting} onClick={p.connection.onStart} data-tip="Start the local ComfyUI">
+                  {p.connection.starting ? 'Starting…' : 'Start ComfyUI'}
+                </button>
+              ) : null}
+              <button type="button" className="st-pill h-7 text-xs" disabled={p.connection.retrying} onClick={p.connection.onRetry} data-tip="Try to reach ComfyUI again">
+                {p.connection.retrying ? 'Trying…' : 'Retry'}
+              </button>
+            </span>
+          </div>
+        </div>
+      ) : null}
       {open ? (
         <div className="st-card">
           <div className="flex items-center justify-between py-1 pl-3.5 pr-1.5">

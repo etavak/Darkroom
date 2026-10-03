@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowDownUp, Check, ChevronDown, Dices, Eye, Layers, Lock, Wand2, X } from 'lucide-react';
 import { TagPromptInput } from '@/components/controls/TagPromptInput';
-import { enhancePromptApi } from '@/lib/api';
+import { enhancePromptApi, fetchRandomPrompt } from '@/lib/api';
 import type { PromptPrefs } from '@/lib/promptPrefs';
 import { estimateTokenCount, type PromptTokenMode } from '@/lib/tokens';
 import type { InjectedTag, PresetLevel } from '@/types/presets';
@@ -104,7 +104,7 @@ export function PromptCard(p: PromptCardProps) {
     setError(null);
     const before = p.value;
     try {
-      const res = await enhancePromptApi(before);
+      const res = await enhancePromptApi(before, p.familyId);
       if (res.prompt) {
         p.onChange(res.prompt);
         setEnhanced({ before, after: res.prompt });
@@ -151,10 +151,14 @@ export function PromptCard(p: PromptCardProps) {
           <button
             type="button"
             className="st-ibtn"
-            onClick={() => change(randomPrompt(p.tagsEnabled))}
+            onClick={() =>
+              void fetchRandomPrompt(p.familyId)
+                .then((r) => change(r.prompt))
+                .catch(() => change(randomPrompt(p.tagsEnabled)))
+            }
             disabled={p.disabled}
             aria-label="Random prompt"
-            data-tip={p.tagsEnabled ? 'Random prompt (tags)' : 'Random prompt'}
+            data-tip={p.tagsEnabled ? 'Random prompt — tags this model knows' : 'Random prompt'}
           >
             <Dices />
           </button>

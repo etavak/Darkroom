@@ -3,7 +3,7 @@ import path from 'node:path';
 import { getConfig } from './env.js';
 import { httpGetOk, sleep } from './http.js';
 import { clientDist, ensureLogsDir, logsDir, root, serverEntry } from './paths.js';
-import { clearPid, isPidAlive, runNpm, setPid, spawnDetached } from './process.js';
+import { clearPid, isPidAlive, killTree, readPids, runNpm, setPid, spawnDetached } from './process.js';
 
 const SERVER_TIMEOUT_MS = 60_000;
 
@@ -95,9 +95,10 @@ function sourceNewerThan(dir, markerMtimeMs, filter) {
 }
 
 /**
- * Build client/server dist if missing or source is newer than dist.
+ * Which builds are missing or older than their sources (an update waiting to be applied).
+ * @returns {{ client: boolean, server: boolean }}
  */
-export async function ensureBuilt() {
+export function buildStale() {
   const clientMarker = path.join(clientDist, 'index.html');
   const clientSrc = path.join(root, 'client', 'src');
   const clientNeeds =
@@ -106,10 +107,6 @@ export async function ensureBuilt() {
       /\.(tsx?|jsx?|css|html)$/.test(n),
     ) ||
     sourceNewerThan(path.join(root, 'client', 'public'), fs.statSync(clientMarker).mtimeMs);
-
-  if (clientNeeds) {
-    await runNpm(['run', 'build', '-w', 'client']);
-  }
 
   const serverNeeds =
     !fs.existsSync(serverEntry) ||
@@ -120,9 +117,16 @@ export async function ensureBuilt() {
       /\.json$/.test(n),
     );
 
-  if (serverNeeds) {
-    await runNpm(['run', 'build', '-w', 'server']);
-  }
+  return { client: clientNeeds, server: serverNeeds };
+}
+
+/**
+ * Build client/server dist if missing or source is newer than dist.
+ */
+export async function ensureBuilt() {
+  const stale = buildStale();
+  if (stale.client) await runNpm(['run', 'build', '-w', 'client']);
+  if (stale.server) await runNpm(['run', 'build', '-w', 'server']);
 }
 
 /**
@@ -179,4 +183,28 @@ export async function ensureServerRunning() {
   setPid('server', pid, true);
   await waitForServerReady(healthUrl, pid, logFile);
   return { started: true, alreadyRunning: false, appUrl: cfg.appUrl };
+}
+
+/**
+ * Rebuild and restart only the Darkroom server (ComfyUI keeps running). Only a server this
+ * launcher started can be restarted.
+ * @returns {Promise<{ restarted: boolean, reason?: string }>}
+ */
+export async function restartServer() {
+  const cfg = getConfig();
+  const pids = readPids();
+  const running = await httpGetOk(`${cfg.appUrl}/api/health`);
+  if (running) {
+    const own = pids.server?.owned && pids.server.pid && isPidAlive(pids.server.pid);
+    if (!own) {
+      return { restarted: false, reason: 'The running server wasn’t started by this launcher — stop it yourself, then Start Darkroom.' };
+    }
+    killTree(pids.server.pid);
+    clearPid('server');
+    // Wait for the port to free up
+    const until = Date.now() + 10_000;
+    while (Date.now() < until && (await httpGetOk(`${cfg.appUrl}/api/health`, 800))) await sleep(300);
+  }
+  await ensureServerRunning();
+  return { restarted: true };
 }
