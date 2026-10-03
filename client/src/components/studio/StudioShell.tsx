@@ -17,6 +17,8 @@ type Props = {
   history: ReactNode;
   /** Details panel between the plane and History (null when closed) */
   details?: ReactNode;
+  /** Full-window layer above everything (the inpaint & extend editor) */
+  overlay?: ReactNode;
   historyCount: number;
   comfyOk: boolean | null;
   systemLabel?: string | null;
@@ -40,6 +42,7 @@ export function StudioShell({
   stage,
   history,
   details,
+  overlay,
   historyCount,
   comfyOk,
   systemLabel,
@@ -260,6 +263,7 @@ export function StudioShell({
         </aside>
       )}
 
+      {overlay}
       {prefsOpen ? <PreferencesScreen {...preferences} onClose={() => onPrefsOpenChange(false)} /> : null}
     </TooltipRoot>
   );

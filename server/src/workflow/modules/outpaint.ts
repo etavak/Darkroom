@@ -2,7 +2,8 @@ import { ensureSave } from '../graph.js';
 import { loadObjectInfo, requireNodeClass } from '../objectInfo.js';
 
 /**
- * Pad source image for outpainting, encode, apply noise mask, then sample.
+ * Inpaint and/or extend: pad the source (outpaint), merge the padding mask with an optional
+ * painted mask, encode, apply the noise mask, then sample.
  * Uses only class names present in /object_info.
  */
 export async function applyOutpaint(ctx: import('../graph.js').PipelineContext): Promise<void> {
@@ -49,11 +50,34 @@ export async function applyOutpaint(ctx: import('../graph.js').PipelineContext):
     vae: ctx.vae,
   });
 
+  // Painted mask (white = redraw) at the padded size, added to the padding's own mask
+  let mask: [string, number] = [padded, 1];
+  if (settings.maskImage) {
+    const loadMaskClass = requireNodeClass(objectInfo, ['LoadImageMask'], 'mask loader');
+    const compositeClass = requireNodeClass(objectInfo, ['MaskComposite'], 'mask merge');
+    const painted = graph.add(loadMaskClass, { image: settings.maskImage, channel: 'red' });
+    const merged = graph.add(compositeClass, {
+      destination: [padded, 1],
+      source: [painted, 0],
+      x: 0,
+      y: 0,
+      operation: 'add',
+    });
+    mask = [merged, 0];
+  }
+
   const masked = graph.add(maskClass, {
     samples: [encoded, 0],
-    mask: [padded, 1],
+    mask,
   });
   ctx.latent = [masked, 0];
+
+  // Differential diffusion reads the soft mask edge as a gradual redraw strength, so the new
+  // area fades into the original instead of meeting it at a hard line
+  let model = ctx.model;
+  if (objectInfo.DifferentialDiffusion) {
+    model = [graph.add('DifferentialDiffusion', { model: ctx.model }), 0];
+  }
 
   const denoise = typeof settings.denoise === 'number' ? settings.denoise : 0.7;
   const sampler = graph.add(sampleClass, {
@@ -63,7 +87,7 @@ export async function applyOutpaint(ctx: import('../graph.js').PipelineContext):
     sampler_name: settings.sampler,
     scheduler: settings.scheduler,
     denoise,
-    model: ctx.model,
+    model,
     positive: ctx.positive,
     negative: ctx.negative,
     latent_image: ctx.latent,
@@ -75,5 +99,19 @@ export async function applyOutpaint(ctx: import('../graph.js').PipelineContext):
     vae: ctx.vae,
   });
   ctx.image = [decoded, 0];
+
+  // Paste the result over the (padded) original through the soft mask: untouched areas keep
+  // their exact pixels (no VAE colour drift), and the edge blends instead of showing a seam
+  if (objectInfo.ImageCompositeMasked) {
+    const composite = graph.add('ImageCompositeMasked', {
+      destination: [padded, 0],
+      source: [decoded, 0],
+      x: 0,
+      y: 0,
+      resize_source: false,
+      mask,
+    });
+    ctx.image = [composite, 0];
+  }
   ensureSave(ctx);
 }

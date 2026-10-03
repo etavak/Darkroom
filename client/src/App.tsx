@@ -41,7 +41,8 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { AvoidCard, PromptCard } from '@/components/studio/controls/PromptCards';
 import { ExtrasCard, LoraCard, LoraPicker } from '@/components/studio/controls/EnhanceCards';
 import { ImageSettings } from '@/components/studio/controls/ImageSettings';
-import { ControlNetCard, ImageToImageCard } from '@/components/studio/controls/ReferenceCards';
+import { ControlNetCard, ImageToImageCard, InpaintCard } from '@/components/studio/controls/ReferenceCards';
+import { MaskEditor, type MaskResult, type Pad } from '@/components/studio/editor/MaskEditor';
 import { PromptPopout } from '@/components/studio/controls/PromptPopout';
 import { SamplingFooter } from '@/components/studio/controls/SamplingFooter';
 import { ContextMenu, type CtxItem } from '@/components/studio/plane/ContextMenu';
@@ -167,6 +168,11 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   /** Selected tile that isn't a finished image (the running job) — overrides the record selection */
+  /** Inpaint & extend editor (open), and the saved mask that goes with the base image */
+  const [maskEditor, setMaskEditor] = useState<{ src: string; record?: GenerationRecord; index?: number } | null>(null);
+  const [inpaint, setInpaint] = useState<{ sourceName: string; fromImage: string | null; mask: HTMLCanvasElement | null; maskName: string | null; pad: Pad; coverage: number; W: number; H: number } | null>(null);
+  /** Mask being uploaded after "Add to references" (reopening waits for it) */
+  const [savingMask, setSavingMask] = useState(false);
   const [planeSel, setPlaneSel] = useState<string | null>(null);
   const planeSelRef = useRef<string | null>(null);
   planeSelRef.current = planeSel;
@@ -596,6 +602,11 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         w = matched.width;
         h = matched.height;
       }
+      if (workMode === 'outpaint' && source?.width && source.height) {
+        // Output is the base image plus the extension
+        w = source.width + outpaint.left + outpaint.right;
+        h = source.height + outpaint.top + outpaint.bottom;
+      }
 
       const generationMode =
         workMode === 'generate'
@@ -645,6 +656,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         sourceFit,
         sizeMultiple,
         outpaint: workMode === 'outpaint' ? outpaint : undefined,
+        maskImage: workMode === 'outpaint' && inpaint?.sourceName === source?.comfyName ? inpaint?.maskName ?? undefined : undefined,
         editStrategy:
           workMode === 'edit' ? familyMeta?.editStrategy ?? 'kontext' : undefined,
         inpaintModel: familyMeta?.preferredInpaintModel,
@@ -678,6 +690,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       height,
       hiresFix,
       imgDenoise,
+      inpaint,
       loras,
       modelMode,
       negativePrompt,
@@ -860,17 +873,17 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   );
 
   const setSourceFromGallery = useCallback(
-    async (item: GenerationRecord, index = 0): Promise<boolean> => {
+    async (item: GenerationRecord, index = 0): Promise<SourceImageState | null> => {
       const img = item.images[index] ?? item.images[0];
-      if (!img) return false;
+      if (!img) return null;
       try {
         const next = await useGalleryAsSource(img, item.id);
         applySource(next, 'img2img');
-        return true;
+        return next;
       } catch (err) {
         setCopyFlash(err instanceof Error ? err.message : 'Source upload failed');
         window.setTimeout(() => setCopyFlash(null), 2500);
-        return false;
+        return null;
       }
     },
     [applySource],
@@ -1888,7 +1901,13 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     else void handleCancel();
   };
   const usingGuidance = typeof guidance === 'number';
-  const workVerb = workMode === 'edit' ? 'Edit' : workMode === 'outpaint' ? 'Extend' : 'Generate';
+  // Matches the reference card's title: Inpaint, Extend, or Inpaint & extend
+  const inpaintVerb = (() => {
+    const masked = Boolean(inpaint && inpaint.coverage > 0);
+    const extended = outpaint.left + outpaint.right + outpaint.top + outpaint.bottom > 0;
+    return masked && extended ? 'Inpaint & extend' : extended ? 'Extend' : 'Inpaint';
+  })();
+  const workVerb = workMode === 'edit' ? 'Edit' : workMode === 'outpaint' ? inpaintVerb : 'Generate';
 
   /** The studio's controls column (phase 2 of the rebuild). */
   const renderStudioControls = () => (
@@ -2013,6 +2032,21 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         ) : null}
 
         <StSection>Reference images</StSection>
+        {workMode === 'outpaint' && source ? (
+          <InpaintCard
+            source={source}
+            title={inpaintTitle}
+            summary={inpaintSummary}
+            extended={outpaint.left + outpaint.right + outpaint.top + outpaint.bottom > 0}
+            denoise={imgDenoise}
+            onDenoise={setImgDenoise}
+            feather={outpaint.feather}
+            onFeather={(v) => setOutpaint((o) => ({ ...o, feather: v }))}
+            disabled={runtime.running || savingMask}
+            onEdit={() => setMaskEditor({ src: source.previewUrl })}
+            onStop={stopInpainting}
+          />
+        ) : (
         <ImageToImageCard
           source={source}
           mode={workMode}
@@ -2031,8 +2065,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           }}
           fit={sourceFit}
           onFit={setSourceFit}
-          outpaint={outpaint}
-          onOutpaint={setOutpaint}
           outputW={width}
           outputH={height}
           disabled={runtime.running}
@@ -2046,7 +2078,9 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
             if (m === 'edit' && !familyMeta?.supportsEdit) return;
             setWorkMode(m);
           }}
+          onOpenEditor={() => source && setMaskEditor({ src: source.previewUrl })}
         />
+        )}
         <ControlNetCard
           value={controlNet}
           onChange={setControlNet}
@@ -2324,6 +2358,89 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       if (mode === 'edit') window.setTimeout(() => document.getElementById('prompt')?.focus(), 50);
     }
   };
+  // ---------- Inpaint & extend ----------
+  // A different base image (or none) makes the saved mask meaningless
+  const sourceName = source?.comfyName ?? null;
+  useEffect(() => {
+    if (!inpaint || inpaint.sourceName === sourceName) return;
+    setInpaint(null);
+    setOutpaint((o) => ({ ...o, left: 0, right: 0, top: 0, bottom: 0, targetAspect: null }));
+    setWorkMode((m) => (m === 'outpaint' ? (sourceName ? 'img2img' : 'generate') : m));
+  }, [inpaint, sourceName]);
+  const inpaintMasked = Boolean(inpaint && inpaint.coverage > 0);
+  const inpaintExtended = Boolean(inpaint && source && (inpaint.W !== source.width || inpaint.H !== source.height));
+  const inpaintTitle = inpaintMasked && inpaintExtended ? 'Inpaint & extend' : inpaintExtended ? 'Extend' : 'Inpaint';
+  const inpaintSummary = (() => {
+    if (!inpaint || !source) return 'Paint a mask or extend the edges';
+    const parts: string[] = [];
+    if (inpaintMasked) parts.push(`${Math.max(1, Math.round(inpaint.coverage * 100))}% masked`);
+    if (inpaintExtended) parts.push(`${source.width}×${source.height} → ${inpaint.W}×${inpaint.H}`);
+    return parts.join(' · ') || 'Nothing masked yet';
+  })();
+  const stopInpainting = () => {
+    setInpaint(null);
+    setOutpaint((o) => ({ ...o, left: 0, right: 0, top: 0, bottom: 0, targetAspect: null }));
+    clearSource();
+  };
+  const openEditorFor = (rec: GenerationRecord, index: number) => {
+    const name = rec.images[index] ?? rec.images[0];
+    if (!name) return;
+    // Same image as the current mask: continue editing it instead of starting over
+    if (inpaint && source && inpaint.sourceName === source.comfyName && inpaint.fromImage === name) {
+      setMaskEditor({ src: source.previewUrl });
+      return;
+    }
+    setMaskEditor({ src: imageUrl(name), record: rec, index });
+  };
+  /** Saved from the editor: make sure the base image is set, upload the mask, switch to inpaint */
+  const saveMask = async (r: MaskResult) => {
+    const from = maskEditor;
+    setMaskEditor(null);
+    setSavingMask(true);
+    flash('Adding to references…', 8000);
+    try {
+      await applyMask(r, from);
+    } finally {
+      setSavingMask(false);
+    }
+  };
+  const applyMask = async (r: MaskResult, from: typeof maskEditor) => {
+    let base = source;
+    if (from?.record) {
+      base = await setSourceFromGallery(from.record, from.index ?? 0);
+      if (!base) return;
+    }
+    if (!base) return;
+    let maskName: string | null = null;
+    if (r.coverage > 0) {
+      try {
+        // White-on-black PNG, edges softened a little so the redraw blends in
+        const out = document.createElement('canvas');
+        out.width = r.mask.width;
+        out.height = r.mask.height;
+        const ctx = out.getContext('2d')!;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.filter = `blur(${Math.max(4, Math.round(Math.min(out.width, out.height) / 128))}px)`;
+        ctx.drawImage(r.mask, 0, 0);
+        const blob = await new Promise<Blob | null>((res) => out.toBlob(res, 'image/png'));
+        if (!blob) throw new Error('Could not save the mask');
+        const up = await uploadFileAsSource(new File([blob], `mask-${Date.now()}.png`, { type: 'image/png' }));
+        maskName = up.comfyName;
+      } catch (err) {
+        flash(err instanceof Error ? err.message : 'Mask upload failed', 3000);
+        return;
+      }
+    }
+    const extended = r.pad.l + r.pad.r + r.pad.t + r.pad.b > 0;
+    setOutpaint((o) => ({ ...o, left: r.pad.l, right: r.pad.r, top: r.pad.t, bottom: r.pad.b, targetAspect: null }));
+    const fromImage = from?.record ? from.record.images[from.index ?? 0] ?? null : inpaint?.sourceName === base.comfyName ? inpaint.fromImage : null;
+    setInpaint({ sourceName: base.comfyName, fromImage, mask: r.mask, maskName, pad: r.pad, coverage: r.coverage, W: r.srcW + r.pad.l + r.pad.r, H: r.srcH + r.pad.t + r.pad.b });
+    setWorkMode('outpaint');
+    if (from?.record || imgDenoise < 0.5) setImgDenoise(extended ? 1 : 0.8);
+    flash(r.coverage > 0 ? 'Mask saved — Generate to inpaint' : 'Edges set — Generate to extend', 2600);
+  };
+
   const planeActions = {
     enhance: {
       run: () => handleUpscale({ model: upscaler, scale: upscaleScale, refine: true }),
@@ -2351,9 +2468,9 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       tip: !familyMeta?.supportsEdit ? 'Edit by instruction needs an edit model (e.g. Flux Kontext)' : 'Edit image — describe the change in the prompt',
     },
     inpaint: {
-      run: () => void useSelectedAs('outpaint', 'Choose how far to extend in Image to image'),
-      disabled: !actRecord || runtime.running,
-      tip: 'Inpaint / extend — grows the canvas for now; painting a mask comes with the mask editor',
+      run: () => actRecord && openEditorFor(actRecord, selectedIndex),
+      disabled: !actRecord || runtime.running || savingMask,
+      tip: 'Inpaint / extend — paint a mask, or drag the edges out',
     },
   };
   const ctxRecord = ctxMenu ? items.find((i) => i.id === ctxMenu.recordId) ?? null : null;
@@ -2379,6 +2496,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
             void setSourceFromGallery(ctxRecord, ctxMenu.index).then((ok) => ok && flash('Set as the base image — see Image to image', 2600));
           },
         },
+        { label: 'Inpaint or extend…', disabled: runtime.running || savingMask, onClick: () => openEditorFor(ctxRecord, ctxMenu.index) },
         { label: favorites.has(ctxRecord.id) ? 'Unpin' : 'Pin', hint: 'F', onClick: () => toggleFavorite(ctxRecord) },
         { label: 'Copy image', onClick: () => void copyImageToClipboard(ctxRecord.images[ctxMenu.index] ?? ctxRecord.images[0]) },
         { label: 'Download PNG', onClick: () => downloadImage(ctxRecord.images[ctxMenu.index] ?? ctxRecord.images[0]) },
@@ -2647,6 +2765,19 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           stage={studioPlane}
           history={studioHistory}
           historyCount={items.reduce((a, r) => a + r.images.length, 0)}
+          overlay={
+            maskEditor ? (
+              <MaskEditor
+                key={maskEditor.src}
+                src={maskEditor.src}
+                initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
+                initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
+                saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update reference' : 'Add to references'}
+                onSave={(r) => void saveMask(r)}
+                onClose={() => setMaskEditor(null)}
+              />
+            ) : null
+          }
           details={
             detailsOpen ? (
               <DetailsPanel

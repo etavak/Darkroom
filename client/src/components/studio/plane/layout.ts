@@ -68,22 +68,54 @@ export function layoutTiles(
   const spareX = (t: { w: number; h: number }) => W / 2 / fitZoom(t.w, t.h, W, H) - t.w / 2;
   const reachY = (t: { w: number; h: number }) => H / 2 / fitZoom(t.w, t.h, W, H);
 
-  const rows = entries.map((entry) => {
-    let pics: Array<{ src: string | null; w: number; h: number }>;
-    if (entry.kind === 'record') {
-      const est = outputSize(entry.record.settings);
-      pics = entry.images.map((src) => ({ src, ...(dims.get(src) ?? est) }));
-    } else if (entry.kind === 'running') {
-      const est = outputSize(entry.settings);
-      const n = Math.max(1, entry.settings.batch_size || 1);
-      pics = Array.from({ length: n }, (_, i) => ({ src: i === 0 ? entry.previewUrl : null, ...est }));
-    } else {
-      pics = [{ src: null, ...outputSize(entry.failed.settings) }];
+  // Images made from another one (inpaint, extend, vary, upscale…) join their original's row,
+  // to its right, oldest first; the row keeps the original's place on the plane.
+  const byKey = new Map(entries.filter((e) => e.kind === 'record').map((e) => [e.key, e]));
+  const parentOf = (e: PlaneEntry): string | null =>
+    e.kind === 'record' ? e.record.parentId ?? e.record.settings.parentId ?? null : e.kind === 'running' ? e.settings.parentId ?? null : e.failed.settings.parentId ?? null;
+  const rootOf = (e: PlaneEntry): string => {
+    let cur = e;
+    for (let i = 0; i < 32; i++) {
+      const pk = parentOf(cur);
+      const parent = pk ? byKey.get(pk) : undefined;
+      if (!parent || parent === cur) break;
+      cur = parent;
+    }
+    return cur.key;
+  };
+  const at = (e: PlaneEntry) => (e.kind === 'record' ? e.record.createdAt : e.kind === 'running' ? Number.MAX_SAFE_INTEGER : e.failed.at);
+  const groups = new Map<string, PlaneEntry[]>();
+  for (const e of entries) {
+    const root = rootOf(e);
+    const g = groups.get(root);
+    if (g) g.push(e);
+    else groups.set(root, [e]);
+  }
+  const order = [...groups.keys()].sort((x, y) => {
+    const ix = entries.findIndex((e) => e.key === x);
+    const iy = entries.findIndex((e) => e.key === y);
+    return ix - iy;
+  });
+
+  const rows = order.map((root) => {
+    const members = groups.get(root)!.sort((x, y) => (x.key === root ? -1 : y.key === root ? 1 : at(x) - at(y)));
+    const pics: Array<{ entry: PlaneEntry; index: number; src: string | null; w: number; h: number }> = [];
+    for (const entry of members) {
+      if (entry.kind === 'record') {
+        const est = outputSize(entry.record.settings);
+        entry.images.forEach((src, index) => pics.push({ entry, index, src, ...(dims.get(src) ?? est) }));
+      } else if (entry.kind === 'running') {
+        const est = outputSize(entry.settings);
+        const n = Math.max(1, entry.settings.batch_size || 1);
+        for (let index = 0; index < n; index++) pics.push({ entry, index, src: index === 0 ? entry.previewUrl : null, ...est });
+      } else {
+        pics.push({ entry, index: 0, src: null, ...outputSize(entry.failed.settings) });
+      }
     }
     const sizes = pics.map((p) => ({ w: p.w * S, h: p.h * S }));
     const rowH = Math.max(...sizes.map((s) => s.h));
     const reach = Math.max(...sizes.map(reachY));
-    return { entry, pics, sizes, rowH, reach };
+    return { pics, sizes, rowH, reach };
   });
 
   const tiles: Tile[] = [];
@@ -94,7 +126,7 @@ export function layoutTiles(
     let x = -rowW / 2;
     row.pics.forEach((p, i) => {
       const s = row.sizes[i];
-      tiles.push({ id: tileId(row.entry.key, i), entry: row.entry, index: i, src: p.src, left: x, top: y + (row.rowH - s.h) / 2, w: s.w, h: s.h });
+      tiles.push({ id: tileId(p.entry.key, p.index), entry: p.entry, index: p.index, src: p.src, left: x, top: y + (row.rowH - s.h) / 2, w: s.w, h: s.h });
       x += s.w + (gaps[i] ?? 0);
     });
     const next = rows[ri + 1];

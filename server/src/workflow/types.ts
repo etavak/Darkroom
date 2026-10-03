@@ -109,6 +109,11 @@ export type GenerationSettings = {
   /** Pixel multiple for rounding (from family; default 64) */
   sizeMultiple?: number;
   outpaint?: OutpaintSettings | null;
+  /**
+   * Inpaint mask (ComfyUI input filename): white = redraw. Same size as the source after the
+   * outpaint padding; merged with the padding mask.
+   */
+  maskImage?: string;
   editStrategy?: EditStrategy;
   /** Optional preferred inpaint / fill model filename for outpaint families */
   inpaintModel?: string;

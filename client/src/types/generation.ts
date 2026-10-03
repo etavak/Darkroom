@@ -100,6 +100,8 @@ export type GenerationSettings = {
   sourceFit?: SourceFitMode;
   sizeMultiple?: number;
   outpaint?: OutpaintSettings | null;
+  /** Inpaint mask (ComfyUI input name), white = redraw, at the padded size */
+  maskImage?: string;
   editStrategy?: EditStrategy;
   inpaintModel?: string;
   loras?: LoraSettings[];

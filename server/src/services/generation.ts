@@ -214,6 +214,7 @@ export function validateSettings(body: unknown): GenerationSettings {
     outpaint,
     editStrategy: b.editStrategy === 'qwen' ? 'qwen' : b.editStrategy === 'kontext' ? 'kontext' : undefined,
     inpaintModel: typeof b.inpaintModel === 'string' ? b.inpaintModel : undefined,
+    maskImage: generationMode === 'outpaint' && typeof b.maskImage === 'string' && b.maskImage ? b.maskImage : undefined,
     ...parseOptionalModules(b),
   };
 }

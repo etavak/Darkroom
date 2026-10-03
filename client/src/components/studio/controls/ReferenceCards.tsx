@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { CheckSquare, ChevronDown, ImageIcon, PersonStanding, Plus, TriangleAlert, Upload, X } from 'lucide-react';
 import { DEFAULT_CONTROLNET_UI, type ControlNetUiState } from '@/components/controls/ControlNetPanel';
-import { padsForAspect } from '@/lib/sourceImage';
 import { shortModelName } from '@/lib/modelProfiles';
-import type { OutpaintSettings, SourceFitMode, SourceImageState, SourceSizeMode, WorkMode } from '@/types/generation';
+import type { SourceFitMode, SourceImageState, SourceSizeMode, WorkMode } from '@/types/generation';
 import { StCard, StCardBtn, StMenuButton, StMenuItem, StSeg, StSlider } from './primitives';
 
 /** Card-header upload button (a label around a hidden file input). */
@@ -47,7 +46,14 @@ function CardHeader({ icon, title, sub, children }: { icon: ReactNode; title: st
   );
 }
 
-const EXTEND_ASPECTS = ['1:1', '16:9', '9:16', '4:3', '3:2'];
+function InpaintGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M18 3l3 3-9 9-4 1 1-4z" />
+      <path d="M7 17c-2 0-3 1.5-3 4 2.5 0 4-1 4-3" />
+    </svg>
+  );
+}
 
 type ImageToImageProps = {
   source: SourceImageState | null;
@@ -59,8 +65,6 @@ type ImageToImageProps = {
   onSizeMode: (v: SourceSizeMode) => void;
   fit: SourceFitMode;
   onFit: (v: SourceFitMode) => void;
-  outpaint: OutpaintSettings;
-  onOutpaint: (v: OutpaintSettings) => void;
   /** Current Image settings size */
   outputW: number;
   outputH: number;
@@ -70,6 +74,8 @@ type ImageToImageProps = {
   onUpload: (f: File) => void;
   onClear: () => void;
   onMode: (m: WorkMode) => void;
+  /** Open the inpaint & extend editor on the base image */
+  onOpenEditor: () => void;
 };
 
 /** Base image for restyle / extend / edit, with the strength and size controls once one is set. */
@@ -77,12 +83,10 @@ export function ImageToImageCard(p: ImageToImageProps) {
   const src = p.source;
   const modes: Array<{ value: WorkMode; label: string; tip: string }> = [
     { value: 'img2img', label: 'Restyle', tip: 'Redraw the picture following the prompt' },
-    { value: 'outpaint', label: 'Extend', tip: 'Grow the canvas and fill the new space' },
     ...(p.supportsEdit
       ? [{ value: 'edit' as WorkMode, label: 'Edit', tip: 'Change it with an instruction — e.g. “make it night”' }]
       : []),
   ];
-  const patchOut = (patch: Partial<OutpaintSettings>) => p.onOutpaint({ ...p.outpaint, ...patch });
 
   return (
     <StCard>
@@ -172,65 +176,9 @@ export function ImageToImageCard(p: ImageToImageProps) {
             </>
           ) : null}
 
-          {p.mode === 'outpaint' ? (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <span className="st-lbl text-[13px]">Extend to</span>
-                <StSeg
-                  small
-                  value={p.outpaint.targetAspect ?? ''}
-                  disabled={p.disabled}
-                  onChange={(v) => {
-                    const pads = padsForAspect(src.width, src.height, v);
-                    if (pads) patchOut({ ...pads, targetAspect: v });
-                  }}
-                  options={EXTEND_ASPECTS.map((a) => ({ value: a, label: a, tip: `Grow the canvas to ${a}` }))}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-                {(['left', 'right', 'top', 'bottom'] as const).map((side) => (
-                  <StSlider
-                    key={side}
-                    small
-                    label={side[0]!.toUpperCase() + side.slice(1)}
-                    value={p.outpaint[side]}
-                    onChange={(n) => patchOut({ [side]: n, targetAspect: null })}
-                    min={0}
-                    max={1024}
-                    step={8}
-                    format={(v) => `${v}px`}
-                    resetTo={0}
-                    tip={`Pixels to add on the ${side}`}
-                    disabled={p.disabled}
-                  />
-                ))}
-              </div>
-              <StSlider
-                label="Blend edge"
-                value={p.outpaint.feather}
-                onChange={(n) => patchOut({ feather: n })}
-                min={0}
-                max={256}
-                step={4}
-                format={(v) => `${v}px`}
-                resetTo={40}
-                tip="How softly the new area blends into the original"
-                disabled={p.disabled}
-              />
-              <StSlider
-                label="Strength"
-                value={p.denoise}
-                onChange={p.onDenoise}
-                min={0.05}
-                max={1}
-                step={0.05}
-                format={(v) => v.toFixed(2)}
-                resetTo={0.7}
-                tip="How freely the new area is painted"
-                disabled={p.disabled}
-              />
-            </>
-          ) : null}
+          <button type="button" className="st-pill self-start" onClick={p.onOpenEditor} disabled={p.disabled} data-tip="Paint what to redraw, or drag the edges out to extend  ·  opens the editor">
+            <InpaintGlyph /> Inpaint or extend…
+          </button>
 
           {p.mode === 'edit' ? (
             <p className="m-0 text-[12.5px] leading-normal" style={{ color: 'var(--s-muted)' }}>
@@ -494,6 +442,75 @@ export function ControlNetCard(p: ControlNetProps) {
           ) : null}
         </div>
       ) : null}
+    </StCard>
+  );
+}
+
+type InpaintProps = {
+  source: SourceImageState;
+  /** "Inpaint", "Extend" or "Inpaint & extend" — whatever the mask does */
+  title: string;
+  summary: string;
+  /** Extended beyond the original size */
+  extended: boolean;
+  denoise: number;
+  onDenoise: (v: number) => void;
+  feather: number;
+  onFeather: (v: number) => void;
+  disabled?: boolean;
+  onEdit: () => void;
+  onStop: () => void;
+};
+
+/** Shown while a mask / extension is set: what will be redrawn, how strongly, and the way back. */
+export function InpaintCard(p: InpaintProps) {
+  return (
+    <StCard style={{ borderColor: 'var(--s-accent)' }}>
+      <CardHeader
+        icon={
+          <span className="st-thumb h-11 w-11">
+            <img src={p.source.previewUrl} alt="Image being inpainted" />
+          </span>
+        }
+        title={p.title}
+        sub={p.summary}
+      >
+        <StCardBtn label="Edit mask" tip="Edit the mask and edges in the editor" onClick={p.onEdit} disabled={p.disabled}>
+          <InpaintGlyph />
+        </StCardBtn>
+        <StCardBtn label="Remove reference" tip="Remove this reference — back to normal generation" onClick={p.onStop} disabled={p.disabled}>
+          <X />
+        </StCardBtn>
+      </CardHeader>
+      <div className="flex flex-col gap-3 px-4 pb-3.5">
+        <StSlider
+          label="Strength"
+          value={p.denoise}
+          onChange={p.onDenoise}
+          min={0.05}
+          max={1}
+          step={0.05}
+          format={(v) => v.toFixed(2)}
+          ends={['Stay close', 'Redraw freely']}
+          resetTo={p.extended ? 1 : 0.8}
+          tip={p.extended ? 'How freely the masked and new areas are painted — extending works best near 1' : 'How freely the masked area is redrawn'}
+          disabled={p.disabled}
+        />
+        {p.extended ? (
+          <StSlider
+            label="Blend edge"
+            value={p.feather}
+            onChange={p.onFeather}
+            min={0}
+            max={256}
+            step={4}
+            format={(v) => `${v}px`}
+            resetTo={40}
+            tip="How softly the new area blends into the original"
+            disabled={p.disabled}
+          />
+        ) : null}
+      </div>
     </StCard>
   );
 }
