@@ -3,8 +3,8 @@ import path from 'node:path';
 import { loadServerSettings } from './appSettings.js';
 import { getComfyUiRoot } from './envSettings.js';
 
-/** Model architecture: a LoRA only loads on a model of the same one. */
-export type LoraArch = 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2';
+/** Model architecture: a LoRA only loads on a model of the same one ("other:<name>" for bases Darkroom doesn't know). */
+export type LoraArch = 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2' | `other:${string}`;
 
 export type LoraMeta = {
   /** As ComfyUI lists it (path under a loras folder, forward slashes) */
@@ -19,6 +19,20 @@ export type LoraMeta = {
   triggers: string[];
   /** A preview image exists (GET /api/models/loras/thumb?name=…) */
   thumb: boolean;
+  sizeBytes: number;
+  /** LoRA, LyCORIS (LoCon / LoHa / LoKr) … from the training metadata */
+  network: string | null;
+  rank: number | null;
+  /** Trained resolution, e.g. "1024×1024" */
+  resolution: string | null;
+  epochs: number | null;
+  trainImages: number | null;
+  /** Most-used tags in the training captions (with counts), style tokens ("@name") first */
+  trainedTags: Array<{ tag: string; count: number }>;
+  /** Civitai page saved next to the file */
+  sourceUrl: string | null;
+  /** Has Civitai sidecars (.darkroom.json / .civitai.info) */
+  civitai: boolean;
 };
 
 const MODEL_EXT = /\.(safetensors|ckpt|pt|pth)$/i;
@@ -35,6 +49,66 @@ const BASES: Array<{ re: RegExp; base: string; family: string | null; arch: Lora
   { re: /sdxl|\bxl\b|stable-diffusion-xl/i, base: 'SDXL', family: null, arch: 'sdxl' },
   { re: /sd[._ -]?1|\bv1[-_]5\b|stable-diffusion-v1/i, base: 'SD 1.5', family: null, arch: 'sd15' },
 ];
+
+/** "anima-preview/lora" or "anima" → "Anima" (a base Darkroom has no family for). */
+function unknownBase(...texts: unknown[]): { base: string; arch: LoraArch } | null {
+  for (const t of texts) {
+    if (typeof t !== 'string' || !t.trim()) continue;
+    const slug = t.split('/')[0].replace(/[-_](preview|base|v\d.*)$/i, '').trim().toLowerCase();
+    if (!slug || /^(stable-diffusion|sd|lora)$/.test(slug)) continue;
+    const base = slug.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return { base, arch: `other:${slug}` };
+  }
+  return null;
+}
+
+const NETWORKS: Record<string, string> = { locon: 'LyCORIS (LoCon)', loha: 'LyCORIS (LoHa)', lokr: 'LyCORIS (LoKr)', dylora: 'DyLoRA', full: 'LyCORIS (full)', ia3: 'LyCORIS (IA³)' };
+
+function networkOf(m: Record<string, unknown>): string | null {
+  const mod = typeof m.ss_network_module === 'string' ? m.ss_network_module : '';
+  if (!mod) return null;
+  if (/lycoris/i.test(mod)) {
+    let algo = '';
+    try {
+      const args = JSON.parse(String(m.ss_network_args ?? '{}')) as { algo?: string; preset?: string };
+      algo = (args.algo ?? '').toLowerCase();
+    } catch {
+      // keep generic
+    }
+    return NETWORKS[algo] ?? 'LyCORIS';
+  }
+  return /dylora/i.test(mod) ? 'DyLoRA' : 'LoRA';
+}
+
+/** Training-caption tags across all dataset folders, most used first; "@style" tokens lead. */
+function trainedTagsOf(m: Record<string, unknown>): Array<{ tag: string; count: number }> {
+  if (typeof m.ss_tag_frequency !== 'string') return [];
+  try {
+    const dirs = JSON.parse(m.ss_tag_frequency) as Record<string, Record<string, number>>;
+    const total = new Map<string, number>();
+    for (const tags of Object.values(dirs)) {
+      for (const [tag, n] of Object.entries(tags ?? {})) {
+        const t = tag.trim();
+        if (t && t.length <= 60) total.set(t, (total.get(t) ?? 0) + (Number(n) || 0));
+      }
+    }
+    // Never suggest tags for minors as one-click prompt additions
+    const blocked = /\b(loli|lolicon|shota|shotacon|child|children|kid|kids|toddler|minor|underage|young girl|young boy|aged down|petite child)\b/i;
+    const all = [...total.entries()].filter(([tag]) => !blocked.test(tag)).map(([tag, count]) => ({ tag, count }));
+    // "@name" style tokens (not emoticons like "@_@")
+    const isStyle = (t: string) => /^@[a-z0-9]/i.test(t);
+    const style = all.filter((t) => isStyle(t.tag)).sort((a, b) => b.count - a.count);
+    const rest = all.filter((t) => !isStyle(t.tag)).sort((a, b) => b.count - a.count);
+    return [...style.slice(0, 12), ...rest].slice(0, 24);
+  } catch {
+    return [];
+  }
+}
+
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 function matchBase(text: unknown) {
   if (typeof text !== 'string' || !text.trim()) return null;
@@ -161,8 +235,29 @@ function describe(name: string, file: string): { meta: LoraMeta; thumbFile: stri
     null;
 
   const thumbFile = THUMB_SUFFIXES.map((s) => stem + s).find((f) => fs.existsSync(f)) ?? null;
+  // A base named in the metadata that Darkroom has no family for (e.g. Anima) still decides fit
+  const other = !base ? unknownBase(civitai?.baseModel, darkroom?.baseModel, m['modelspec.architecture'], m.ss_base_model_version) : null;
+  const res = typeof m['modelspec.resolution'] === 'string' ? m['modelspec.resolution'] : typeof m.ss_resolution === 'string' ? m.ss_resolution.replace(/[()\s]/g, '').replace(',', 'x') : null;
+  const sourceUrl = typeof darkroom?.sourceUrl === 'string' ? darkroom.sourceUrl : null;
   return {
-    meta: { name, title, base: base?.base ?? null, family: base?.family ?? null, arch: base?.arch ?? keyArch, triggers, thumb: Boolean(thumbFile) },
+    meta: {
+      name,
+      title,
+      base: base?.base ?? other?.base ?? null,
+      family: base?.family ?? null,
+      arch: base?.arch ?? other?.arch ?? keyArch,
+      triggers,
+      thumb: Boolean(thumbFile),
+      sizeBytes: fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0,
+      network: networkOf(m),
+      rank: num(m.ss_network_dim),
+      resolution: res ? res.replace('x', '×') : null,
+      epochs: num(m.ss_epoch) ?? num(m.ss_num_epochs),
+      trainImages: num(m.ss_num_train_images),
+      trainedTags: trainedTagsOf(m),
+      sourceUrl,
+      civitai: Boolean(darkroom || civitai),
+    },
     thumbFile,
   };
 }
@@ -186,6 +281,19 @@ export function listLoraMeta(): LoraMeta[] {
     out.push(hit.meta);
   }
   return out;
+}
+
+/** The file behind a LoRA name (only names found in the loras folders). */
+export function loraFile(name: string): string | null {
+  listLoraMeta();
+  for (const [file, hit] of cache.entries()) if (hit.meta.name === name) return file;
+  return null;
+}
+
+/** Forget what was read for a file (its sidecars changed). */
+export function refreshLora(name: string): LoraMeta | null {
+  for (const [file, hit] of cache.entries()) if (hit.meta.name === name) cache.delete(file);
+  return listLoraMeta().find((m) => m.name === name) ?? null;
 }
 
 /** Preview image for a LoRA listed by listLoraMeta (names outside the loras folders resolve to null). */

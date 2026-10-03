@@ -52,7 +52,9 @@ import {
   fetchLanDevices,
   fetchVersionInfo,
   fetchDownloadTokens,
+  purgeUnsavedApi,
   saveDownloadTokens,
+  unsavedSummaryApi,
   checkUpdatesApi,
   testEnhanceApi,
   regenerateLanPin,
@@ -63,6 +65,7 @@ import {
   apiKeyProblem,
   type DownloadTokenFlags,
   type DownloadTokens,
+  type UnsavedSummary,
   type UpdateCheck,
   type VersionInfo,
 } from '@/lib/api';
@@ -109,6 +112,10 @@ export type PreferenceProps = {
   onCopyDiagnostics: () => Promise<void>;
   onBackupNow: () => Promise<void>;
   onEmptyTrash: () => Promise<number>;
+  /** Pinned generations (kept by "Delete images you haven't downloaded") */
+  pinnedIds?: string[];
+  /** History changed on the server (reload it) */
+  onHistoryChanged?: () => void;
 };
 
 const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
@@ -216,6 +223,8 @@ export function usePreferenceEntries({
   onCopyDiagnostics,
   onBackupNow,
   onEmptyTrash,
+  pinnedIds = [],
+  onHistoryChanged,
 }: PreferenceProps): PrefEntry[] {
   const [diagFlash, setDiagFlash] = useState<string | null>(null);
   const [backupFlash, setBackupFlash] = useState<string | null>(null);
@@ -223,6 +232,9 @@ export function usePreferenceEntries({
   const [keyDraft, setKeyDraft] = useState('');
   const [keyTest, setKeyTest] = useState<{ busy: boolean; ok?: boolean; message?: string } | null>(null);
   const [trashState, setTrashState] = useState<'idle' | 'confirm' | 'busy' | string>('idle');
+  const [unsaved, setUnsaved] = useState<UnsavedSummary | null>(null);
+  const [purgeState, setPurgeState] = useState<'idle' | 'confirm' | 'busy' | string>('idle');
+  const pinnedKey = pinnedIds.join(',');
   const [version, setVersion] = useState<VersionInfo | null>(null);
   const [tokens, setTokens] = useState<DownloadTokenFlags | null>(null);
   const [tokenDraft, setTokenDraft] = useState<Record<keyof DownloadTokens, string>>({ civitai: '', huggingface: '' });
@@ -248,6 +260,12 @@ export function usePreferenceEntries({
       })
       .catch(() => setRole(null));
   }, []);
+
+  useEffect(() => {
+    unsavedSummaryApi(pinnedKey ? pinnedKey.split(',') : [])
+      .then(setUnsaved)
+      .catch(() => setUnsaved(null));
+  }, [pinnedKey, purgeState]);
 
   useEffect(() => {
     fetchDownloadTokens()
@@ -1089,6 +1107,54 @@ export function usePreferenceEntries({
         ),
       },
       {
+        id: 'delete-undownloaded',
+        category: 'updates',
+        scope: 'server',
+        label: 'Images you haven’t downloaded',
+        description: unsaved
+          ? unsaved.images
+            ? `${unsaved.images} image${unsaved.images === 1 ? '' : 's'} (${formatBytes(unsaved.bytes)}) were never downloaded and aren’t pinned. Deleting them skips the trash — they can’t be recovered. Downloads are counted from Download, Save and ZIP (since this version); pinned images are kept.`
+            : 'Every image is downloaded or pinned.'
+          : 'Downloads are counted from Download, Save and ZIP; pinned images are kept.',
+        hint: purgeState !== 'idle' && purgeState !== 'confirm' && purgeState !== 'busy' ? purgeState : undefined,
+        keywords: ['delete', 'gallery', 'history', 'clean', 'space', 'permanent', 'unsaved'],
+        icon: <Trash2 />,
+        control:
+          purgeState === 'confirm' ? (
+            <div className="flex items-center gap-1">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setPurgeState('idle')}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setPurgeState('busy');
+                  purgeUnsavedApi(pinnedIds)
+                    .then((r) => {
+                      setPurgeState(`Deleted ${r.images} image${r.images === 1 ? '' : 's'} (${formatBytes(r.bytes)})`);
+                      onHistoryChanged?.();
+                    })
+                    .catch((e: unknown) => setPurgeState(e instanceof Error ? e.message : 'Could not delete'));
+                }}
+              >
+                Delete {unsaved?.images ?? ''} for good
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={purgeState === 'busy' || !unsaved?.images}
+              onClick={() => setPurgeState('confirm')}
+            >
+              {purgeState === 'busy' ? 'Deleting…' : 'Delete permanently…'}
+            </Button>
+          ),
+      },
+      {
         id: 'version',
         category: 'updates',
         scope: 'server',
@@ -1299,6 +1365,10 @@ export function usePreferenceEntries({
     tokenDraft,
     tokenNote,
     trashState,
+    unsaved,
+    purgeState,
+    pinnedIds,
+    onHistoryChanged,
     version,
     update,
     onEmptyTrash,

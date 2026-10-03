@@ -148,7 +148,10 @@ export function ratioLabel(w: number, h: number): string {
 
 /** What a derived image was made by, for the compare labels. */
 export function derivedKind(s: GenerationSettings): string {
-  if (s.generationMode === 'upscale') return s.upscale?.scale ? `Upscale ${s.upscale.scale}×` : 'Upscale';
+  if (s.generationMode === 'upscale') {
+    const verb = s.upscale?.refine ? 'Enhance' : 'Upscale';
+    return s.upscale?.scale ? `${verb} ${s.upscale.scale}×` : verb;
+  }
   if (s.generationMode === 'outpaint') {
     const o = s.outpaint;
     const extended = Boolean(o && o.left + o.right + o.top + o.bottom > 0);
@@ -158,4 +161,9 @@ export function derivedKind(s: GenerationSettings): string {
   if (s.generationMode === 'edit') return 'Edit';
   if (s.generationMode === 'img2img') return 'Variation';
   return 'After';
+}
+
+/** Gallery tag for an image made from another one (Upscale 1.5×, Inpaint, Extend…), or null for a new image. */
+export function derivedTag(s: GenerationSettings): string | null {
+  return !s.generationMode || s.generationMode === 'txt2img' ? null : derivedKind(s);
 }

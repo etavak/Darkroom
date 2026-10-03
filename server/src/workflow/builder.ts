@@ -1,7 +1,7 @@
 import { applyEditModule } from './edit/index.js';
 import { baseModule, createEmptyContext } from './modules/base.js';
 import { applyControlNet, controlnetModule } from './modules/controlnet.js';
-import { detailerModule } from './modules/detailer.js';
+import { detailerModule, prepareDetailer } from './modules/detailer.js';
 import { hiresFixModule } from './modules/hiresFix.js';
 import { lorasModule } from './modules/loras.js';
 import { applyOutpaint } from './modules/outpaint.js';
@@ -43,6 +43,8 @@ export async function buildWorkflow(settings: GenerationSettings): Promise<Comfy
     baseModule.sample(ctx);
   }
 
+  // Fail with a clear message (not ComfyUI's 400) when the face detailer's parts are missing
+  if (detailerModule.shouldApply(ctx.settings)) await prepareDetailer(ctx);
   for (const mod of postSampleModules) {
     if (mod.shouldApply(settings)) {
       mod.apply(ctx);

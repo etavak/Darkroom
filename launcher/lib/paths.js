@@ -4,8 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Darkroom repo root */
-export const root = path.resolve(__dirname, '../../..');
+/** Darkroom folder (this file is launcher/lib/paths.js) */
+export const root = path.resolve(__dirname, '../..');
+/** The launcher's own code */
+export const launcherDir = path.join(root, 'launcher');
+/**
+ * Everything Darkroom downloads to run: ComfyUI and the portable tools (Node, uv, git).
+ * Older installs kept these straight in the Darkroom folder; they keep working there
+ * until moved (launcher → Doctor → Tidy up folders).
+ */
+export const dependenciesDir = path.join(root, 'dependencies');
 export const envPath = path.join(root, '.env');
 export const logsDir = path.join(root, 'logs');
 export const opsLogDir = path.join(logsDir, 'ops');
@@ -20,13 +28,34 @@ export const familiesDir = path.join(root, 'server', 'presets', 'families');
 export const modelComponentsPath = path.join(root, 'server', 'presets', 'components.json');
 export const tagsDir = path.join(root, 'server', 'tags');
 
-/** Self-contained runtime (portable node, uv, MinGit, restore points) */
-export const runtimeDir = path.join(root, 'runtime');
+/** Self-contained runtime (portable node, uv, MinGit, restore points) — dependencies/runtime, or the older ./runtime */
+export const legacyRuntimeDir = path.join(root, 'runtime');
+export const runtimeDir =
+  !fs.existsSync(path.join(dependenciesDir, 'runtime')) && fs.existsSync(legacyRuntimeDir)
+    ? legacyRuntimeDir
+    : path.join(dependenciesDir, 'runtime');
 export const runtimeNodeDir = path.join(runtimeDir, 'node');
 export const runtimeUvDir = path.join(runtimeDir, 'uv');
 export const runtimeGitDir = path.join(runtimeDir, 'git');
 export const restorePointsDir = path.join(runtimeDir, 'restore-points');
-export const componentsJsonPath = path.join(root, 'scripts', 'cli', 'components.json');
+export const componentsJsonPath = path.join(launcherDir, 'components.json');
+
+/**
+ * Where a new ComfyUI is installed: dependencies/ComfyUI (Windows: the portable build's
+ * folder). An existing one straight in the Darkroom folder is still found by detect.
+ */
+export function defaultComfyDir() {
+  return path.join(dependenciesDir, process.platform === 'win32' ? 'ComfyUI_windows_portable' : 'ComfyUI');
+}
+
+/** ComfyUI installed straight in the Darkroom folder by an older version, if any. */
+export function legacyComfyDir() {
+  for (const name of ['ComfyUI', 'ComfyUI_windows_portable']) {
+    const dir = path.join(root, name);
+    if (fs.existsSync(dir)) return dir;
+  }
+  return null;
+}
 
 /**
  * Resolve ComfyUI source root (folder with main.py).
@@ -70,6 +99,8 @@ export const MODEL_SUBDIRS = {
   upscaler: 'upscale_models',
   embedding: 'embeddings',
   controlnet: 'controlnet',
+  /** Face / hand finders for the face detailer (Impact Subpack's UltralyticsDetectorProvider) */
+  detector: 'ultralytics/bbox',
 };
 
 /**

@@ -7,6 +7,7 @@ import {
   type PrefCategory,
   type PreferenceProps,
 } from '@/components/settings/AppSettingsPanel';
+import { LogoMark } from './LogoMark';
 
 const DESCRIPTIONS: Record<PrefCategory, string> = {
   general: 'History and deleting.',
@@ -192,11 +193,3 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
   );
 }
 
-export function LogoMark({ size = 22 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
-      <circle cx="12" cy="12" r="9" fill="none" stroke="var(--s-accent)" strokeWidth="1.8" />
-      <circle cx="12" cy="12" r="3.2" fill="var(--s-accent)" />
-    </svg>
-  );
-}

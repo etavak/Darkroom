@@ -1,13 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { upsertEnvValue } from './envSettings.js';
 import { invalidateModelCatalog } from './modelLists.js';
-import { repoRoot } from './cliShared.js';
+import { cliUrl } from './cliShared.js';
 
 function depUrl(): string {
-  return pathToFileURL(path.join(repoRoot, 'scripts/cli/lib/dependencies.js')).href;
+  return cliUrl('lib/dependencies.js');
 }
 
 export type DependencyOption = {

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getObjectInfo } from './comfyClient.js';
 import { getComfyUiRoot } from './envSettings.js';
+import { faceDetailerMissing } from '../workflow/modules/detailer.js';
+import { comboOptions, invalidateObjectInfo, loadObjectInfo } from '../workflow/objectInfo.js';
 
 export type ModelCatalog = {
   checkpoints: string[];
@@ -35,6 +36,8 @@ export type ModelCatalog = {
     ggufDualClip: boolean;
     /** Impact Pack FaceDetailer */
     faceDetailer: boolean;
+    /** What the face detailer still needs (null when it can run) */
+    faceDetailerMissing?: 'impact-pack' | 'impact-subpack' | 'face-model' | null;
     /** comfyui_controlnet_aux preprocessors */
     controlnetAux: boolean;
     /** The ControlNet Aux folder is in custom_nodes (loaded or not — ComfyUI needs a restart, or it failed to import) */
@@ -42,20 +45,9 @@ export type ModelCatalog = {
   };
 };
 
-type ComboNode = {
-  input?: {
-    required?: Record<string, unknown>;
-    optional?: Record<string, unknown>;
-  };
-};
 
 function comboList(info: Record<string, unknown>, node: string, inputKey: string): string[] {
-  const n = info[node] as ComboNode | undefined;
-  const required = n?.input?.required?.[inputKey];
-  const optional = n?.input?.optional?.[inputKey];
-  const raw = required ?? optional;
-  if (!Array.isArray(raw) || !Array.isArray(raw[0])) return [];
-  return (raw[0] as unknown[]).filter((x): x is string => typeof x === 'string');
+  return comboOptions(info, node, inputKey);
 }
 
 function hasNode(info: Record<string, unknown>, node: string): boolean {
@@ -75,7 +67,8 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
     return cache.value;
   }
 
-  const info = await getObjectInfo();
+  // One shared object_info cache for the model lists and the workflow builders
+  const info = await loadObjectInfo(force || !cache);
 
   const textFromClip = comboList(info, 'CLIPLoader', 'clip_name');
   const textFromDual1 = comboList(info, 'DualCLIPLoader', 'clip_name1');
@@ -108,10 +101,8 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
     embeddings: comboList(info, 'EmbeddingToText', 'embedding_name'),
     clip_types: comboList(info, 'CLIPLoader', 'type'),
     dual_clip_types: comboList(info, 'DualCLIPLoader', 'type'),
-    detailer_detectors: uniqueSorted([
-      ...comboList(info, 'UltralyticsDetectorProvider', 'model_name'),
-      ...comboList(info, 'ONNXDetectorProvider', 'model_name'),
-    ]),
+    // The detailer workflow uses UltralyticsDetectorProvider bbox models
+    detailer_detectors: uniqueSorted(comboList(info, 'UltralyticsDetectorProvider', 'model_name').filter((m) => m.startsWith('bbox/'))),
     samplers: comboList(info, 'KSampler', 'sampler_name'),
     schedulers: comboList(info, 'KSampler', 'scheduler'),
     available: {
@@ -126,7 +117,8 @@ export async function listModelCatalog(force = false): Promise<ModelCatalog> {
       ggufUnet: hasNode(info, 'UnetLoaderGGUF'),
       ggufClip: hasNode(info, 'CLIPLoaderGGUF'),
       ggufDualClip: hasNode(info, 'DualCLIPLoaderGGUF'),
-      faceDetailer: hasNode(info, 'FaceDetailer'),
+      faceDetailer: faceDetailerMissing(info) === null,
+      faceDetailerMissing: faceDetailerMissing(info),
       controlnetAux:
         hasNode(info, 'AIO_Preprocessor') ||
         hasNode(info, 'CannyEdgePreprocessor') ||
@@ -146,4 +138,5 @@ function uniqueSorted(items: string[]): string[] {
 
 export function invalidateModelCatalog(): void {
   cache = null;
+  invalidateObjectInfo();
 }

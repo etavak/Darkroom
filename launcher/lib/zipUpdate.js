@@ -18,10 +18,15 @@ import { ensureLogsDir, logsDir, restorePointsDir, root, runtimeDir } from './pa
 export const versionFile = path.join(runtimeDir, 'darkroom-version.json');
 const stagingDir = path.join(runtimeDir, 'update-staging');
 
+/** Top-level folders older releases shipped that later ones dropped — removed on update. */
+// (scripts/ still ships a one-file shim that forwards old start files to launcher/)
+const RETIRED_TOP = [];
+
 /** Top-level entries that belong to the user / installer, never the update. */
 const PRESERVED_TOP = new Set([
   '.env',
   '.git',
+  'dependencies',
   'runtime',
   'logs',
   'node_modules',
@@ -222,7 +227,7 @@ function overlay(newRoot, log) {
       if (exists && sameContent(src, dest)) continue;
 
       // cmd.exe keeps reading a running .bat by byte offset — stage it for the next launch
-      if (process.platform === 'win32' && rel === 'Darkroom.bat' && exists) {
+      if (process.platform === 'win32' && /^[^/]+\.bat$/i.test(rel) && exists) {
         dest = `${dest}.new`;
         fs.copyFileSync(src, dest);
         change.staged.push(`${rel}.new`);
@@ -252,6 +257,16 @@ function overlay(newRoot, log) {
       backup(rel);
       fs.rmSync(path.join(root, rel), { force: true });
       change.deleted.push(rel);
+    }
+
+    // Folders a release used to ship and no longer does
+    for (const dir of RETIRED_TOP) {
+      if (shippedTopDirs.has(dir) || !fs.existsSync(path.join(root, dir))) continue;
+      for (const rel of listFiles(root, (r) => r.split('/')[0] !== dir)) {
+        backup(rel);
+        fs.rmSync(path.join(root, rel), { force: true });
+        change.deleted.push(rel);
+      }
     }
   } catch (err) {
     log.info(`overlay failed, rolling back: ${err instanceof Error ? err.message : err}`);

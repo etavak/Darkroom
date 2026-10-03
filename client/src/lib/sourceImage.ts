@@ -58,7 +58,7 @@ export async function uploadFileAsSource(file: File): Promise<SourceImageState> 
   };
 }
 
-export async function useGalleryAsSource(
+export async function galleryImageAsSource(
   filename: string,
   parentId?: string | null,
 ): Promise<SourceImageState> {

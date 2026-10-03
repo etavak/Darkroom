@@ -283,10 +283,25 @@ export type LoraMeta = {
   title: string | null;
   base: string | null;
   family: string | null;
-  arch: 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2' | null;
+  /** "other:<name>" for a base Darkroom has no family for (e.g. Anima) */
+  arch: string | null;
   triggers: string[];
   thumb: boolean;
+  sizeBytes?: number;
+  network?: string | null;
+  rank?: number | null;
+  resolution?: string | null;
+  epochs?: number | null;
+  trainImages?: number | null;
+  trainedTags?: Array<{ tag: string; count: number }>;
+  sourceUrl?: string | null;
+  civitai?: boolean;
 };
+
+/** Identify a LoRA on Civitai by its hash and save its preview / trigger words / page. */
+export function lookupLoraOnCivitai(name: string): Promise<{ found: boolean; meta: LoraMeta | null }> {
+  return request('/api/models/loras/civitai', { method: 'POST', body: JSON.stringify({ name }) });
+}
 
 export function fetchLoraMeta(): Promise<{ items: LoraMeta[] }> {
   return request('/api/models/loras/meta');
@@ -315,6 +330,10 @@ export function fetchControlNetOptions(family: string | null): Promise<{ arch: s
 
 export function installControlNetApi(id: string): Promise<ControlNetInstallJob> {
   return request('/api/models/controlnet/install', { method: 'POST', body: JSON.stringify({ id }) });
+}
+
+export function installFaceModelApi(): Promise<ControlNetInstallJob> {
+  return request('/api/models/face-detailer/install-model', { method: 'POST' });
 }
 
 export function fetchControlNetJob(id: string): Promise<ControlNetInstallJob> {
@@ -355,6 +374,23 @@ export function saveDownloadTokens(patch: Partial<Record<keyof DownloadTokens, s
   return request('/api/settings/tokens', { method: 'PUT', body: JSON.stringify(patch) });
 }
 
+/** Tell the server these images were downloaded (fire and forget). */
+export function markDownloadedApi(images: string[]): void {
+  if (!images.length) return;
+  void request('/api/history/downloaded', { method: 'POST', body: JSON.stringify({ images }) }).catch(() => {});
+}
+
+export type UnsavedSummary = { images: number; generations: number; bytes: number };
+
+/** What "Delete images you haven't downloaded" would remove; `keep` = pinned generation ids. */
+export function unsavedSummaryApi(keep: string[]): Promise<UnsavedSummary> {
+  return request('/api/history/unsaved/summary', { method: 'POST', body: JSON.stringify({ keep }) });
+}
+
+export function purgeUnsavedApi(keep: string[]): Promise<UnsavedSummary> {
+  return request('/api/history/unsaved/purge', { method: 'POST', body: JSON.stringify({ keep, confirm: 'delete-undownloaded' }) });
+}
+
 export function emptyTrashApi(): Promise<{
   ok: boolean;
   removed: number;
@@ -385,8 +421,16 @@ export function cancelGenerate(jobId: string | null): Promise<{ ok: boolean }> {
   });
 }
 
-export function fetchHistory(): Promise<{ items: GenerationRecord[] }> {
-  return request('/api/history');
+export type HistoryPage = { items: GenerationRecord[]; hasMore: boolean; total: number };
+
+/** A page of generations, newest first; `before` = the oldest one already loaded. */
+export function fetchHistory(before?: { at: number; id: string }, limit = 200): Promise<HistoryPage> {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (before) {
+    q.set('before', String(before.at));
+    q.set('beforeId', before.id);
+  }
+  return request(`/api/history?${q}`);
 }
 
 export function fetchHistoryItem(id: string): Promise<GenerationRecord> {

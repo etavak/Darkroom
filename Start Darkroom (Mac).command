@@ -1,27 +1,24 @@
-#!/usr/bin/env bash
-# Linux / generic Unix launcher — self-contained Node bootstrap.
-set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$ROOT"
+#!/bin/bash
+# macOS double-click launcher — self-contained Node bootstrap.
+cd "$(dirname "$0")"
+ROOT="$(pwd)"
 
 PIN_NODE="22.14.0"
-RUNTIME_NODE="$ROOT/runtime/node"
+# Portable Node lives in dependencies/runtime/node (older installs: runtime/node)
+RUNTIME_NODE="$ROOT/dependencies/runtime/node"
+if [ ! -d "$ROOT/dependencies/runtime" ] && [ -d "$ROOT/runtime" ]; then
+  RUNTIME_NODE="$ROOT/runtime/node"
+fi
 OPS_LOG_DIR="$ROOT/logs/ops"
 mkdir -p "$OPS_LOG_DIR" "$RUNTIME_NODE"
 
 arch="$(uname -m)"
 case "$arch" in
-  x86_64|amd64) NODE_ARCH="x64" ;;
-  arm64|aarch64) NODE_ARCH="arm64" ;;
-  *) echo "[Darkroom] Unsupported arch: $arch"; exit 1 ;;
+  x86_64) NODE_ARCH="x64" ;;
+  arm64) NODE_ARCH="arm64" ;;
+  *) echo "[Darkroom] Unsupported arch: $arch"; read -r -p "Press Enter to close…"; exit 1 ;;
 esac
-
-os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-case "$os" in
-  linux*) NODE_PLAT="linux" ;;
-  darwin*) NODE_PLAT="darwin" ;;
-  *) echo "[Darkroom] Unsupported OS: $os"; exit 1 ;;
-esac
+NODE_PLAT="darwin"
 
 find_portable_node() {
   local d
@@ -36,6 +33,12 @@ find_portable_node() {
 
 node_major() {
   "$1" -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 0
+}
+
+pause_err() {
+  echo "$1"
+  read -r -p "Press Enter to close…"
+  exit 1
 }
 
 # Prefer Node 22 (LTS pin). Node 24+ can crash better-sqlite3 native addons.
@@ -65,25 +68,15 @@ if [ -z "$NODE_BIN" ]; then
   TMP="$RUNTIME_NODE/${ARCHIVE}"
   {
     echo "Downloading $URL"
-    if command -v curl >/dev/null 2>&1; then
-      curl -fL --retry 3 --retry-delay 2 -o "$TMP" "$URL"
-    else
-      wget -O "$TMP" "$URL"
-    fi
-    tar -xzf "$TMP" -C "$RUNTIME_NODE"
+    curl -fL --retry 3 --retry-delay 2 -o "$TMP" "$URL" || pause_err "[Darkroom] Download failed."
+    tar -xzf "$TMP" -C "$RUNTIME_NODE" || pause_err "[Darkroom] Extract failed."
     rm -f "$TMP"
     echo "OK"
   } | tee "$LOG"
-  NODE_BIN="$(find_portable_node)" || {
-    echo "[Darkroom] Portable Node extract failed."
-    exit 1
-  }
+  NODE_BIN="$(find_portable_node)" || pause_err "[Darkroom] Portable Node not found after extract."
 fi
 
 NPM_BIN="$(dirname "$NODE_BIN")/npm"
-if [ ! -x "$NPM_BIN" ]; then
-  NPM_BIN="$(command -v npm || true)"
-fi
 
 # Put this Node first so npm/node-gyp never pick a different major from PATH.
 export PATH="$(dirname "$NODE_BIN"):$PATH"
@@ -96,15 +89,15 @@ sqlite_ok() {
 if [ ! -d "$ROOT/node_modules/@clack/prompts" ]; then
   echo "[Darkroom] Installing dependencies…"
   if [ -f "$ROOT/package-lock.json" ]; then
-    "$NPM_BIN" ci --prefix "$ROOT" || "$NPM_BIN" install --prefix "$ROOT"
+    "$NPM_BIN" ci --prefix "$ROOT" || "$NPM_BIN" install --prefix "$ROOT" || pause_err "[Darkroom] npm install failed."
   else
-    "$NPM_BIN" install --prefix "$ROOT"
+    "$NPM_BIN" install --prefix "$ROOT" || pause_err "[Darkroom] npm install failed."
   fi
   echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
-  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT"
+  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
 elif ! sqlite_ok; then
   echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
-  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT"
+  "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
 fi
 
-exec "$NODE_BIN" "$ROOT/scripts/cli/index.js"
+exec "$NODE_BIN" "$ROOT/launcher/index.js"

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Component platform and GPU rules
 
-Every Darkroom installable component (CLI `scripts/cli/components/*`, entries in `components.json`) must declare:
+Every Darkroom installable component (CLI `launcher/components/*`, entries in `components.json`) must declare:
 
 - `platforms`: OS list it supports (`darwin`, `win32`, `linux`), or `['*']` for all
 - `gpus`: accelerator profiles it supports (`apple_silicon`, `intel_mac`, `nvidia`, `cpu`), or `['*']` for all

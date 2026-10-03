@@ -3,8 +3,9 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { Router } from 'express';
 import { ComfyError } from '../services/comfyClient.js';
-import { controlNetOptions, getControlNetInstallJob, startControlNetInstall } from '../services/controlnetInstall.js';
-import { listLoraMeta, loraThumbFile } from '../services/loraMeta.js';
+import { controlNetOptions, getControlNetInstallJob, startControlNetInstall, startFaceModelInstall } from '../services/controlnetInstall.js';
+import { listLoraMeta, loraFile, loraThumbFile, refreshLora } from '../services/loraMeta.js';
+import { loadDownloadModule } from '../services/cliShared.js';
 import { listModelCatalog } from '../services/modelLists.js';
 import {
   confirmInstall,
@@ -60,6 +61,15 @@ modelsRouter.post('/controlnet/install', async (req, res) => {
   }
 });
 
+/** The face detailer's face finder (52 MB); its job is followed at /controlnet/jobs/:id. */
+modelsRouter.post('/face-detailer/install-model', async (_req, res) => {
+  try {
+    res.json(await startFaceModelInstall());
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Could not start the download' });
+  }
+});
+
 modelsRouter.get('/controlnet/jobs/:id', (req, res) => {
   const job = getControlNetInstallJob(req.params.id);
   if (!job) {
@@ -75,6 +85,23 @@ modelsRouter.get('/loras/meta', (_req, res) => {
     res.json({ items: listLoraMeta() });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Could not read LoRAs' });
+  }
+});
+
+/** Identify a LoRA on Civitai by its SHA256 and save its preview, trigger words and page. */
+modelsRouter.post('/loras/civitai', async (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name : '';
+  const file = name ? loraFile(name) : null;
+  if (!file) {
+    res.status(404).json({ error: 'No such LoRA' });
+    return;
+  }
+  try {
+    const dl = await loadDownloadModule();
+    const found = await dl.fetchCivitaiSidecarsByHash(file);
+    res.json({ found, meta: refreshLora(name) });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : 'Civitai lookup failed' });
   }
 });
 

@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AddModelDialog } from '@/components/controls/AddModelDialog';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, lazy, Suspense } from 'react';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
 import { DEFAULT_CONTROLNET_UI, DEFAULT_DETAILER, MAX_CONTROLNETS, controlNetFields, controlNetsFromSettings, type ControlNetUiState } from '@/lib/generationDefaults';
-import { DependencyResolver } from '@/components/controls/DependencyResolver';
 import { MapFamilyDialog } from '@/components/controls/MapFamilyDialog';
 import { ModelStackPanel } from '@/components/controls/ModelStackPanel';
 import { SamplerControls } from '@/components/controls/SamplerControls';
@@ -13,7 +11,7 @@ import { AvoidCard, PromptCard } from '@/components/studio/controls/PromptCards'
 import { ExtrasCard, LoraCard, LoraPicker } from '@/components/studio/controls/EnhanceCards';
 import { ImageSettings } from '@/components/studio/controls/ImageSettings';
 import { ControlNetCard, ImageToImageCard, InpaintCard } from '@/components/studio/controls/ReferenceCards';
-import { MaskEditor, type MaskResult, type Pad } from '@/components/studio/editor/MaskEditor';
+import type { MaskResult, Pad } from '@/components/studio/editor/MaskEditor';
 import { DropDialog, type DropTarget } from '@/components/studio/DropDialog';
 import { PromptPopout } from '@/components/studio/controls/PromptPopout';
 import { SamplingFooter } from '@/components/studio/controls/SamplingFooter';
@@ -24,7 +22,6 @@ import { ImagePlane } from '@/components/studio/plane/ImagePlane';
 import { Onboarding } from '@/components/studio/plane/Onboarding';
 import { PhoneShell, PhoneSheet } from '@/components/studio/phone/PhoneShell';
 import { PhoneThumbs, PhoneViewer, type ViewerTile } from '@/components/studio/phone/PhoneViewer';
-import { FullscreenImage } from '@/components/studio/phone/FullscreenImage';
 import {
   CompareIcon,
   CopyImageIcon,
@@ -38,7 +35,7 @@ import {
   VaryIcon,
 } from '@/components/studio/plane/icons';
 import { randomPrompt } from '@/components/studio/controls/randomPrompt';
-import { derivedKind, outputSize, tileId, type FailedJob, type PlaneEntry, type Tile } from '@/components/studio/plane/layout';
+import { derivedKind, derivedTag, outputSize, tileId, type FailedJob, type PlaneEntry, type Tile } from '@/components/studio/plane/layout';
 import { downloadZip } from '@/lib/zip';
 import {
   StCard,
@@ -66,6 +63,7 @@ import {
   startComfyApi,
   updatePreviewQuality,
   fetchLoraMeta,
+  markDownloadedApi,
   type LoraMeta,
 } from '@/lib/api';
 import { parseImageSettings } from '@/lib/imageMeta';
@@ -80,7 +78,7 @@ import { pushRecentPrompt } from '@/lib/promptLibrary';
 import {
   matchSourceSize,
   uploadFileAsSource,
-  useGalleryAsSource,
+  galleryImageAsSource,
 } from '@/lib/sourceImage';
 import { eventMatchesShortcut, qualityToPreviewMethod } from '@/lib/uiSettings';
 import type {
@@ -103,6 +101,12 @@ import type {
 import type { ResolvedPresets } from '@/types/presets';
 import { newId } from '@/lib/uid';
 import { canCopyImages, copyTextToClipboard } from '@/lib/clipboard';
+
+// Loaded the first time they're opened — most sessions never need them
+const MaskEditor = lazy(() => import('@/components/studio/editor/MaskEditor').then((m) => ({ default: m.MaskEditor })));
+const FullscreenImage = lazy(() => import('@/components/studio/phone/FullscreenImage').then((m) => ({ default: m.FullscreenImage })));
+const AddModelDialog = lazy(() => import('@/components/controls/AddModelDialog').then((m) => ({ default: m.AddModelDialog })));
+const DependencyResolver = lazy(() => import('@/components/controls/DependencyResolver').then((m) => ({ default: m.DependencyResolver })));
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 2 ** 32);
@@ -180,6 +184,8 @@ export default function App() {
   const { families } = useFamilies();
   const {
     items,
+    hasMore: historyHasMore,
+    loadMore: loadMoreHistory,
     loading: histLoading,
     reload,
     softDelete,
@@ -330,6 +336,9 @@ export default function App() {
   const [viewImages, setViewImages] = useState<string[]>([]);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
   const [addModelOpen, setAddModelOpen] = useState(false);
+  // Loaded on first open, then kept mounted so a download in progress survives closing it
+  const addModelSeen = useRef(false);
+  if (addModelOpen) addModelSeen.current = true;
   const [depFamilyId, setDepFamilyId] = useState<string | null>(null);
   const [addModelPreferType, setAddModelPreferType] = useState<string | undefined>();
   const [systemStats, setSystemStats] = useState<SystemStatsSummary | null>(null);
@@ -510,9 +519,12 @@ export default function App() {
     }
   }, [identityKey, resolved, familyMeta, styleId, aspectId]);
 
+  const lastModelsReload = useRef(0);
   useEffect(() => {
     let cancelled = false;
     const check = async () => {
+      // Nothing to show while the tab is hidden (saves a phone's battery); it re-checks on return
+      if (document.hidden) return;
       try {
         const h = await fetchHealth();
         if (!cancelled) {
@@ -520,7 +532,11 @@ export default function App() {
           setComfyOk(h.comfy);
           setRemoteMode(h.mode === 'remote');
           if (h.comfy) {
-            void reloadModels();
+            // The model list: when ComfyUI (re)appears, then once a minute (installs reload it directly)
+            if (comfyOk !== true || Date.now() - lastModelsReload.current > 60_000) {
+              lastModelsReload.current = Date.now();
+              void reloadModels({ quiet: comfyOk === true });
+            }
             void fetchSystemStats()
               .then((s) => {
                 if (!cancelled) setSystemStats(s);
@@ -543,9 +559,14 @@ export default function App() {
     void check();
     const intervalMs = startingComfy ? 2_000 : comfyOk === false ? 5_000 : 10_000;
     const id = window.setInterval(check, intervalMs);
+    const onVisible = () => {
+      if (!document.hidden) void check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [reloadModels, comfyOk, startingComfy]);
 
@@ -669,7 +690,8 @@ export default function App() {
         loras: activeLoras.length ? activeLoras : undefined,
         hiresFix: hiresFix.enabled && workMode === 'generate' ? hiresFix : undefined,
         ...controlNetFields(controlNets),
-        detailer: detailer.enabled ? detailer : undefined,
+        // The card shows the detailer as off while ComfyUI can't run it
+        detailer: detailer.enabled && catalog.available.faceDetailer ? detailer : undefined,
         generationMode,
         sourceImage: workMode === 'generate' ? undefined : source?.comfyName,
         parentId: workMode === 'generate' ? undefined : source?.parentId || undefined,
@@ -702,6 +724,7 @@ export default function App() {
       clipName2,
       clipSkip,
       clipType,
+      catalog.available.faceDetailer,
       controlNets,
       detailer,
       dismissedNegative,
@@ -876,7 +899,7 @@ export default function App() {
       const img = item.images[index] ?? item.images[0];
       if (!img) return null;
       try {
-        const next = await useGalleryAsSource(img, item.id);
+        const next = await galleryImageAsSource(img, item.id);
         applySource(next, 'img2img');
         return next;
       } catch (err) {
@@ -1484,7 +1507,12 @@ export default function App() {
       live = false;
     };
   }, [lorasPicking, loraCount]);
-  const loraContext = { meta: loraMeta, familyId: resolved.familyId, familyName: resolved.familyName };
+  const loraContext = {
+    meta: loraMeta,
+    familyId: resolved.familyId,
+    familyName: resolved.familyName,
+    onMeta: (m: LoraMeta) => setLoraMeta((prev) => ({ ...prev, [m.name]: m })),
+  };
 
   const renderStudioControls = (layout: 'desktop' | 'phone' = 'desktop') => {
     const phone = layout === 'phone';
@@ -1684,7 +1712,7 @@ export default function App() {
           onUseSelected={async () => {
             const img = selectedRecord?.images[0];
             if (!img || !selectedRecord) return null;
-            const src = await useGalleryAsSource(img, selectedRecord.id);
+            const src = await galleryImageAsSource(img, selectedRecord.id);
             return { comfyName: src.comfyName, previewUrl: src.previewUrl };
           }}
           onUpload={async (file) => {
@@ -1737,6 +1765,8 @@ export default function App() {
           onDetailer={setDetailer}
           detectors={catalog.detailer_detectors ?? []}
           detailerAvailable={Boolean(catalog.available.faceDetailer)}
+          detailerMissing={catalog.available.faceDetailerMissing ?? null}
+          onModelsChanged={reloadModels}
           disabled={runtime.running}
         />
       </>
@@ -1892,6 +1922,8 @@ export default function App() {
       await backupNow();
     },
     onEmptyTrash: emptyTrash,
+    pinnedIds: [...favorites],
+    onHistoryChanged: () => void reload({ reset: true }),
   };
 
   // ---------- Studio: image plane, History, details ----------
@@ -1901,6 +1933,12 @@ export default function App() {
   }, []);
   const recordModelKey = (r: GenerationRecord) =>
     (r.settings.modelMode === 'split' ? r.settings.unet || r.settings.checkpoint : r.settings.checkpoint) || 'unknown';
+  // Search, model filter and Pinned only look through everything: load the remaining pages
+  const historyFiltered = Boolean(histQuery.trim() || histModel !== 'all' || pinnedOnly);
+  useEffect(() => {
+    if (historyFiltered && historyHasMore) void loadMoreHistory();
+  }, [historyFiltered, historyHasMore, items.length, loadMoreHistory]);
+
   const histModels = useMemo(() => {
     const counts = new Map<string, number>();
     for (const r of items) counts.set(recordModelKey(r), (counts.get(recordModelKey(r)) ?? 0) + r.images.length);
@@ -1972,6 +2010,7 @@ export default function App() {
     a.href = imageUrl(name);
     a.download = name;
     a.click();
+    markDownloadedApi([name]);
   };
   const copyImageToClipboard = async (name: string) => {
     try {
@@ -2022,7 +2061,7 @@ export default function App() {
   const upscaleScale = serverSettings.defaultUpscaleScale && serverSettings.defaultUpscaleScale > 1 ? serverSettings.defaultUpscaleScale : 2;
   const canAct = Boolean(actRecord?.images[0]) && readiness.ready && comfyOk !== false;
   const notReadyTip = !actRecord ? 'Select an image first' : comfyOk === false ? 'ComfyUI is offline' : readiness.reason || 'Not ready';
-  const useSelectedAs = async (mode: 'img2img' | 'edit' | 'outpaint', msg: string) => {
+  const applySelectedAs = async (mode: 'img2img' | 'edit' | 'outpaint', msg: string) => {
     if (!actRecord) return;
     if (await setSourceFromGallery(actRecord, selectedIndex)) {
       setWorkMode(mode);
@@ -2220,12 +2259,12 @@ export default function App() {
       tip: !upscaler ? 'Upscale needs an upscale model — add one in Preferences → Models' : canAct ? `Upscale ${upscaleScale}× with ${shortModelName(upscaler)}` : notReadyTip,
     },
     useAsBase: {
-      run: () => void useSelectedAs('img2img', 'Set as the base image — see Image to image'),
+      run: () => void applySelectedAs('img2img', 'Set as the base image — see Image to image'),
       disabled: !actRecord || runtime.running,
       tip: actRecord ? 'Use as base image (image to image)' : 'Select an image first',
     },
     edit: {
-      run: () => void useSelectedAs('edit', 'Describe the change in the prompt, then Generate'),
+      run: () => void applySelectedAs('edit', 'Describe the change in the prompt, then Generate'),
       disabled: !actRecord || runtime.running || !familyMeta?.supportsEdit,
       tip: !familyMeta?.supportsEdit ? 'Edit by instruction needs an edit model (e.g. Flux Kontext)' : 'Edit image — describe the change in the prompt',
     },
@@ -2398,6 +2437,8 @@ export default function App() {
     <HistoryPanel
       thumbs={historyThumbs}
       total={items.reduce((a, r) => a + r.images.length, 0)}
+      hasMore={historyHasMore}
+      onLoadMore={() => void loadMoreHistory()}
       selectedId={selectedTileId}
       onPick={(t) => pickTile(t.entry, t.index, true)}
       onContext={(t, x, y) => {
@@ -2428,7 +2469,10 @@ export default function App() {
           files.map((f) => ({ url: imageUrl(f), name: f })),
           `darkroom-${new Date().toISOString().slice(0, 10)}.zip`,
         )
-          .then(() => flash('Download ready'))
+          .then(() => {
+            markDownloadedApi(files);
+            flash('Download ready');
+          })
           .catch(() => flash('Download failed'));
       }}
       onDelete={deleteRecords}
@@ -2452,7 +2496,7 @@ export default function App() {
     const t = historyThumbs.find((x) => x.id === selectedTileId);
     if (!t) return null;
     const e = t.entry;
-    if (e.kind === 'record') return { kind: 'record', src: t.src, ...outputSize(e.record.settings) };
+    if (e.kind === 'record') return { kind: 'record', src: t.src, ...outputSize(e.record.settings), tag: derivedTag(e.record.settings) };
     if (e.kind === 'running') return { kind: 'running', src: t.src, ...outputSize(e.settings), progress: e.progress };
     return { kind: 'failed', src: null, ...outputSize(e.failed.settings), failed: e.failed };
   })();
@@ -2661,6 +2705,7 @@ export default function App() {
           stage={studioPlane}
           history={studioHistory}
           historyCount={items.reduce((a, r) => a + r.images.length, 0)}
+          historyMore={historyHasMore}
           reconnecting={reconnecting}
           serverDown={serverDown}
           overlay={
@@ -2675,15 +2720,17 @@ export default function App() {
                 onCancel={() => setDrop(null)}
               />
             ) : maskEditor ? (
-              <MaskEditor
-                key={maskEditor.src}
-                src={maskEditor.src}
-                initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
-                initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
-                saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update reference' : 'Add to references'}
-                onSave={(r) => void saveMask(r)}
-                onClose={() => setMaskEditor(null)}
-              />
+              <Suspense fallback={null}>
+                <MaskEditor
+                  key={maskEditor.src}
+                  src={maskEditor.src}
+                  initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
+                  initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
+                  saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update reference' : 'Add to references'}
+                  onSave={(r) => void saveMask(r)}
+                  onClose={() => setMaskEditor(null)}
+                />
+              </Suspense>
             ) : null
           }
           details={
@@ -2760,6 +2807,7 @@ export default function App() {
           thumbs={
             <PhoneThumbs
               thumbs={historyThumbs}
+              onEndReached={historyHasMore ? () => void loadMoreHistory() : undefined}
               selectedId={selectedTileId}
               onPick={(t) => pickTile(t.entry, t.index, false)}
               onLongPress={(t) => {
@@ -2774,23 +2822,27 @@ export default function App() {
           sheet={phoneSheetNode}
           overlay={
             phoneFull && phoneTile?.src && !maskEditor ? (
-              <FullscreenImage
-                src={phoneTile.src}
-                counter={`${historyThumbs.findIndex((t) => t.id === selectedTileId) + 1} / ${historyThumbs.length}`}
-                onClose={() => setPhoneFull(false)}
-                onSwipe={phoneStep}
-              />
+              <Suspense fallback={null}>
+                <FullscreenImage
+                  src={phoneTile.src}
+                  counter={`${historyThumbs.findIndex((t) => t.id === selectedTileId) + 1} / ${historyThumbs.length}`}
+                  onClose={() => setPhoneFull(false)}
+                  onSwipe={phoneStep}
+                />
+              </Suspense>
             ) : maskEditor ? (
-              <MaskEditor
-                key={maskEditor.src}
-                compact
-                src={maskEditor.src}
-                initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
-                initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
-                saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update' : 'Add'}
-                onSave={(r) => void saveMask(r)}
-                onClose={() => setMaskEditor(null)}
-              />
+              <Suspense fallback={null}>
+                <MaskEditor
+                  key={maskEditor.src}
+                  compact
+                  src={maskEditor.src}
+                  initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
+                  initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
+                  saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update' : 'Add'}
+                  onSave={(r) => void saveMask(r)}
+                  onClose={() => setMaskEditor(null)}
+                />
+              </Suspense>
             ) : null
           }
         />
@@ -2834,55 +2886,61 @@ export default function App() {
       {depFamilyId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
           <div className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-xl">
-            <DependencyResolver
-              familyId={depFamilyId}
-              vramTotalBytes={systemStats?.vramTotal}
-              onDone={() => {
-                setDepFamilyId(null);
-                void reloadModels();
-              }}
-              onSkip={() => setDepFamilyId(null)}
-            />
+            <Suspense fallback={null}>
+              <DependencyResolver
+                familyId={depFamilyId}
+                vramTotalBytes={systemStats?.vramTotal}
+                onDone={() => {
+                  setDepFamilyId(null);
+                  void reloadModels();
+                }}
+                onSkip={() => setDepFamilyId(null)}
+              />
+            </Suspense>
           </div>
         </div>
       ) : null}
-      <AddModelDialog
-        open={addModelOpen}
-        onClose={() => setAddModelOpen(false)}
-        preferType={addModelPreferType}
-        families={families}
-        onInstalled={({ filename, type, family }) => {
-          void reloadModels().then(() => {
-            if (type === 'checkpoint') {
-              setModelMode('checkpoint');
-              setCheckpoint(filename);
-            } else if (type === 'diffusion') {
-              setModelMode('split');
-              setUnet(filename);
-              lastAutopickUnet.current = '';
-            } else if (type === 'text_encoder') {
-              setModelMode('split');
-              if (!clipName) setClipName(filename);
-              else if (!clipName2) setClipName2(filename);
-            } else if (type === 'vae') {
-              setVaeName(filename);
-            }
-            if (family) {
-              void mapCheckpointFamily(filename, family).then(async () => {
-                const next = await resolvePresetsApi({
-                  checkpoint: filename,
-                  styleId: null,
-                  dismissedPositive: [],
-                  dismissedNegative: [],
-                  userPositive: prompt,
-                  userNegative: negativePrompt,
-                });
-                setResolved({ ...emptyResolved, ...next });
+      {addModelSeen.current ? (
+        <Suspense fallback={null}>
+          <AddModelDialog
+            open={addModelOpen}
+            onClose={() => setAddModelOpen(false)}
+            preferType={addModelPreferType}
+            families={families}
+            onInstalled={({ filename, type, family }) => {
+              void reloadModels().then(() => {
+                if (type === 'checkpoint') {
+                  setModelMode('checkpoint');
+                  setCheckpoint(filename);
+                } else if (type === 'diffusion') {
+                  setModelMode('split');
+                  setUnet(filename);
+                  lastAutopickUnet.current = '';
+                } else if (type === 'text_encoder') {
+                  setModelMode('split');
+                  if (!clipName) setClipName(filename);
+                  else if (!clipName2) setClipName2(filename);
+                } else if (type === 'vae') {
+                  setVaeName(filename);
+                }
+                if (family) {
+                  void mapCheckpointFamily(filename, family).then(async () => {
+                    const next = await resolvePresetsApi({
+                      checkpoint: filename,
+                      styleId: null,
+                      dismissedPositive: [],
+                      dismissedNegative: [],
+                      userPositive: prompt,
+                      userNegative: negativePrompt,
+                    });
+                    setResolved({ ...emptyResolved, ...next });
+                  });
+                }
               });
-            }
-          });
-        }}
-      />
+            }}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

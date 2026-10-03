@@ -15,7 +15,7 @@ import {
   VaryIcon,
 } from './icons';
 import type { CanvasBackground } from '@/lib/uiSettings';
-import { WORLD_SCALE, fitZoom, layoutTiles, ratioLabel, tileId, type FailedJob, type PlaneEntry, type Tile } from './layout';
+import { WORLD_SCALE, derivedTag, fitZoom, layoutTiles, ratioLabel, tileId, type FailedJob, type PlaneEntry, type Tile } from './layout';
 
 /** run(alt): alt is true for Shift-click (e.g. a stronger variation) */
 export type PlaneAction = { run: (alt?: boolean) => void; disabled?: boolean; tip: string };
@@ -428,6 +428,7 @@ export function ImagePlane(p: Props) {
               {e.kind === 'record' && e.pinned ? (
                 <PinIcon filled className="st-tile-pin" />
               ) : null}
+              {e.kind === 'record' && derivedTag(e.record.settings) ? <span className="st-tile-tag">{derivedTag(e.record.settings)}</span> : null}
               {e.kind === 'running' ? (
                 <span className="st-noise" style={{ backgroundColor: `rgba(40,38,44,${(0.85 * (1 - e.progress)).toFixed(2)})`, backdropFilter: `blur(${Math.round(22 * (1 - e.progress))}px)` }} />
               ) : null}

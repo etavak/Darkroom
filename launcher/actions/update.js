@@ -54,8 +54,10 @@ export async function updateAll() {
 export function exitForRelaunch() {
   p.outro(
     process.platform === 'win32'
-      ? 'Darkroom was updated. Open Darkroom.bat again to continue.'
-      : 'Darkroom was updated. Open Darkroom.command (or Darkroom.sh) again to continue.',
+      ? 'Darkroom was updated. Open "Start Darkroom (Windows).bat" again to continue.'
+      : process.platform === 'darwin'
+        ? 'Darkroom was updated. Open "Start Darkroom (Mac).command" again to continue.'
+        : 'Darkroom was updated. Run ./launcher/start-linux.sh again to continue.',
   );
   process.exit(0);
 }

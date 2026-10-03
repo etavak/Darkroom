@@ -8,11 +8,11 @@
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client && npm run build -w server",
     "start": "npm run start -w server",
-    "launch": "node scripts/cli/index.js",
-    "cli": "node scripts/cli/index.js",
+    "launch": "node launcher/index.js",
+    "cli": "node launcher/index.js",
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
-    "mock:comfy": "MOCK=true tsx scripts/mock-comfy.ts",
+    "mock:comfy": "MOCK=true tsx server/mock-comfy.ts",
     "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
     "lint": "eslint ."
   },
@@ -24,6 +24,7 @@
     "@eslint/js": "^9.39.5",
     "concurrently": "^9.1.2",
     "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "typescript-eslint": "^8.71.0"
   },
   "engines": {

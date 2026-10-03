@@ -11,6 +11,8 @@ export type ViewerTile = {
   h: number;
   progress?: number;
   failed?: FailedJob;
+  /** What it was made from another image by (Upscale 1.5×, Inpaint…) */
+  tag?: string | null;
 };
 
 type Props = {
@@ -120,6 +122,9 @@ export function PhoneViewer(p: Props) {
                 }}
               />
             ) : null}
+            {t.tag && !p.compareOn ? (
+              <span className="st-hbadge font-semibold" style={{ left: 8, top: 8, zIndex: 1 }}>{t.tag}</span>
+            ) : null}
             {t.kind === 'running' ? (
               <span className="st-noise" style={{ backgroundColor: `rgba(40,38,44,${(0.85 * (1 - (t.progress ?? 0))).toFixed(2)})` }} />
             ) : null}
@@ -183,7 +188,7 @@ export function PhoneViewer(p: Props) {
 }
 
 /** Horizontal thumbnails, newest first; tap to show, press and hold for actions. */
-export function PhoneThumbs({ thumbs, selectedId, onPick, onLongPress, isPinned }: { thumbs: HistoryThumb[]; selectedId: string | null; onPick: (t: HistoryThumb) => void; onLongPress: (t: HistoryThumb) => void; isPinned: (id: string) => boolean }) {
+export function PhoneThumbs({ thumbs, selectedId, onPick, onLongPress, isPinned, onEndReached }: { thumbs: HistoryThumb[]; selectedId: string | null; onPick: (t: HistoryThumb) => void; onLongPress: (t: HistoryThumb) => void; isPinned: (id: string) => boolean; /** Scrolled near the end — load older images */ onEndReached?: () => void }) {
   const stripRef = useRef<HTMLDivElement>(null);
   const press = useRef<{ x: number; timer: number; held: boolean } | null>(null);
 
@@ -195,7 +200,15 @@ export function PhoneThumbs({ thumbs, selectedId, onPick, onLongPress, isPinned 
 
   if (!thumbs.length) return null;
   return (
-    <div ref={stripRef} className="st-ph-thumbs" aria-label="History">
+    <div
+      ref={stripRef}
+      className="st-ph-thumbs"
+      aria-label="History"
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        if (el.scrollWidth - el.scrollLeft - el.clientWidth < 300) onEndReached?.();
+      }}
+    >
       {thumbs.map((t) => {
         const e = t.entry;
         const rid = e.kind === 'record' ? e.record.id : null;

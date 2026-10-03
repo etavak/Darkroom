@@ -9,6 +9,7 @@ import {
   getComfyPython,
   getComfyUiRoot,
   logsDir,
+  root,
 } from './paths.js';
 import { clearPid, isPidAlive, readPids, setPid, spawnDetached } from './process.js';
 
@@ -81,6 +82,34 @@ export function comfyLaunchFlags() {
 }
 
 /**
+ * Copy Darkroom's own ComfyUI fixes (comfy_nodes/*) into custom_nodes so they load with
+ * ComfyUI — refreshed on every start, so updates to Darkroom carry the latest fixes.
+ * Never blocks starting ComfyUI.
+ * @param {string} uiRoot
+ */
+export function installDarkroomNodes(uiRoot) {
+  const src = path.join(root, 'comfy_nodes');
+  if (!fs.existsSync(src)) return;
+  for (const name of fs.readdirSync(src)) {
+    try {
+      const from = path.join(src, name);
+      if (!fs.statSync(from).isDirectory()) continue;
+      const dest = path.join(uiRoot, 'custom_nodes', name);
+      fs.mkdirSync(dest, { recursive: true });
+      for (const file of fs.readdirSync(from)) {
+        const a = path.join(from, file);
+        const b = path.join(dest, file);
+        if (!fs.statSync(a).isFile()) continue;
+        const next = fs.readFileSync(a);
+        if (!fs.existsSync(b) || !fs.readFileSync(b).equals(next)) fs.writeFileSync(b, next);
+      }
+    } catch {
+      // a fix that can't be copied mustn't stop ComfyUI from starting
+    }
+  }
+}
+
+/**
  * Spawn a local ComfyUI (detached, logged, recorded as Darkroom-owned) without waiting.
  * Shared by the CLI launcher and the web UI's "Start ComfyUI" button.
  * @param {ReturnType<typeof getConfig>} [cfg]
@@ -95,6 +124,7 @@ export function startComfyProcess(cfg = getConfig()) {
   if (!portable || !uiRoot) throw new Error('Invalid COMFY_DIR');
   const mainPy = path.join(uiRoot, 'main.py');
   if (!fs.existsSync(mainPy)) throw new Error(`ComfyUI main.py not found: ${mainPy}`);
+  installDarkroomNodes(uiRoot);
 
   ensureLogsDir();
   const logFile = path.join(logsDir, 'comfyui.log');

@@ -7,7 +7,7 @@ import {
   loadModelsModule,
   loadSafetensorsModule,
   type GuessedModelType,
-  repoRoot,
+  runtimeDir,
 } from './cliShared.js';
 import { readEnvValue } from './envSettings.js';
 import { invalidateModelCatalog } from './modelLists.js';
@@ -51,7 +51,7 @@ export type InstallJob = {
 };
 
 const jobs = new Map<string, InstallJob>();
-const uploadDir = path.join(repoRoot, 'runtime', 'model-uploads');
+const uploadDir = path.join(runtimeDir(), 'model-uploads');
 
 function ensureUploadDir() {
   fs.mkdirSync(uploadDir, { recursive: true });

@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS generations (
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT,
   completed_at INTEGER,
-  parent_id TEXT
+  parent_id TEXT,
+  downloaded_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC);

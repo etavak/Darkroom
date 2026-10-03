@@ -20,6 +20,10 @@ try {
   if (!cols.some((c) => c.name === 'parent_id')) {
     db.exec(`ALTER TABLE generations ADD COLUMN parent_id TEXT`);
   }
+  // Images the user downloaded (kept by "Delete images you haven't downloaded")
+  if (!cols.some((c) => c.name === 'downloaded_json')) {
+    db.exec(`ALTER TABLE generations ADD COLUMN downloaded_json TEXT NOT NULL DEFAULT '[]'`);
+  }
 } catch {
   // ignore
 }

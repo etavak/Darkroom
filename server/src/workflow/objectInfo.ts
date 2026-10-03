@@ -11,6 +11,11 @@ export async function loadObjectInfo(force = false): Promise<Record<string, unkn
   return cached;
 }
 
+/** Something was installed: the next read fetches object_info fresh. */
+export function invalidateObjectInfo(): void {
+  cached = null;
+}
+
 /** Pick the first class name that exists in object_info. Never invent names. */
 export function resolveNodeClass(
   objectInfo: Record<string, unknown>,
@@ -35,6 +40,20 @@ export function requireNodeClass(
     );
   }
   return found;
+}
+
+/**
+ * A dropdown input's choices. ComfyUI describes them two ways: the classic
+ * `[[...options], {...}]`, and the newer node schema's `["COMBO", { options: [...] }]`
+ * (UpscaleModelLoader already uses it; more nodes are moving over).
+ */
+export function comboOptions(objectInfo: Record<string, unknown>, node: string, inputKey: string): string[] {
+  type Inputs = Record<string, unknown> | undefined;
+  const n = objectInfo[node] as { input?: { required?: Inputs; optional?: Inputs } } | undefined;
+  const raw = n?.input?.required?.[inputKey] ?? n?.input?.optional?.[inputKey];
+  if (!Array.isArray(raw)) return [];
+  const list = Array.isArray(raw[0]) ? raw[0] : raw[0] === 'COMBO' ? (raw[1] as { options?: unknown } | undefined)?.options : null;
+  return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
 }
 
 export function hasNodeClass(objectInfo: Record<string, unknown>, candidates: string[]): boolean {

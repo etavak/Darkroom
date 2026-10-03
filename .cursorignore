@@ -1,3 +1,4 @@
 # Large / generated ComfyUI trees — keep Cursor indexing fast
+dependencies/
 ComfyUI/
 ComfyUI_windows_portable/

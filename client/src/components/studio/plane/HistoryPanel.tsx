@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { Check, CheckSquare, Download, Filter, Pin, Trash2, X } from 'lucide-react';
 import { StMenuButton } from '../controls/primitives';
-import type { PlaneEntry } from './layout';
+import { derivedTag, type PlaneEntry } from './layout';
 
 export type HistoryThumb = { id: string; entry: PlaneEntry; index: number; src: string | null };
 
@@ -9,6 +9,10 @@ type Props = {
   thumbs: HistoryThumb[];
   /** Images in History before search / filters */
   total: number;
+  /** Older generations are still on the server */
+  hasMore?: boolean;
+  /** Load the next page (scrolling near the end, or the button) */
+  onLoadMore?: () => void;
   selectedId: string | null;
   onPick: (t: HistoryThumb) => void;
   onContext: (t: HistoryThumb, x: number, y: number) => void;
@@ -166,6 +170,10 @@ export function HistoryPanel(p: Props) {
         ref={gridRef}
         className="st-scroll grid min-h-0 flex-1 content-start justify-center gap-2.5 px-3.5 pb-3.5 pt-1"
         style={{ gridTemplateColumns: `repeat(${cols}, ${cell}px)` }}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (p.hasMore && el.scrollHeight - el.scrollTop - el.clientHeight < 600) p.onLoadMore?.();
+        }}
       >
         {p.thumbs.length === 0 ? (
           <p className="col-span-full m-0 mt-2 text-[12.5px] leading-normal" style={{ color: 'var(--s-faint)' }}>
@@ -216,6 +224,9 @@ export function HistoryPanel(p: Props) {
                   <span className="st-hbadge st-mono" style={{ left: 6, bottom: 6 }}>{Math.round(e.progress * 100)}%</span>
                 </>
               ) : null}
+              {e.kind === 'record' && derivedTag(e.record.settings) ? (
+                <span className="st-hbadge font-semibold" style={{ left: 6, bottom: 6 }}>{derivedTag(e.record.settings)}</span>
+              ) : null}
               {e.kind === 'failed' ? (
                 <>
                   <span className="st-noise" style={{ backgroundColor: 'rgba(40,38,44,.85)' }} />
@@ -235,6 +246,11 @@ export function HistoryPanel(p: Props) {
             </button>
           );
         })}
+        {p.hasMore && p.thumbs.length ? (
+          <button type="button" className="st-pill col-span-full mt-1 justify-center text-xs" onClick={() => p.onLoadMore?.()} data-tip="Show older images">
+            Load older
+          </button>
+        ) : null}
       </div>
 
       {selectMode ? (

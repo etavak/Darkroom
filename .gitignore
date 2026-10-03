@@ -17,7 +17,9 @@ server/data/
 *.db-journal
 .vite/
 
-# Portable toolchain (Node, uv, MinGit, restore points)
+# Everything Darkroom downloads to run: ComfyUI + portable toolchain (Node, uv, MinGit, restore points)
+dependencies/
+# Older installs kept these straight in the Darkroom folder
 runtime/
 
 # Downloaded / generated assets (setup wizard fetches these)

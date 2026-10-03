@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { repoRoot } from './cliShared.js';
+import { cliUrl } from './cliShared.js';
 import { invalidateModelCatalog, listModelCatalog } from './modelLists.js';
 
 type CatalogEntry = {
@@ -43,7 +41,7 @@ export type ControlNetInstallJob = {
 };
 
 async function loadLib() {
-  const url = (rel: string) => pathToFileURL(path.join(repoRoot, 'scripts/cli/lib', rel)).href;
+  const url = (rel: string) => cliUrl(`lib/${rel}`);
   const cn = (await import(url('controlnetModels.js'))) as {
     FAMILY_ARCH: Record<string, string>;
     controlNetCatalog: () => CatalogEntry[];
@@ -95,6 +93,33 @@ export async function startControlNetInstall(componentId: string): Promise<Contr
     try {
       await lib.downloadAndInstallComponent(comp, {
         quiet: true,
+        onProgress: (done, total) => {
+          job.progress = Math.min(99, total > 0 ? (done / total) * 100 : 0);
+        },
+      });
+      job.progress = 100;
+      job.status = 'done';
+      invalidateModelCatalog();
+    } catch (err) {
+      job.status = 'error';
+      job.error = err instanceof Error ? err.message : String(err);
+    }
+  })();
+  return job;
+}
+
+/** Downloads the face finder for the face detailer and whitelists it for Impact Subpack. */
+export async function startFaceModelInstall(): Promise<ControlNetInstallJob> {
+  for (const j of jobs.values()) {
+    if (j.componentId === 'face_yolov8m' && j.status === 'running') return j;
+  }
+  const url = cliUrl('lib/faceDetailer.js');
+  const lib = (await import(url)) as { installFaceModel: (o?: { onProgress?: (d: number, t: number) => void }) => Promise<unknown> };
+  const job: ControlNetInstallJob = { id: randomUUID(), componentId: 'face_yolov8m', title: 'Face finder', status: 'running', progress: 0 };
+  jobs.set(job.id, job);
+  void (async () => {
+    try {
+      await lib.installFaceModel({
         onProgress: (done, total) => {
           job.progress = Math.min(99, total > 0 ? (done / total) * 100 : 0);
         },

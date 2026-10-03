@@ -3,14 +3,16 @@ setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 REM Apply a launcher update staged by Update (a running .bat cannot be overwritten safely).
 REM The block is parsed before it runs, so re-entering the replaced file is safe.
-if exist "%~dp0Darkroom.bat.new" (
-  move /y "%~dp0Darkroom.bat.new" "%~f0" >nul
+if exist "%~f0.new" (
+  move /y "%~f0.new" "%~f0" >nul
   "%~f0" %*
   exit /b
 )
 set "ROOT=%CD%"
 set "PIN_NODE=22.14.0"
-set "RUNTIME_NODE=%ROOT%\runtime\node"
+REM Portable Node lives in dependencies\runtime\node (older installs: runtime\node)
+set "RUNTIME_NODE=%ROOT%\dependencies\runtime\node"
+if not exist "%ROOT%\dependencies\runtime" if exist "%ROOT%\runtime" set "RUNTIME_NODE=%ROOT%\runtime\node"
 set "OPS_LOG_DIR=%ROOT%\logs\ops"
 if not exist "%RUNTIME_NODE%" mkdir "%RUNTIME_NODE%"
 if not exist "%OPS_LOG_DIR%" mkdir "%OPS_LOG_DIR%"
@@ -125,7 +127,7 @@ if not exist "%ROOT%\node_modules\@clack\prompts" (
   )
 )
 
-"%NODE_BIN%" "%ROOT%\scripts\cli\index.js"
+"%NODE_BIN%" "%ROOT%\launcher\index.js"
 set EXITCODE=%ERRORLEVEL%
 if not %EXITCODE%==0 (
   echo.

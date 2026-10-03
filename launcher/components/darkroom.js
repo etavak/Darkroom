@@ -65,7 +65,7 @@ async function updateZipInstall(comp, ctx, log) {
 
   writeInstalledVersion(result.sha);
   if (change.staged.length) {
-    p.log.info('The Windows launcher was updated too — it switches over next time you open Darkroom.bat.');
+    p.log.info('The Windows start file was updated too — it switches over the next time you open it.');
   }
   p.log.info(`Backup of replaced files: ${change.backupDir}`);
   return { restartRequired: true };

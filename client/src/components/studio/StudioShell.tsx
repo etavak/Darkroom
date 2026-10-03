@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode, lazy, Suspense } from 'react';
 import { Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Sparkles } from 'lucide-react';
 import type { PreferenceProps } from '@/components/settings/AppSettingsPanel';
 import type { UiSettings } from '@/lib/uiSettings';
-import { LogoMark, PreferencesScreen } from './PreferencesScreen';
-import { KeysSheet } from './KeysSheet';
+import { LogoMark } from './LogoMark';
+
+// Loaded when first opened — most visits never open them
+const PreferencesScreen = lazy(() => import('./PreferencesScreen').then((m) => ({ default: m.PreferencesScreen })));
+const KeysSheet = lazy(() => import('./KeysSheet').then((m) => ({ default: m.KeysSheet })));
 import { TooltipRoot } from './TooltipLayer';
 import './studio.css';
 
@@ -21,6 +24,8 @@ type Props = {
   /** Full-window layer above everything (the inpaint & extend editor) */
   overlay?: ReactNode;
   historyCount: number;
+  /** Older images are still on the server (count shows "N+") */
+  historyMore?: boolean;
   comfyOk: boolean | null;
   /** Connection just dropped and is being retried */
   reconnecting?: boolean;
@@ -49,6 +54,7 @@ export function StudioShell({
   details,
   overlay,
   historyCount,
+  historyMore,
   comfyOk,
   reconnecting,
   serverDown,
@@ -262,6 +268,7 @@ export function StudioShell({
           </button>
           <span className="st-mono text-xs" style={{ color: 'var(--s-muted)' }} data-tip="Images in history" tabIndex={0}>
             {historyCount}
+            {historyMore ? '+' : ''}
           </span>
         </aside>
       ) : (
@@ -276,6 +283,7 @@ export function StudioShell({
               <span className="text-[15px] font-semibold">History</span>
               <span className="st-badge st-mono" data-tip="Images in history" tabIndex={0}>
                 {historyCount}
+                {historyMore ? '+' : ''}
               </span>
             </span>
             <button type="button" className="st-ibtn h-[34px] w-[34px]" onClick={() => setCollapsed({ studioHistoryCollapsed: true })} aria-label="Hide history" data-tip="Hide history">
@@ -288,8 +296,10 @@ export function StudioShell({
       )}
 
       {overlay}
-      {prefsOpen ? <PreferencesScreen {...preferences} onClose={() => onPrefsOpenChange(false)} onOpenKeys={() => setKeysOpen(true)} /> : null}
-      {keysOpen ? <KeysSheet onClose={() => setKeysOpen(false)} /> : null}
+      <Suspense fallback={null}>
+        {prefsOpen ? <PreferencesScreen {...preferences} onClose={() => onPrefsOpenChange(false)} onOpenKeys={() => setKeysOpen(true)} /> : null}
+        {keysOpen ? <KeysSheet onClose={() => setKeysOpen(false)} /> : null}
+      </Suspense>
     </TooltipRoot>
   );
 }

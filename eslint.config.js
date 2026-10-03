@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
   {
@@ -8,8 +9,9 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       'logs/**',
+      'dependencies/**',
       'runtime/**',
-      'scripts/mock-comfy.ts',
+      'server/mock-comfy.ts',
       'ComfyUI/**',
       'ComfyUI_windows_portable/**',
     ],
@@ -34,7 +36,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.{js,mjs,cjs}'],
+    // Hooks must run in the same order every render (an early return before a hook crashes the page)
+    files: ['client/src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
+  {
+    files: ['launcher/**/*.{js,mjs,cjs}'],
     languageOptions: {
       globals: {
         console: 'readonly',

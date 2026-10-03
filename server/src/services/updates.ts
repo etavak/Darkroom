@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
+import { runtimeDir } from './cliShared.js';
 
 export type VersionInfo = {
   version: string;
@@ -46,7 +47,7 @@ export function currentVersion(): VersionInfo {
   const version = String(readJson(path.join(root, 'package.json'))?.version ?? '?');
   const git = fs.existsSync(path.join(root, '.git'));
   if (git) return { version, sha: gitHead(root), updatedAt: null, git };
-  const installed = readJson(path.join(root, 'runtime', 'darkroom-version.json'));
+  const installed = readJson(path.join(runtimeDir(), 'darkroom-version.json'));
   return {
     version,
     sha: typeof installed?.sha === 'string' ? installed.sha : null,
@@ -61,7 +62,7 @@ let cached: { at: number; result: UpdateCheck } | null = null;
 export async function checkForUpdate(force = false): Promise<UpdateCheck> {
   if (!force && cached && Date.now() - cached.at < 10 * 60_000) return cached.result;
   const cur = currentVersion();
-  const pins = readJson(path.join(config.rootDir, 'scripts', 'cli', 'components.json')) as { darkroom?: { githubRepo?: string; branch?: string } } | null;
+  const pins = readJson(path.join(config.rootDir, 'launcher', 'components.json')) as { darkroom?: { githubRepo?: string; branch?: string } } | null;
   const repo = pins?.darkroom?.githubRepo || 'etavak/Darkroom';
   const branch = pins?.darkroom?.branch || 'main';
   const base = { ...cur, checkedAt: new Date().toISOString() };

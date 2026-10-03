@@ -127,6 +127,8 @@ export type GenerationRecord = {
   completedAt?: number | null;
   durationMs?: number | null;
   parentId?: string | null;
+  /** Images of this generation that were downloaded */
+  downloaded?: string[];
 };
 
 export type GenerateResponse = {
@@ -167,6 +169,8 @@ export type ModelCatalog = {
     ggufDualClip?: boolean;
     faceDetailer?: boolean;
     controlnetAux?: boolean;
+    /** What the face detailer still needs (null when it can run) */
+    faceDetailerMissing?: 'impact-pack' | 'impact-subpack' | 'face-model' | null;
     /** The ControlNet Aux folder exists (ComfyUI may still need a restart to load it) */
     controlnetAuxInstalled?: boolean;
   };

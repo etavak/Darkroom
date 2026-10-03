@@ -1,10 +1,22 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
-function cliUrl(rel: string): string {
-  return pathToFileURL(path.join(repoRoot, 'scripts/cli', rel)).href;
+/** file:// URL of a launcher module (the launcher's code lives in launcher/). */
+export function cliUrl(rel: string): string {
+  return pathToFileURL(path.join(repoRoot, 'launcher', rel)).href;
+}
+
+/**
+ * Darkroom's runtime folder (portable tools, uploads, version file): dependencies/runtime,
+ * or ./runtime on older installs that haven't been tidied up — same rule as the launcher.
+ */
+export function runtimeDir(): string {
+  const next = path.join(repoRoot, 'dependencies', 'runtime');
+  const legacy = path.join(repoRoot, 'runtime');
+  return !fs.existsSync(next) && fs.existsSync(legacy) ? legacy : next;
 }
 
 export type GuessedModelType =

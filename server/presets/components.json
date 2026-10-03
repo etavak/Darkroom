@@ -234,6 +234,18 @@
       "recommended": true,
       "title": "Flux Union Pro 2.0",
       "notes": "Pose, depth and edges for Flux.1 dev (Shakker Labs) — FLUX.1-dev non-commercial licence"
+    },
+    {
+      "id": "face_yolov8m",
+      "type": "detector",
+      "filename": "face_yolov8m.pt",
+      "url": "https://huggingface.co/Bingsu/adetailer/resolve/53cc19de382014514d9d4038601d261a7faa9b7b/face_yolov8m.pt",
+      "sizeBytes": 52026019,
+      "sha256": "717923c19b3f4bbf5250b728f1fa6b2cb72a33aed1d236ea9caf0e21ad943e5f",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/Bingsu/adetailer",
+      "title": "Face finder (YOLOv8m)",
+      "notes": "Finds faces for the face detailer (Bingsu/adetailer, Apache-2.0)"
     }
   ]
 }

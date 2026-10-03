@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="Darkroom studio: controls column, image plane and History">
+  <defs>
+    <linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a2f4a"/><stop offset="1" stop-color="#c9814a"/></linearGradient>
+    <linearGradient id="b" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1f3a44"/><stop offset="1" stop-color="#8fb4a0"/></linearGradient>
+    <linearGradient id="c" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a3440"/><stop offset="1" stop-color="#e3b27a"/></linearGradient>
+    <style>
+      text { font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+      .t { fill: #ecebe6; font-size: 13px; font-weight: 600; }
+      .m { fill: #a3a19a; font-size: 11px; }
+      .f { fill: #6e6c66; font-size: 10px; letter-spacing: .06em; }
+      .card { fill: #16171a; stroke: rgba(255,255,255,.075); }
+    </style>
+  </defs>
+  <rect width="960" height="560" fill="#0e0f11"/>
+
+  <!-- Controls column -->
+  <rect x="0" y="0" width="300" height="560" fill="#0e0f11"/>
+  <line x1="300" y1="0" x2="300" y2="560" stroke="rgba(255,255,255,.075)"/>
+  <circle cx="26" cy="28" r="9" fill="none" stroke="#f2b544" stroke-width="2"/><circle cx="26" cy="28" r="3" fill="#f2b544"/>
+  <text x="44" y="33" class="t" font-size="15">Darkroom</text>
+  <rect x="150" y="18" width="94" height="20" rx="10" fill="#1d1f23"/><circle cx="162" cy="28" r="3.5" fill="#5bd18b"/><text x="171" y="32" class="m">Apple M · MPS</text>
+  <rect x="14" y="52" width="166" height="38" rx="10" class="card"/><text x="24" y="67" class="f">MODEL · ILLUSTRIOUS</text><text x="24" y="82" class="t" font-size="12">waiIllustriousSDXL</text>
+  <rect x="188" y="52" width="98" height="38" rx="10" class="card"/><text x="198" y="67" class="f">STYLE</text><text x="198" y="82" class="t" font-size="12">Anime</text>
+
+  <rect x="14" y="102" width="272" height="128" rx="12" class="card"/>
+  <text x="26" y="124" class="t">Prompt</text>
+  <text x="26" y="148" class="m"><tspan fill="#ecebe6">1girl, silver hair, </tspan><tspan fill="#f2b544">(night city:1.2)</tspan><tspan fill="#ecebe6">,</tspan></text>
+  <text x="26" y="166" class="m"><tspan fill="#ecebe6">neon lights, rain, </tspan><tspan fill="#7cc6c0">{smile|serious}</tspan></text>
+  <rect x="186" y="200" width="88" height="20" rx="10" fill="#1d1f23"/><text x="196" y="214" class="m">Quality: Standard</text>
+  <rect x="26" y="206" width="70" height="3" rx="1.5" fill="#25272c"/><rect x="26" y="206" width="22" height="3" rx="1.5" fill="#f2b544"/>
+
+  <rect x="14" y="240" width="272" height="56" rx="12" class="card"/>
+  <text x="26" y="262" class="t">Avoid</text><text x="26" y="282" class="m">What to keep out of the image…</text>
+
+  <text x="16" y="318" class="f">REFERENCE IMAGES</text>
+  <rect x="14" y="326" width="272" height="50" rx="12" class="card"/>
+  <text x="26" y="348" class="t">ControlNet</text><text x="26" y="365" class="m">Pose 1.00 + Depth 0.60</text>
+  <rect x="14" y="384" width="272" height="50" rx="12" class="card"/>
+  <text x="26" y="406" class="t">LoRAs</text><text x="26" y="423" class="m">2 added · 2 on</text>
+
+  <rect x="14" y="452" width="272" height="40" rx="12" class="card"/>
+  <text x="26" y="468" class="f">STEPS</text><text x="74" y="468" class="f">CFG</text><text x="114" y="468" class="f">SEED</text><text x="156" y="468" class="f">SAMPLER</text><text x="26" y="485" class="t" font-size="12">28</text><text x="74" y="485" class="t" font-size="12">5.5</text><text x="114" y="485" class="t" font-size="12">⤨</text><text x="156" y="485" class="t" font-size="12">euler a</text>
+  <rect x="14" y="504" width="272" height="42" rx="12" fill="#f2b544"/>
+  <text x="30" y="530" font-size="14" font-weight="700" fill="#1d1405">Generate 1 image</text>
+  <rect x="224" y="514" width="50" height="22" rx="6" fill="#1d1405"/><text x="233" y="529" font-size="11" fill="#f2b544">Ctrl ↵</text>
+
+  <!-- Image plane -->
+  <rect x="352" y="70" width="230" height="340" rx="4" fill="url(#a)" stroke="#f2b544" stroke-width="2"/>
+  <rect x="600" y="70" width="152" height="228" rx="4" fill="url(#c)" opacity=".85"/>
+  <rect x="352" y="430" width="140" height="100" rx="4" fill="url(#b)" opacity=".7"/>
+  <rect x="510" y="430" width="140" height="100" rx="4" fill="url(#a)" opacity=".45"/>
+  <rect x="376" y="40" width="182" height="24" rx="12" fill="#1d1f23"/>
+  <text x="390" y="56" class="m">Variation · Upscale · Inpaint · ⋯</text>
+  <rect x="352" y="380" width="120" height="22" rx="11" fill="rgba(14,15,17,.75)"/><text x="363" y="395" class="m">2:3 · 832 × 1216</text>
+
+  <!-- History -->
+  <line x1="780" y1="0" x2="780" y2="560" stroke="rgba(255,255,255,.075)"/>
+  <text x="796" y="33" class="t">History</text><text x="854" y="33" class="m">24</text>
+  <rect x="794" y="48" width="152" height="24" rx="8" fill="#16171a" stroke="rgba(255,255,255,.075)"/><text x="804" y="64" class="m">Search prompts</text>
+  <g opacity=".9">
+    <rect x="794" y="84" width="72" height="72" rx="6" fill="url(#a)" stroke="#f2b544" stroke-width="1.5"/>
+    <rect x="874" y="84" width="72" height="72" rx="6" fill="url(#c)"/>
+    <rect x="794" y="164" width="72" height="72" rx="6" fill="url(#b)"/>
+    <rect x="874" y="164" width="72" height="72" rx="6" fill="url(#a)" opacity=".6"/>
+    <rect x="794" y="244" width="72" height="72" rx="6" fill="url(#c)" opacity=".7"/>
+    <rect x="874" y="244" width="72" height="72" rx="6" fill="url(#b)" opacity=".6"/>
+  </g>
+</svg>

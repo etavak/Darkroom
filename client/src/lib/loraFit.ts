@@ -1,7 +1,7 @@
 import type { LoraMeta } from '@/lib/api';
 
 /** Architecture of each family: a LoRA only loads on a model of the same one. */
-const FAMILY_ARCH: Record<string, LoraMeta['arch']> = {
+const FAMILY_ARCH: Record<string, string> = {
   sd15: 'sd15',
   sdxl: 'sdxl',
   illustrious: 'sdxl',

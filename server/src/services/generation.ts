@@ -307,6 +307,14 @@ type ComfyStatus = {
   messages?: Array<[string, Record<string, unknown>]>;
 };
 
+/** What to do about ComfyUI errors Darkroom knows a fix for. */
+function knownFixHint(msg: string): string {
+  if (/view size is not compatible with input tensor/i.test(msg)) {
+    return ' — a ComfyUI bug on Apple Silicon that Darkroom works around. Restart ComfyUI so the fix loads: launcher → Stop everything, then Start Darkroom.';
+  }
+  return '';
+}
+
 /** Human-readable reason from a ComfyUI history status, if it failed. */
 function comfyFailureReason(status: ComfyStatus | undefined): string | null {
   if (status?.status_str !== 'error') return null;
@@ -315,7 +323,7 @@ function comfyFailureReason(status: ComfyStatus | undefined): string | null {
     if (type === 'execution_error') {
       const node = typeof data?.node_type === 'string' ? `${data.node_type}: ` : '';
       const msg = typeof data?.exception_message === 'string' ? data.exception_message.trim() : '';
-      if (msg) return `ComfyUI error — ${node}${msg}`;
+      if (msg) return `ComfyUI error — ${node}${msg}${knownFixHint(msg)}`;
     }
   }
   return 'ComfyUI reported an error';

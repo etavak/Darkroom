@@ -117,3 +117,29 @@ export function updateModelLinkSource(destPath, sourcePath, linkType) {
 export function getModelLinksDbPath() {
   return dbPath;
 }
+
+/**
+ * A folder of linked models moved (e.g. ComfyUI into dependencies/): rewrite the paths
+ * that started with `from` so they start with `to`. Returns how many rows changed.
+ * @param {string} from
+ * @param {string} to
+ */
+export function rebaseModelLinks(from, to) {
+  if (!fs.existsSync(dbPath)) return 0;
+  const db = openDb();
+  const rows = /** @type {Array<{ id: number, dest_path: string, source_path: string }>} */ (
+    db.prepare('SELECT id, dest_path, source_path FROM model_links').all()
+  );
+  const swap = (/** @type {string} */ p) => (p === from || p.startsWith(from + path.sep) ? to + p.slice(from.length) : p);
+  const update = db.prepare('UPDATE model_links SET dest_path = ?, source_path = ? WHERE id = ?');
+  let n = 0;
+  for (const r of rows) {
+    const dest = swap(r.dest_path);
+    const src = swap(r.source_path);
+    if (dest !== r.dest_path || src !== r.source_path) {
+      update.run(dest, src, r.id);
+      n++;
+    }
+  }
+  return n;
+}

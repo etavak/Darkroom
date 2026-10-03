@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { root } from '../lib/paths.js';
+import { dependenciesDir, root } from '../lib/paths.js';
 import { detectComfyDesktopInstalls } from './desktopDetect.js';
 
 /**
@@ -100,6 +100,7 @@ export function detectComfyInstalls() {
     search.push('/opt/ComfyUI', '/usr/local/ComfyUI');
   }
 
+  search.push(path.join(dependenciesDir, 'ComfyUI'), path.join(dependenciesDir, 'ComfyUI_windows_portable'));
   search.push(path.join(root, 'ComfyUI'), path.join(root, '..', 'ComfyUI'));
   search.push(path.join(root, 'ComfyUI_windows_portable'));
   search.push(path.join(root, '..', 'ComfyUI_windows_portable'));

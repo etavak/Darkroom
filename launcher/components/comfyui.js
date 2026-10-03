@@ -9,8 +9,9 @@ import {
   getComfyPython,
   getComfyUiRoot,
   getGitBin,
+  defaultComfyDir,
   getModelsRoot,
-  root,
+  runtimeDir,
 } from '../lib/paths.js';
 import { runCommand } from '../lib/process.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
@@ -21,9 +22,7 @@ import { getManagedPython } from './python.js';
 import { defaultConfirm } from './types.js';
 
 function defaultDest() {
-  return process.platform === 'win32'
-    ? path.join(root, 'ComfyUI_windows_portable')
-    : path.join(root, 'ComfyUI');
+  return defaultComfyDir();
 }
 
 function persistLocalEnv(validated, port = 8188) {
@@ -256,7 +255,7 @@ export const comfyuiComponent = {
     await withOpLog('comfyui', 'uninstall', async (log) => {
       if (!wipeModels && sensitive.length) {
         // Move sensitive dirs aside under runtime backup, delete the rest
-        const keepParent = path.join(root, 'runtime', 'comfy-keep');
+        const keepParent = path.join(runtimeDir, 'comfy-keep');
         fs.mkdirSync(keepParent, { recursive: true });
         for (const s of sensitive) {
           const base = path.basename(s);

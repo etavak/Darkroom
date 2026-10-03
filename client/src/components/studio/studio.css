@@ -1100,6 +1100,21 @@ html[data-ui='studio'] .legacy-tip {
     justify-content: center;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   }
+  /* What a derived image was made by — readable at any zoom */
+  .st-tile-tag {
+    position: absolute;
+    left: calc(8px / var(--z, 1));
+    top: calc(8px / var(--z, 1));
+    z-index: 1;
+    padding: calc(2px / var(--z, 1)) calc(7px / var(--z, 1));
+    border-radius: calc(6px / var(--z, 1));
+    background: rgba(14, 15, 17, 0.72);
+    color: #ecebe6;
+    font-size: calc(11px / var(--z, 1));
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+  }
   .st-tile-pin {
     position: absolute;
     top: calc(8px / var(--z, 1));

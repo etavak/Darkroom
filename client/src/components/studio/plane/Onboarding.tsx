@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Check } from 'lucide-react';
-import { LogoMark } from '../PreferencesScreen';
+import { LogoMark } from '../LogoMark';
 
 type Props = {
   /** ComfyUI reachable (null while checking) */

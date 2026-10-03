@@ -1,7 +1,9 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, type ReactNode, lazy, Suspense } from 'react';
 import { Menu, X } from 'lucide-react';
 import type { PreferenceProps } from '@/components/settings/AppSettingsPanel';
-import { LogoMark, PreferencesScreen } from '../PreferencesScreen';
+import { LogoMark } from '../LogoMark';
+
+const PreferencesScreen = lazy(() => import('../PreferencesScreen').then((m) => ({ default: m.PreferencesScreen })));
 import { TooltipRoot } from '../TooltipLayer';
 import { EnhanceIcon } from '../plane/icons';
 import '../studio.css';
@@ -66,7 +68,9 @@ export function PhoneShell(p: Props) {
       {p.controls}
       {p.sheet}
       {p.overlay}
-      {p.prefsOpen ? <PreferencesScreen {...p.preferences} onClose={() => p.onPrefsOpenChange(false)} /> : null}
+      <Suspense fallback={null}>
+        {p.prefsOpen ? <PreferencesScreen {...p.preferences} onClose={() => p.onPrefsOpenChange(false)} /> : null}
+      </Suspense>
     </TooltipRoot>
   );
 }

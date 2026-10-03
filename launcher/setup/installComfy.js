@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import * as p from '@clack/prompts';
 import sevenBin from '7zip-bin';
-import { root } from '../lib/paths.js';
+import { defaultComfyDir, root } from '../lib/paths.js';
 import { validateComfyInstall } from './detect.js';
 
 /**
@@ -157,7 +157,7 @@ function findPortableRoot(extractRoot) {
 export async function installComfyWindowsPortable(opts = {}) {
   const destParent = opts.dest
     ? path.resolve(opts.dest)
-    : path.join(root, 'ComfyUI_windows_portable');
+    : defaultComfyDir();
   p.log.info(`Install location: ${destParent}`);
 
   const s = p.spinner();

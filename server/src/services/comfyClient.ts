@@ -45,6 +45,28 @@ export async function getObjectInfo(): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>;
 }
 
+/** Readable text for ComfyUI's /prompt rejections (they arrive as JSON). */
+export function describeQueueError(status: number, text: string): string {
+  type NodeError = { class_type?: string; errors?: Array<{ message?: string; details?: string }> };
+  let body: { error?: { type?: string; message?: string; extra_info?: { class_type?: string } }; node_errors?: Record<string, NodeError> } | null = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return `ComfyUI rejected the job (${status}): ${text.slice(0, 300)}`;
+  }
+  const err = body?.error;
+  if (err?.type === 'missing_node_type') {
+    const node = err.extra_info?.class_type ?? 'a node';
+    return `ComfyUI doesn't have the “${node}” node — the custom node that provides it isn't installed or didn't load. Install it, then restart ComfyUI.`;
+  }
+  const first = Object.values(body?.node_errors ?? {})[0];
+  const detail = first?.errors?.[0];
+  if (detail) {
+    return `ComfyUI rejected the job: ${first.class_type ? `${first.class_type} — ` : ''}${detail.message ?? ''}${detail.details ? ` (${detail.details})` : ''}`;
+  }
+  return `ComfyUI rejected the job (${status}): ${err?.message ?? text.slice(0, 300)}`;
+}
+
 export async function queuePrompt(
   prompt: Record<string, unknown>,
   clientId: string,
@@ -64,7 +86,7 @@ export async function queuePrompt(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new ComfyError(`queue prompt failed: ${res.status} ${text}`, res.status);
+    throw new ComfyError(describeQueueError(res.status, text), res.status);
   }
   return (await res.json()) as { prompt_id: string; number: number };
 }

@@ -2,7 +2,7 @@ import path from 'node:path';
 import * as p from '@clack/prompts';
 import { applyEnv, loadEnvFile } from '../lib/env.js';
 import { accelInstallNote, isIntelMac } from '../lib/hardware.js';
-import { root } from '../lib/paths.js';
+import { defaultComfyDir } from '../lib/paths.js';
 import { handleCancel } from '../lib/prompt.js';
 import { writeEnvFile } from '../setup/writeEnv.js';
 import fs from 'node:fs';
@@ -22,10 +22,7 @@ import { defaultConfirm } from './types.js';
  * @returns {Promise<string | null>}
  */
 export async function promptComfyInstallDir() {
-  const defaultDir =
-    process.platform === 'win32'
-      ? path.join(root, 'ComfyUI_windows_portable')
-      : path.join(root, 'ComfyUI');
+  const defaultDir = defaultComfyDir();
 
   const choice = await p.select({
     message: 'Where should ComfyUI be installed?',

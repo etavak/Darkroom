@@ -66,8 +66,11 @@ else
   git clone --depth 1 "$REPO_URL" "$DEST"
 fi
 
-chmod +x "$DEST/Darkroom.command" "$DEST/Darkroom.sh" 2>/dev/null || true
+chmod +x "$DEST/Start Darkroom (Mac).command" "$DEST/launcher/start-linux.sh" 2>/dev/null || true
 
 echo "[Darkroom] Launching…"
-# Run via bash so Gatekeeper does not block a downloaded .command as an app launch.
-exec bash "$DEST/Darkroom.command"
+if [ "$(uname -s)" = "Darwin" ]; then
+  # Run via bash so Gatekeeper does not block a downloaded .command as an app launch.
+  exec bash "$DEST/Start Darkroom (Mac).command"
+fi
+exec bash "$DEST/launcher/start-linux.sh"

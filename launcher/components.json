@@ -59,6 +59,15 @@
       "platforms": ["*"],
       "gpus": ["*"]
     },
+    "impact-subpack": {
+      "name": "Impact Subpack",
+      "repo": "https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git",
+      "dir": "ComfyUI-Impact-Subpack",
+      "testedRef": "main",
+      "requiresCuda": false,
+      "platforms": ["*"],
+      "gpus": ["*"]
+    },
     "ipadapter-plus": {
       "name": "IPAdapter Plus",
       "repo": "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git",

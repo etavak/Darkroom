@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { LogoMark } from '@/components/studio/PreferencesScreen';
+import { LogoMark } from '@/components/studio/LogoMark';
 import '@/components/studio/studio.css';
 import { applyUiAppearance, loadUiSettings } from '@/lib/uiSettings';
 import { AUTH_REQUIRED_EVENT, fetchAuthStatus, submitLanPin } from '@/lib/api';
