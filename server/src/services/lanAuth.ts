@@ -8,7 +8,8 @@ import { config } from '../config.js';
 /**
  * LAN access control. Requests from this computer are trusted; other devices
  * must enter a PIN once (shown in the launcher / Preferences on this computer)
- * and then carry a session cookie.
+ * and then carry a session cookie. The PIN changes every 30 seconds like an
+ * authenticator app (TOTP from a secret kept on this computer).
  */
 
 const authPath = path.join(config.dataDir, 'lan-auth.json');
@@ -18,29 +19,48 @@ const MAX_FAILS = 5;
 const LOCKOUT_MS = 60_000;
 
 type Session = { hash: string; createdAt: number; lastSeen: number; userAgent: string };
-type AuthFile = { pin: string; sessions: Session[] };
+/** pin: legacy fixed PIN (pre-rotation files); secret: hex, drives the rotating code */
+type AuthFile = { secret: string; pin?: string; sessions: Session[] };
+
+/** Seconds each code is valid */
+export const PIN_PERIOD_S = 30;
 
 let cache: AuthFile | null = null;
 
-function newPin(): string {
-  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-}
+const newSecret = () => crypto.randomBytes(20).toString('hex');
 
 function load(): AuthFile {
   if (cache) return cache;
   try {
     const raw = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Partial<AuthFile>;
-    if (typeof raw.pin === 'string' && /^\d{6}$/.test(raw.pin)) {
-      cache = { pin: raw.pin, sessions: Array.isArray(raw.sessions) ? raw.sessions : [] };
+    const sessions = Array.isArray(raw.sessions) ? raw.sessions : [];
+    if (typeof raw.secret === 'string' && /^[0-9a-f]{40}$/.test(raw.secret)) {
+      cache = { secret: raw.secret, sessions };
       return cache;
     }
+    // Older file with a fixed PIN: keep its signed-in devices, start rotating codes
+    cache = { secret: newSecret(), sessions };
+    save();
+    return cache;
   } catch {
     // first run — create below
   }
-  cache = { pin: newPin(), sessions: [] };
+  cache = { secret: newSecret(), sessions: [] };
   save();
   return cache;
 }
+
+/** RFC 6238 code for a 30 s step (HMAC-SHA1, 6 digits) */
+function codeAt(secretHex: string, step: number): string {
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(step));
+  const mac = crypto.createHmac('sha1', Buffer.from(secretHex, 'hex')).update(msg).digest();
+  const off = mac[mac.length - 1] & 0x0f;
+  const n = (mac.readUInt32BE(off) & 0x7fffffff) % 1_000_000;
+  return String(n).padStart(6, '0');
+}
+
+const currentStep = () => Math.floor(Date.now() / 1000 / PIN_PERIOD_S);
 
 function save() {
   if (!cache) return;
@@ -50,17 +70,20 @@ function save() {
 
 const hashToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
-export function getLanPin(): string {
-  return load().pin;
+/** The code to type right now and how long it stays valid. */
+export function getLanPin(): { pin: string; expiresInMs: number; periodS: number } {
+  const now = Date.now();
+  const step = Math.floor(now / 1000 / PIN_PERIOD_S);
+  return { pin: codeAt(load().secret, step), expiresInMs: (step + 1) * PIN_PERIOD_S * 1000 - now, periodS: PIN_PERIOD_S };
 }
 
-/** New PIN; every device signed in with the old one must enter the new PIN. */
-export function regenerateLanPin(): string {
+/** New secret (new codes); every signed-in device must enter a code again. */
+export function regenerateLanPin(): { pin: string; expiresInMs: number; periodS: number } {
   const file = load();
-  file.pin = newPin();
+  file.secret = newSecret();
   file.sessions = [];
   save();
-  return file.pin;
+  return getLanPin();
 }
 
 // ── Who is asking ───────────────────────────────────────────────────────────
@@ -162,9 +185,12 @@ export function attemptPin(
       retryAfterS: Math.ceil((state.lockedUntil - Date.now()) / 1000),
     };
   }
-  const expected = Buffer.from(getLanPin());
   const given = Buffer.from(String(pin).replace(/\D/g, '').padEnd(6, 'x').slice(0, 6));
-  if (!crypto.timingSafeEqual(expected, given)) {
+  // The current code, or the previous one (it may have changed while it was being typed)
+  const step = currentStep();
+  const secret = load().secret;
+  const matches = [step, step - 1].some((st) => crypto.timingSafeEqual(Buffer.from(codeAt(secret, st)), given));
+  if (!matches) {
     state.count += 1;
     if (state.count >= MAX_FAILS) {
       state.count = 0;

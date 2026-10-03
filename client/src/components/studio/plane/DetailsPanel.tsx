@@ -11,6 +11,8 @@ type Props = {
   onCopy: (text: string, what: string) => void;
   onReuseAll: () => void;
   onReusePrompt: () => void;
+  /** Phone: plain content for a sheet (no column, no close button) */
+  inline?: boolean;
 };
 
 const MODE_NAMES: Record<string, string> = {
@@ -28,7 +30,7 @@ function formatTook(ms: number | null | undefined): string | null {
 }
 
 /** How the selected image was made, with Reuse. Toggle with I. */
-export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReusePrompt }: Props) {
+export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReusePrompt, inline }: Props) {
   const [showFinal, setShowFinal] = useState(false);
   const s = record?.settings;
   const typed = s ? (s.userPrompt ?? s.promptTemplate ?? s.prompt) : '';
@@ -56,13 +58,20 @@ export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReus
   const finalDiffers = Boolean(s && s.prompt && s.prompt !== typed);
 
   return (
-    <aside className="st-col st-scroll flex w-[300px] shrink-0 flex-col gap-4 px-4 pb-4" style={{ order: 3, borderLeft: '1px solid var(--s-line)' }} data-tip-zone="left" aria-label="Image details">
-      <div className="flex h-[62px] shrink-0 items-center justify-between">
-        <span className="text-[15px] font-semibold">Details</span>
-        <button type="button" className="st-ibtn" onClick={onClose} aria-label="Close details" data-tip="Close details  ·  I">
-          <X />
-        </button>
-      </div>
+    <aside
+      className={inline ? 'flex flex-col gap-4 px-1.5 pb-1' : 'st-col st-scroll flex w-[300px] shrink-0 flex-col gap-4 px-4 pb-4'}
+      style={inline ? undefined : { order: 3, borderLeft: '1px solid var(--s-line)' }}
+      data-tip-zone={inline ? undefined : 'left'}
+      aria-label="Image details"
+    >
+      {inline ? null : (
+        <div className="flex h-[62px] shrink-0 items-center justify-between">
+          <span className="text-[15px] font-semibold">Details</span>
+          <button type="button" className="st-ibtn" onClick={onClose} aria-label="Close details" data-tip="Close details  ·  I">
+            <X />
+          </button>
+        </div>
+      )}
       {s ? (
         <>
           <div className="flex flex-col gap-1">

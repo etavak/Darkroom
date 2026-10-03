@@ -55,13 +55,15 @@ type Props = {
   prefs: PromptPrefs;
   onPrefs: (p: Partial<PromptPrefs>) => void;
   onClose: () => void;
+  /** Phone: render inside a sheet instead of popping out */
+  inline?: boolean;
 };
 
 /**
  * Pops out beside the controls column: Chunks (saved snippets, recent prompts, wildcards,
  * embeddings) and Settings (tag suggestions and highlighting).
  */
-export function PromptPopout({ prompt, onInsert, embeddings, prefs, onPrefs, onClose }: Props) {
+export function PromptPopout({ prompt, onInsert, embeddings, prefs, onPrefs, onClose, inline }: Props) {
   const [tab, setTab] = useState<'chunks' | 'settings'>('chunks');
   const [snippets, setSnippets] = useState<PromptSnippet[]>(loadSnippets);
   const [recent] = useState<string[]>(loadRecentPrompts);
@@ -89,7 +91,13 @@ export function PromptPopout({ prompt, onInsert, embeddings, prefs, onPrefs, onC
   };
 
   return (
-    <div className="st-popout" data-tip-avoid data-tip-zone="right" role="dialog" aria-label="Prompt chunks and settings">
+    <div
+      className={inline ? 'flex flex-col gap-3 px-1' : 'st-popout'}
+      data-tip-avoid={inline ? undefined : true}
+      data-tip-zone={inline ? undefined : 'right'}
+      role={inline ? undefined : 'dialog'}
+      aria-label="Prompt chunks and settings"
+    >
       <div className="flex items-center gap-2">
         <div className="st-tabs flex-1" role="tablist">
           <button type="button" role="tab" aria-selected={tab === 'chunks'} className={tab === 'chunks' ? 'on' : ''} onClick={() => setTab('chunks')}>
@@ -99,9 +107,11 @@ export function PromptPopout({ prompt, onInsert, embeddings, prefs, onPrefs, onC
             Settings
           </button>
         </div>
-        <button type="button" className="st-ibtn h-9 w-9" onClick={onClose} aria-label="Close" data-tip="Close  ·  Esc">
-          <X />
-        </button>
+        {inline ? null : (
+          <button type="button" className="st-ibtn h-9 w-9" onClick={onClose} aria-label="Close" data-tip="Close  ·  Esc">
+            <X />
+          </button>
+        )}
       </div>
 
       {tab === 'chunks' ? (

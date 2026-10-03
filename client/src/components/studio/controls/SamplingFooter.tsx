@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, Lock, Shuffle, Square, TriangleAlert, X } from 'lucide-react';
-import type { QueuedJob } from '@/components/controls/JobQueue';
+import type { QueuedJob } from '@/types/generation';
 
 type Props = {
   steps: number;
@@ -200,7 +200,7 @@ export function SamplingFooter(p: Props) {
           data-tip={p.generateDisabled ? p.disabledReason || 'Not ready' : p.running ? 'Adds to the queue' : 'Generate  ·  Ctrl ↵'}
         >
           <span className="truncate">{p.generateLabel}</span>
-          <span className="st-mono inline-flex h-8 shrink-0 items-center rounded-lg px-2.5 text-[12.5px] font-medium" style={{ background: 'var(--s-accent-ink)', color: 'var(--s-accent)' }}>
+          <span className="st-mono pointer-coarse:hidden inline-flex h-8 shrink-0 items-center rounded-lg px-2.5 text-[12.5px] font-medium" style={{ background: 'var(--s-accent-ink)', color: 'var(--s-accent)' }}>
             Ctrl ↵
           </span>
         </button>

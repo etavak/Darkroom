@@ -61,7 +61,8 @@ export function formatStatusHeader(status) {
   if (status.server && status.lanUrls.length) {
     const devices =
       status.devices === null ? '' : status.devices === 0 ? '  ·  no devices signed in' : `  ·  ${status.devices} device${status.devices === 1 ? '' : 's'} signed in`;
-    lines.push(`Phones     ${status.lanUrls[0]}${status.pin ? `  ·  PIN ${status.pin}` : ''}${devices}`);
+    const pin = status.pin ? `  ·  code ${status.pin.slice(0, 3)} ${status.pin.slice(3)} (changes every 30 s)` : '';
+    lines.push(`Phones     ${status.lanUrls[0]}${pin}${devices}`);
   }
   if (status.server && (status.stale.server || status.stale.client)) {
     lines.push('', 'Update ready — choose “Restart server” to apply it (ComfyUI keeps running).');

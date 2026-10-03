@@ -19,13 +19,22 @@ const DESCRIPTIONS: Record<PrefCategory, string> = {
 };
 
 /**
- * Full-screen Preferences for the studio: section list + search across everything.
- * Rows come from the same entries as the classic panel, so every control is live.
+ * Full-screen Preferences: section list + search across everything (on a phone, the list
+ * first and then one section at a time). Every row is a live control.
  */
 export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceProps & { onClose: () => void; onOpenKeys?: () => void }) {
   const entries = usePreferenceEntries(props);
   const [category, setCategory] = useState<PrefCategory>('general');
   const [query, setQuery] = useState('');
+  /** Phone: the section list first, then one section at a time */
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 720px)').matches);
+  const [sectionOpen, setSectionOpen] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)');
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -33,6 +42,7 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
         e.preventDefault();
         onClose();
       }
+      // (phone back is a button; Esc closes everywhere)
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -50,13 +60,16 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
     return c;
   }, [entries, q]);
   const current = PREF_CATEGORIES.find((c) => c.id === category);
+  const showList = !narrow || (!sectionOpen && !q);
+  const showContent = !narrow || sectionOpen || Boolean(q);
 
   return (
-    <div className="st-prefs" role="dialog" aria-label="Preferences">
+    <div className={`st-prefs ${narrow ? 'st-prefs-narrow' : ''}`} role="dialog" aria-label="Preferences">
+      {showList ? (
       <nav
-        data-tip-zone="right"
+        data-tip-zone={narrow ? 'below' : 'right'}
         aria-label="Preference sections"
-        className="flex w-[248px] shrink-0 flex-col gap-1 border-r p-3 pt-[18px]"
+        className={narrow ? 'st-scroll flex w-full flex-col gap-1 overflow-y-auto p-3 pt-[18px]' : 'flex w-[248px] shrink-0 flex-col gap-1 border-r p-3 pt-[18px]'}
         style={{ borderColor: 'var(--s-line)' }}
       >
         <div className="flex items-center gap-2.5 px-2 pb-3.5">
@@ -85,6 +98,7 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
               onClick={() => {
                 setCategory(c.id);
                 setQuery('');
+                setSectionOpen(true);
               }}
             >
               <span>{c.label}</span>
@@ -102,9 +116,23 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
           </>
         ) : null}
       </nav>
+      ) : null}
 
+      {showContent ? (
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto box-border max-w-[720px] px-10 pb-20 pt-[30px]">
+        <div className={`mx-auto box-border max-w-[720px] pb-20 ${narrow ? 'px-4 pt-3' : 'px-10 pt-[30px]'}`}>
+          {narrow ? (
+            <button
+              type="button"
+              className="st-pill mb-3 h-9"
+              onClick={() => {
+                setSectionOpen(false);
+                setQuery('');
+              }}
+            >
+              ← All preferences
+            </button>
+          ) : null}
           <h1 className="m-0 text-2xl font-semibold tracking-tight">
             {q ? `Results for “${q}”` : current?.label}
           </h1>
@@ -146,6 +174,7 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
           )}
         </div>
       </div>
+      ) : null}
 
       <button
         type="button"

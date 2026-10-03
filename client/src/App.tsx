@@ -1,42 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AddModelDialog } from '@/components/controls/AddModelDialog';
-import { AspectRatioPresets } from '@/components/controls/AspectRatioPresets';
-import { BatchControl } from '@/components/controls/BatchControl';
-import { CollapsibleSection } from '@/components/controls/CollapsibleSection';
 import { FinalPromptPreview } from '@/components/controls/FinalPromptPreview';
-import { GenerateButton } from '@/components/controls/GenerateButton';
-import { HiresFixControls } from '@/components/controls/HiresFixControls';
-import {
-  ControlNetPanel,
-  DEFAULT_CONTROLNET_UI,
-  controlNetPayload,
-  type ControlNetUiState,
-} from '@/components/controls/ControlNetPanel';
-import {
-  DEFAULT_DETAILER,
-  DetailerControls,
-} from '@/components/controls/DetailerControls';
-import { JobQueue, type QueuedJob } from '@/components/controls/JobQueue';
-import { LoraPanel } from '@/components/controls/LoraPanel';
+import { DEFAULT_CONTROLNET_UI, DEFAULT_DETAILER, controlNetPayload, type ControlNetUiState } from '@/lib/generationDefaults';
 import { DependencyResolver } from '@/components/controls/DependencyResolver';
 import { MapFamilyDialog } from '@/components/controls/MapFamilyDialog';
 import { ModelStackPanel } from '@/components/controls/ModelStackPanel';
-import { PromptPanel } from '@/components/controls/PromptPanel';
 import { SamplerControls } from '@/components/controls/SamplerControls';
 import { SeedControl } from '@/components/controls/SeedControl';
-import { SourcePanel } from '@/components/controls/SourcePanel';
-import { StyleSelect } from '@/components/controls/StyleSelect';
-import { Gallery } from '@/components/gallery/Gallery';
-import { AppShell } from '@/components/layout/AppShell';
-import { MainStage } from '@/components/layout/MainStage';
-import { SettingsPanel } from '@/components/layout/SettingsPanel';
-import { PreviewCanvas } from '@/components/preview/PreviewCanvas';
-import {
-  ResultActionBar,
-  type UpscaleRequest,
-  type VaryStrength,
-} from '@/components/preview/ResultActionBar';
-import { AppSettingsPanel, type PreferenceProps } from '@/components/settings/AppSettingsPanel';
+import type { PreferenceProps } from '@/components/settings/AppSettingsPanel';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { AvoidCard, PromptCard } from '@/components/studio/controls/PromptCards';
 import { ExtrasCard, LoraCard, LoraPicker } from '@/components/studio/controls/EnhanceCards';
@@ -51,6 +22,21 @@ import { DetailsPanel } from '@/components/studio/plane/DetailsPanel';
 import { HistoryPanel, type HistoryThumb } from '@/components/studio/plane/HistoryPanel';
 import { ImagePlane } from '@/components/studio/plane/ImagePlane';
 import { Onboarding } from '@/components/studio/plane/Onboarding';
+import { PhoneShell, PhoneSheet } from '@/components/studio/phone/PhoneShell';
+import { PhoneThumbs, PhoneViewer, type ViewerTile } from '@/components/studio/phone/PhoneViewer';
+import { FullscreenImage } from '@/components/studio/phone/FullscreenImage';
+import {
+  CompareIcon,
+  CopyImageIcon,
+  DownloadIcon,
+  EditIcon,
+  EnhanceIcon,
+  InpaintIcon,
+  PinIcon,
+  UpscaleIcon,
+  UseAsBaseIcon,
+  VaryIcon,
+} from '@/components/studio/plane/icons';
 import { randomPrompt } from '@/components/studio/controls/randomPrompt';
 import { derivedKind, outputSize, tileId, type FailedJob, type PlaneEntry, type Tile } from '@/components/studio/plane/layout';
 import { downloadZip } from '@/lib/zip';
@@ -63,7 +49,6 @@ import {
   StSection,
 } from '@/components/studio/controls/primitives';
 import { usePromptPrefs } from '@/lib/promptPrefs';
-import { UndoToast } from '@/components/ui/UndoToast';
 import { scaleAspectPresets } from '@/constants/aspectRatios';
 import { useFamilies } from '@/hooks/useFamilies';
 import { CancelledError, useGeneration } from '@/hooks/useGeneration';
@@ -88,12 +73,6 @@ import {
   evaluateReadiness,
   inferFamilyFromDiffusion,
 } from '@/lib/modelReadiness';
-import {
-  loadPanelSections,
-  savePanelSections,
-  type PanelSectionId,
-  type PanelSectionState,
-} from '@/lib/panelSections';
 import { stripInjectedTags } from '@/lib/presetPrompt';
 import { pushRecentPrompt } from '@/lib/promptLibrary';
 import {
@@ -112,12 +91,17 @@ import type {
   ModelLoadMode,
   OutpaintSettings,
   SourceFitMode,
+  QueuedJob,
   SourceImageState,
+  UpscaleRequest,
+  VaryStrength,
   SourceSizeMode,
   SystemStatsSummary,
   WorkMode,
 } from '@/types/generation';
 import type { ResolvedPresets } from '@/types/presets';
+import { newId } from '@/lib/uid';
+import { canCopyImages, copyTextToClipboard } from '@/lib/clipboard';
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 2 ** 32);
@@ -144,7 +128,7 @@ const emptyResolved: ResolvedPresets = {
   negativePreset: null,
 };
 
-/** True while the viewport is narrower than the studio layout supports (phones get the classic layout until the phone pass). */
+/** True below the desktop layout's minimum width — phones and narrow windows get the phone layout. */
 function useNarrowViewport(maxWidth = 899) {
   const query = `(max-width: ${maxWidth}px)`;
   const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches);
@@ -157,7 +141,7 @@ function useNarrowViewport(maxWidth = 899) {
   return narrow;
 }
 
-export default function App({ variant = 'studio' }: { variant?: 'studio' | 'classic' }) {
+export default function App() {
   const narrow = useNarrowViewport();
   const [promptPrefs, setPromptPrefs] = usePromptPrefs();
   const [promptPanelOpen, setPromptPanelOpen] = useState(false);
@@ -178,13 +162,18 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const [drop, setDrop] = useState<{ via: 'drop' | 'paste'; png: boolean; name: string | null; over: DropTarget | null; file: File | null } | null>(null);
   /** Mask being uploaded after "Add to references" (reopening waits for it) */
   const [savingMask, setSavingMask] = useState(false);
+  /** Phone: open bottom sheet, expanded controls, compare on the viewer */
+  const [phoneSheet, setPhoneSheet] = useState<null | 'tools' | 'panel' | 'loraPick' | 'actions' | 'models' | 'details'>(null);
+  const [phoneExpanded, setPhoneExpanded] = useState(false);
+  const [phoneCompare, setPhoneCompare] = useState(false);
+  const [phoneFull, setPhoneFull] = useState(false);
   const [planeSel, setPlaneSel] = useState<string | null>(null);
   const planeSelRef = useRef<string | null>(null);
   planeSelRef.current = planeSel;
   const [planeFocus, setPlaneFocus] = useState<{ id: string; n: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; recordId: string; index: number } | null>(null);
   const studioRef = useRef(false);
-  studioRef.current = variant === 'studio' && !narrow;
+  studioRef.current = !narrow;
   const requestFocus = useCallback((id: string) => setPlaneFocus((f) => ({ id, n: (f?.n ?? 0) + 1 })), []);
   const { catalog, loading: modelsLoading, reload: reloadModels } = useModels();
   const { families } = useFamilies();
@@ -194,7 +183,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     reload,
     softDelete,
     undoDelete,
-    dismissUndo,
     pendingDelete,
   } = useHistory();
   const [comfyOk, setComfyOk] = useState<boolean | null>(null);
@@ -232,11 +220,8 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   };
   const [remoteMode, setRemoteMode] = useState(false);
   const [startingComfy, setStartingComfy] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [uiSettingsOpen, setUiSettingsOpen] = useState(false);
   const [finalOpen, setFinalOpen] = useState(false);
-  const [panelOpen, setPanelOpen] = useState<PanelSectionState>(() => loadPanelSections());
-  const modelAutoCollapsed = useRef(false);
   const [perPromptPreview, setPerPromptPreview] = useState<boolean | null>(null);
   const [queue, setQueue] = useState<QueuedJob[]>([]);
   const [activeQueueId, setActiveQueueId] = useState<string | null>(null);
@@ -414,10 +399,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     const auto = familyMeta?.defaultClipType;
     if (auto) setClipType(auto);
   }, [familyMeta?.defaultClipType, familyMeta?.id, clipTypeOverride]);
-
-  useEffect(() => {
-    savePanelSections(panelOpen);
-  }, [panelOpen]);
 
   // Offer split mode + GGUF-aware defaults when only diffusion models exist
   useEffect(() => {
@@ -604,7 +585,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         setSelectedIndex(0);
         requestFocus(tileId(record.id, 0));
       }
-      setSettingsOpen(false);
     },
     [reload, requestFocus, selectedId, uiSettings.jumpToNewest],
   );
@@ -798,7 +778,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         if (!seedLocked) setSeed(nextSeed);
         const settings = buildSettings(nextSeed);
         const job: QueuedJob = {
-          id: crypto.randomUUID(),
+          id: newId(),
           settings,
           label: settings.prompt.slice(0, 48) || 'Forever',
         };
@@ -854,33 +834,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     return null;
   }, [comfyOk, readiness.reason, resolved.finalPositive, source, workMode]);
 
-  // Collapse Model once the stack is valid (first time only)
-  useEffect(() => {
-    if (!readiness.ready || modelAutoCollapsed.current) return;
-    modelAutoCollapsed.current = true;
-    setPanelOpen((prev) => ({ ...prev, model: false, prompt: true }));
-  }, [readiness.ready]);
-
-  const setSectionOpen = useCallback((id: PanelSectionId, open: boolean) => {
-    setPanelOpen((prev) => ({ ...prev, [id]: open }));
-  }, []);
-
-  const soloSection = useCallback((id: PanelSectionId) => {
-    setPanelOpen({
-      model: id === 'model',
-      source: id === 'source',
-      prompt: id === 'prompt',
-      image: id === 'image',
-      loras: id === 'loras',
-      sampling: id === 'sampling',
-    });
-  }, []);
-
   const applySource = useCallback(
     (next: SourceImageState, preferMode: WorkMode = 'img2img') => {
       setSource(next);
       setWorkMode((prev) => (prev === 'generate' ? preferMode : prev));
-      setPanelOpen((p) => ({ ...p, source: true }));
       if (next.width > 0 && next.height > 0) {
         const matched = matchSourceSize(next.width, next.height, sizeMultiple);
         if (sourceSizeMode === 'match') {
@@ -936,44 +893,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const teKeys = stackFamily?.requiredComponents?.text_encoders ?? [];
   const vaeKeys = stackFamily?.requiredComponents?.vae ?? [];
 
-  const modelSummary = useMemo(() => {
-    if (modelMode === 'split') {
-      return [shortModelName(unet), shortModelName(clipName), shortModelName(vaeName)]
-        .filter((x) => x && x !== '—')
-        .join(' · ');
-    }
-    return shortModelName(checkpoint);
-  }, [modelMode, unet, clipName, vaeName, checkpoint]);
-
-  const promptSummary = useMemo(() => {
-    const t = resolved.finalPositive.trim() || prompt.trim();
-    if (!t) return 'Empty prompt';
-    return t.length > 42 ? `${t.slice(0, 40)}…` : t;
-  }, [resolved.finalPositive, prompt]);
-
-  const imageSummary = `${width}×${height} · seed ${seed}${seedLocked ? ' · locked' : ''}${
-    hiresFix.enabled ? ` · hires ${hiresFix.scale}×` : ''
-  }${controlNet.enabled && controlNet.name ? ' · CN' : ''}${
-    detailer.enabled ? ' · detailer' : ''
-  }`;
-  const loraSummary =
-    loras.length === 0
-      ? 'None'
-      : loras.map((l) => `${shortModelName(l.name)} ${l.strength_model}`).join(', ');
-  const samplingSummary = `${steps} steps · CFG ${cfg} · ${sampler}`;
-
-  const previousImage = useMemo(() => {
-    const completed = items.filter((i) => i.images[0]);
-    if (selectedId) {
-      const idx = completed.findIndex((i) => i.id === selectedId);
-      if (idx >= 0 && completed[idx + 1]?.images[0]) return completed[idx + 1].images[0];
-    }
-    if (runtime.resultImages[0] && completed[0]?.images[0] !== runtime.resultImages[0]) {
-      return completed[0]?.images[0] ?? null;
-    }
-    return completed[1]?.images[0] ?? null;
-  }, [items, selectedId, runtime.resultImages]);
-
   const openAddModel = useCallback((preferType?: string) => {
     setAddModelPreferType(preferType);
     setAddModelOpen(true);
@@ -1007,7 +926,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     const settings = buildSettings(nextSeed);
     if (prompt.trim()) pushRecentPrompt(prompt);
     const job: QueuedJob = {
-      id: crypto.randomUUID(),
+      id: newId(),
       settings,
       label: settings.prompt.slice(0, 48) || 'Queued job',
     };
@@ -1054,7 +973,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         return;
       }
       const job: QueuedJob = {
-        id: crypto.randomUUID(),
+        id: newId(),
         settings,
         label: label || settings.prompt.slice(0, 48) || 'Queued job',
       };
@@ -1404,9 +1323,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     } else {
       setDetailer(DEFAULT_DETAILER);
     }
-    setPanelOpen((prev) => ({ ...prev, sampling: true, model: true, image: true }));
-    // The controls drawer is the mobile layout; on desktop (lg+) they're already visible
-    if (window.matchMedia('(max-width: 1023.98px)').matches) setSettingsOpen(true);
   };
 
   const selectItem = (item: GenerationRecord, index = 0) => {
@@ -1417,38 +1333,6 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
 
   const selectedRecord = items.find((i) => i.id === selectedId) ?? null;
   /** Prefer history selection when idle so delete/navigation update the canvas. */
-  const displayImages = runtime.running ? runtime.resultImages : viewImages;
-
-  const selectNeighborAfterDelete = useCallback(
-    (deletedId: string, remaining: GenerationRecord[]) => {
-      if (selectedId !== deletedId) return;
-      const next = remaining.find((i) => i.status === 'completed' && i.images[0]);
-      if (next) {
-        setSelectedId(next.id);
-        setViewImages(next.images);
-      } else {
-        setSelectedId(null);
-        setViewImages([]);
-      }
-    },
-    [selectedId],
-  );
-
-  const deleteHistoryItem = useCallback(
-    (item: GenerationRecord) => {
-      if (uiSettings.confirmDelete && !window.confirm('Delete this generation?')) return;
-      const remaining = items.filter((i) => i.id !== item.id);
-      softDelete(item);
-      selectNeighborAfterDelete(item.id, remaining);
-    },
-    [items, selectNeighborAfterDelete, softDelete, uiSettings.confirmDelete],
-  );
-
-  const deleteCurrent = () => {
-    if (!selectedRecord || selectedRecord.status !== 'completed') return;
-    deleteHistoryItem(selectedRecord);
-  };
-
   /** Prompt + preset-state fields carried from a parent record (Vary / Upscale). */
   const parentPromptFields = (
     parent: GenerationSettings,
@@ -1524,373 +1408,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     [buildSettings, enqueueJob, readiness.ready, selectedIndex, selectedRecord],
   );
 
-  const copySeed = async () => {
-    const value = String(selectedRecord?.settings.seed ?? seed);
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopyFlash('Seed copied');
-      window.setTimeout(() => setCopyFlash(null), 1500);
-    } catch {
-      setCopyFlash('Copy failed');
-      window.setTimeout(() => setCopyFlash(null), 1500);
-    }
-  };
-
-  const historyShared = {
-    items,
-    selectedId,
-    favorites,
-    onSelect: selectItem,
-    onReuse: reuseSettings,
-    onDelete: deleteHistoryItem,
-    onToggleFavorite: toggleFavorite,
-    onUseAsSource: (item: GenerationRecord) => {
-      void setSourceFromGallery(item);
-    },
-    onViewSource: (parentId: string) => {
-      const parent = items.find((i) => i.id === parentId);
-      if (parent) selectItem(parent);
-    },
-    loading: histLoading,
-  };
 
   const showMapDialog =
     Boolean(primaryModel) && !resolved.mapped && families.length > 0 && comfyOk !== false;
 
-  const renderSettings = () => (
-    <SettingsPanel
-      footer={
-        <div className="space-y-2">
-          <JobQueue
-            jobs={queue}
-            activeId={activeQueueId}
-            onRemove={(id) => {
-              void cancelQueueJob(id);
-            }}
-            onReorder={(from, to) => {
-              const next = [...queueRef.current];
-              const [item] = next.splice(from, 1);
-              if (!item) return;
-              next.splice(to, 0, item);
-              syncQueue(next);
-            }}
-          />
-          <GenerateButton
-            onGenerate={() => void handleGenerate()}
-            onCancel={() => void handleCancel()}
-            running={runtime.running}
-            progress={runtime.progress}
-            progressStep={runtime.progressStep}
-            progressMax={runtime.progressMax}
-            disabled={Boolean(generateBlockedReason) || !readiness.ready}
-            disabledReason={generateBlockedReason}
-            queueCount={queue.length}
-          />
-          {runtime.error && <p className="text-xs text-destructive">{runtime.error}</p>}
-        </div>
-      }
-    >
-      <CollapsibleSection
-        id="model"
-        title="Model"
-        open={panelOpen.model}
-        onOpenChange={(o) => setSectionOpen('model', o)}
-        onSolo={() => soloSection('model')}
-        summary={modelSummary}
-      >
-        <ModelStackPanel
-          catalog={catalog}
-          mode={modelMode}
-          onModeChange={(mode) => {
-            setModelMode(mode);
-            setStyleId(null);
-            setDismissedPositive([]);
-            setDismissedNegative([]);
-            prevFamily.current = null;
-          }}
-          checkpoint={checkpoint}
-          onCheckpointChange={(v) => {
-            setCheckpoint(v);
-            setStyleId(null);
-            setDismissedPositive([]);
-            setDismissedNegative([]);
-            prevFamily.current = null;
-          }}
-          unet={unet}
-          onUnetChange={(v) => {
-            setUnet(v);
-            lastAutopickUnet.current = '';
-            setStyleId(null);
-            setDismissedPositive([]);
-            setDismissedNegative([]);
-            prevFamily.current = null;
-          }}
-          clipName={clipName}
-          onClipNameChange={setClipName}
-          clipName2={clipName2}
-          onClipName2Change={setClipName2}
-          clipType={clipType}
-          onClipTypeChange={setClipType}
-          clipTypeOverride={clipTypeOverride}
-          onClipTypeOverrideChange={setClipTypeOverride}
-          vaeName={vaeName}
-          onVaeNameChange={setVaeName}
-          loras={loras}
-          onLorasChange={setLoras}
-          loading={modelsLoading}
-          offline={comfyOk === false}
-          familyName={resolved.familyName}
-          mapped={resolved.mapped}
-          textEncoderCount={teCount || (modelMode === 'split' ? 1 : 0)}
-          te1Hint={teKeys[0] ? `Hint: ${(teHints[teKeys[0]] || []).join(', ') || teKeys[0]}` : null}
-          te2Hint={teKeys[1] ? `Hint: ${(teHints[teKeys[1]] || []).join(', ') || teKeys[1]}` : null}
-          vaeHint={vaeKeys[0] ? `Hint: ${(teHints[vaeKeys[0]] || []).join(', ') || 'models/vae'}` : null}
-          disabled={runtime.running}
-          missing={readiness.missing}
-          needsGguf={readiness.needsGguf}
-          offerGguf={
-            Boolean(familyMeta?.supportsGguf) &&
-            !catalog.available.ggufUnet &&
-            !readiness.needsGguf
-          }
-          onAddModel={openAddModel}
-        />
-        <StyleSelect
-          styles={styles}
-          value={styleId ?? resolved.styleId}
-          onChange={(id) => {
-            setStyleId(id);
-            setDismissedPositive([]);
-            setDismissedNegative([]);
-          }}
-          disabled={runtime.running || !resolved.mapped}
-          visible={Boolean(resolved.familyId)}
-        />
-        {catalog.embeddings.length > 0 ? (
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Embeddings: type <code className="text-[10px]">embedding:name</code> —{' '}
-            {catalog.embeddings.slice(0, 6).join(', ')}
-            {catalog.embeddings.length > 6 ? '…' : ''}
-          </p>
-        ) : null}
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        id="source"
-        title="Source"
-        open={panelOpen.source}
-        onOpenChange={(o) => setSectionOpen('source', o)}
-        onSolo={() => soloSection('source')}
-        summary={
-          source
-            ? `${workMode}${source.width ? ` · ${source.width}×${source.height}` : ''}`
-            : 'Generate'
-        }
-      >
-        <SourcePanel
-          source={source}
-          mode={workMode}
-          supportsEdit={Boolean(familyMeta?.supportsEdit)}
-          denoise={imgDenoise}
-          sourceSizeMode={sourceSizeMode}
-          sourceFit={sourceFit}
-          outpaint={outpaint}
-          disabled={runtime.running}
-          onModeChange={(m) => {
-            if (m !== 'generate' && !source) {
-              setWorkMode(m === 'edit' && !familyMeta?.supportsEdit ? 'img2img' : m);
-              setPanelOpen((p) => ({ ...p, source: true }));
-              return;
-            }
-            if (m === 'edit' && !familyMeta?.supportsEdit) return;
-            setWorkMode(m);
-          }}
-          onClear={clearSource}
-          onReplaceFile={(file) => void setSourceFromFile(file)}
-          onDenoiseChange={setImgDenoise}
-          onSourceSizeModeChange={(v) => {
-            setSourceSizeMode(v);
-            if (v === 'match' && source?.width && source.height) {
-              const matched = matchSourceSize(source.width, source.height, sizeMultiple);
-              setWidth(matched.width);
-              setHeight(matched.height);
-              setAspectId('custom');
-            }
-          }}
-          onSourceFitChange={setSourceFit}
-          onOutpaintChange={setOutpaint}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        id="prompt"
-        title="Prompt"
-        open={panelOpen.prompt}
-        onOpenChange={(o) => setSectionOpen('prompt', o)}
-        onSolo={() => soloSection('prompt')}
-        summary={promptSummary}
-      >
-        <PromptPanel
-          prompt={prompt}
-          negativePrompt={negativePrompt}
-          positiveTags={resolved.positiveTags}
-          negativeTags={resolved.negativeTags}
-          disableNegative={resolved.disableNegative}
-          disableNegativeReason={
-            resolved.familyName
-              ? `Negatives are unused for ${resolved.familyName} (encoder / guidance family).`
-              : 'Negatives are unused for this family.'
-          }
-          familyId={resolved.familyId}
-          tagsEnabled={resolved.tagsEnabled}
-          tokenMode={familyMeta?.promptTokenMode ?? 'clip'}
-          tokenMax={familyMeta?.promptMaxTokens ?? 75}
-          finalPositive={resolved.finalPositive}
-          finalNegative={resolved.finalNegative}
-          enhanceConfigured={Boolean(
-            serverSettings.enhanceApiUrl.trim() && serverSettings.enhanceModel.trim(),
-          )}
-          promptPlaceholder={
-            workMode === 'edit' ? 'Describe the change…' : 'Describe your image...'
-          }
-          onPromptChange={setPrompt}
-          onNegativeChange={setNegativePrompt}
-          onDismissPositive={(tag) =>
-            setDismissedPositive((prev) => (prev.includes(tag) ? prev : [...prev, tag]))
-          }
-          onDismissNegative={(tag) =>
-            setDismissedNegative((prev) => (prev.includes(tag) ? prev : [...prev, tag]))
-          }
-          disabled={runtime.running}
-        />
-        <FinalPromptPreview
-          open={finalOpen}
-          onOpenChange={setFinalOpen}
-          positive={resolved.finalPositive}
-          negative={resolved.finalNegative}
-          cfg={cfg}
-          clipSkip={clipSkip}
-          guidance={guidance}
-          sampler={sampler}
-          checkpoint={primaryModel}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        id="image"
-        title="Image"
-        open={panelOpen.image}
-        onOpenChange={(o) => setSectionOpen('image', o)}
-        onSolo={() => soloSection('image')}
-        summary={imageSummary}
-      >
-        <AspectRatioPresets
-          presets={resolved.aspectPresets}
-          width={width}
-          height={height}
-          aspectId={aspectId}
-          onChange={(w, h, id) => {
-            setWidth(w);
-            setHeight(h);
-            setAspectId(id);
-          }}
-          disabled={runtime.running}
-        />
-        <SeedControl
-          seed={seed}
-          locked={seedLocked}
-          onSeedChange={setSeed}
-          onLockedChange={setSeedLocked}
-          disabled={runtime.running}
-        />
-        <BatchControl
-          batchSize={batchSize}
-          onBatchChange={setBatchSize}
-          disabled={runtime.running}
-        />
-        <HiresFixControls
-          value={hiresFix}
-          onChange={setHiresFix}
-          disabled={runtime.running}
-        />
-        <ControlNetPanel
-          value={controlNet}
-          onChange={setControlNet}
-          models={catalog.controlnet}
-          controlnetAvailable={Boolean(catalog.available.controlnet)}
-          auxAvailable={Boolean(catalog.available.controlnetAux)}
-          disabled={runtime.running}
-          onUploadImage={async (file) => {
-            const src = await uploadFileAsSource(file);
-            return { comfyName: src.comfyName, previewUrl: src.previewUrl };
-          }}
-        />
-        <DetailerControls
-          value={detailer}
-          onChange={setDetailer}
-          detectors={catalog.detailer_detectors ?? []}
-          available={Boolean(catalog.available.faceDetailer)}
-          disabled={runtime.running}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        id="loras"
-        title="LoRAs"
-        open={panelOpen.loras}
-        onOpenChange={(o) => setSectionOpen('loras', o)}
-        onSolo={() => soloSection('loras')}
-        summary={loraSummary}
-      >
-        <LoraPanel
-          loras={loras}
-          options={catalog.loras}
-          onChange={setLoras}
-          loading={modelsLoading}
-          disabled={runtime.running}
-          offline={comfyOk === false}
-          onAddModel={() => openAddModel('lora')}
-        />
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        id="sampling"
-        title="Sampling"
-        open={panelOpen.sampling}
-        onOpenChange={(o) => setSectionOpen('sampling', o)}
-        onSolo={() => soloSection('sampling')}
-        summary={samplingSummary}
-      >
-        <SamplerControls
-          steps={steps}
-          cfg={cfg}
-          sampler={sampler}
-          scheduler={scheduler}
-          guidance={guidance}
-          clipSkip={clipSkip}
-          defaults={{
-            steps: familyMeta?.settings.steps ?? 25,
-            cfg: familyMeta?.settings.cfg ?? 7,
-            sampler: familyMeta?.settings.sampler ?? 'euler',
-            scheduler: familyMeta?.settings.scheduler ?? 'normal',
-            guidance: familyMeta?.settings.guidance,
-            clipSkip: familyMeta?.settings.clipSkip,
-          }}
-          samplerOptions={catalog.samplers}
-          schedulerOptions={catalog.schedulers}
-          showGuidance={typeof guidance === 'number'}
-          showClipSkip={typeof clipSkip === 'number'}
-          onStepsChange={setSteps}
-          onCfgChange={setCfg}
-          onSamplerChange={setSampler}
-          onSchedulerChange={setScheduler}
-          onGuidanceChange={setGuidance}
-          onClipSkipChange={setClipSkip}
-          disabled={runtime.running}
-        />
-      </CollapsibleSection>
-    </SettingsPanel>
-  );
 
   const modelPanel = (
     <>
@@ -1975,51 +1496,53 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const workVerb = workMode === 'edit' ? 'Edit' : workMode === 'outpaint' ? inpaintVerb : 'Generate';
 
   /** The studio's controls column (phase 2 of the rebuild). */
-  const renderStudioControls = () => (
-    <>
-      <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2 px-3.5 pb-3">
-        <StMenuButton
-          label="Model"
-          tip={modelMissing ? 'Some model files are missing — click to fix' : 'Choose the model. Presets, tags and defaults follow it.'}
-          open={modelMenuOpen}
-          onOpenChange={setModelMenuOpen}
-          menuStyle={{ width: 'calc(var(--st-left-w, 360px) - 28px)', padding: 12, gap: 12 }}
-          button={
-            <StChipFace
-              label={resolved.familyName ? `Model · ${resolved.familyName}` : 'Model'}
-              value={primaryModel ? shortModelName(primaryModel) : 'Choose a model'}
-              dot={modelMissing ? '#e2b44f' : undefined}
-            />
-          }
-        >
-          {modelPanel}
-        </StMenuButton>
-        <StMenuButton
-          label="Style"
-          tip={resolved.mapped ? 'Style for this model — sets preset tags and defaults' : 'Pick a model family first'}
-          disabled={runtime.running || !resolved.mapped || styles.length === 0}
-          menuStyle={{ left: 'auto', right: 0, minWidth: 200 }}
-          button={<StChipFace label="Style" value={activeStyleName ?? (styles.length ? 'Default' : 'None')} />}
-        >
-          {(close) =>
-            styles.map((st) => (
-              <StMenuItem
-                key={st.id}
-                title={st.name}
-                selected={st.id === activeStyleId}
-                onClick={() => {
-                  setStyleId(st.id);
-                  setDismissedPositive([]);
-                  setDismissedNegative([]);
-                  close();
-                }}
+  const renderStudioControls = (layout: 'desktop' | 'phone' = 'desktop') => {
+    const phone = layout === 'phone';
+    const modelStyleRow = (
+        <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-2 px-3.5 pb-3">
+          <StMenuButton
+            label="Model"
+            tip={modelMissing ? 'Some model files are missing — click to fix' : 'Choose the model. Presets, tags and defaults follow it.'}
+            open={modelMenuOpen}
+            onOpenChange={setModelMenuOpen}
+            menuStyle={{ width: 'calc(var(--st-left-w, 360px) - 28px)', padding: 12, gap: 12 }}
+            button={
+              <StChipFace
+                label={resolved.familyName ? `Model · ${resolved.familyName}` : 'Model'}
+                value={primaryModel ? shortModelName(primaryModel) : 'Choose a model'}
+                dot={modelMissing ? '#e2b44f' : undefined}
               />
-            ))
-          }
-        </StMenuButton>
-      </div>
-
-      <StScrollArea>
+            }
+          >
+            {modelPanel}
+          </StMenuButton>
+          <StMenuButton
+            label="Style"
+            tip={resolved.mapped ? 'Style for this model — sets preset tags and defaults' : 'Pick a model family first'}
+            disabled={runtime.running || !resolved.mapped || styles.length === 0}
+            menuStyle={{ left: 'auto', right: 0, minWidth: 200 }}
+            button={<StChipFace label="Style" value={activeStyleName ?? (styles.length ? 'Default' : 'None')} />}
+          >
+            {(close) =>
+              styles.map((st) => (
+                <StMenuItem
+                  key={st.id}
+                  title={st.name}
+                  selected={st.id === activeStyleId}
+                  onClick={() => {
+                    setStyleId(st.id);
+                    setDismissedPositive([]);
+                    setDismissedNegative([]);
+                    close();
+                  }}
+                />
+              ))
+            }
+          </StMenuButton>
+        </div>
+    );
+    const missingCard = (
+      <>
         {modelMissing && !modelMenuOpen ? (
           <button
             type="button"
@@ -2033,30 +1556,40 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
             </span>
           </button>
         ) : null}
-
-        <PromptCard
-          value={prompt}
-          onChange={setPrompt}
-          familyId={resolved.familyId}
-          tagsEnabled={resolved.tagsEnabled}
-          placeholder={workMode === 'edit' ? 'Describe the change…' : 'Describe your image…'}
-          disabled={runtime.running}
-          tokenMode={familyMeta?.promptTokenMode ?? 'clip'}
-          tokenMax={familyMeta?.promptMaxTokens ?? 75}
-          injected={resolved.positiveTags}
-          qualityLevels={resolved.qualityPresets}
-          quality={resolved.qualityPreset}
-          onQuality={setQualityPreset}
-          prefs={promptPrefs}
-          enhanceConfigured={Boolean(serverSettings.enhanceApiUrl.trim() && serverSettings.enhanceModel.trim())}
-          onOpenPreferences={() => setUiSettingsOpen(true)}
-          onShowFinal={() => setFinalOpen((o) => !o)}
-          panelOpen={promptPanelOpen}
-          onTogglePanel={() => {
-            setLoraPickerOpen(false);
-            setPromptPanelOpen((o) => !o);
-          }}
-        />
+      </>
+    );
+    const promptCard = (
+          <PromptCard
+            value={prompt}
+            onChange={setPrompt}
+            familyId={resolved.familyId}
+            tagsEnabled={resolved.tagsEnabled}
+            placeholder={workMode === 'edit' ? 'Describe the change…' : 'Describe your image…'}
+            disabled={runtime.running}
+            tokenMode={familyMeta?.promptTokenMode ?? 'clip'}
+            tokenMax={familyMeta?.promptMaxTokens ?? 75}
+            injected={resolved.positiveTags}
+            qualityLevels={resolved.qualityPresets}
+            quality={resolved.qualityPreset}
+            onQuality={setQualityPreset}
+            prefs={promptPrefs}
+            enhanceConfigured={Boolean(serverSettings.enhanceApiUrl.trim() && serverSettings.enhanceModel.trim())}
+            onOpenPreferences={() => setUiSettingsOpen(true)}
+            onShowFinal={() => setFinalOpen((o) => !o)}
+            panelOpen={phone ? phoneSheet === 'panel' : promptPanelOpen}
+            onTogglePanel={
+              phone
+                ? () => setPhoneSheet('panel')
+                : () => {
+                    setLoraPickerOpen(false);
+                    setPromptPanelOpen((o) => !o);
+                  }
+            }
+            textHeight={phone ? (phoneExpanded ? 'h-[132px]' : 'h-[78px]') : undefined}
+          />
+    );
+    const moreCards = (
+      <>
         <AvoidCard
           value={negativePrompt}
           onChange={setNegativePrompt}
@@ -2188,8 +1721,12 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         <LoraCard
           loras={loras}
           onChange={setLoras}
-          pickerOpen={loraPickerOpen}
+          pickerOpen={phone ? phoneSheet === 'loraPick' : loraPickerOpen}
           onPickerOpen={(o) => {
+            if (phone) {
+              setPhoneSheet(o ? 'loraPick' : null);
+              return;
+            }
             if (o) setPromptPanelOpen(false);
             setLoraPickerOpen(o);
           }}
@@ -2205,108 +1742,140 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           detailerAvailable={Boolean(catalog.available.faceDetailer)}
           disabled={runtime.running}
         />
-      </StScrollArea>
-
-      <SamplingFooter
-        connection={
-          serverDown
-            ? {
-                kind: 'server',
-                remote: remoteMode,
-                retrying: retryingComfy,
-                onRetry: () => void retryComfy(),
-                starting: false,
-                onStart: () => {},
-              }
-            : comfyOk === false
-            ? {
-                kind: startingComfy ? 'starting' : reconnecting ? 'reconnecting' : 'offline',
-                remote: remoteMode,
-                retrying: retryingComfy,
-                onRetry: () => void retryComfy(),
-                starting: startingComfy,
-                onStart: () => void handleStartComfy(),
-              }
-            : null
-        }
-        steps={steps}
-        cfgLabel={usingGuidance ? 'Guidance' : 'CFG'}
-        cfgValue={usingGuidance ? (guidance as number) : cfg}
-        seedLocked={seedLocked}
-        seed={seed}
-        onToggleSeedLock={() => setSeedLocked((l) => !l)}
-        sampler={sampler}
-        expanded={
-          <div className="st-embedded flex flex-col gap-3">
-            <SamplerControls
-              steps={steps}
-              cfg={cfg}
-              sampler={sampler}
-              scheduler={scheduler}
-              guidance={guidance}
-              clipSkip={clipSkip}
-              defaults={{
-                steps: familyMeta?.settings.steps ?? 25,
-                cfg: familyMeta?.settings.cfg ?? 7,
-                sampler: familyMeta?.settings.sampler ?? 'euler',
-                scheduler: familyMeta?.settings.scheduler ?? 'normal',
-                guidance: familyMeta?.settings.guidance,
-                clipSkip: familyMeta?.settings.clipSkip,
-              }}
-              samplerOptions={catalog.samplers}
-              schedulerOptions={catalog.schedulers}
-              showGuidance={usingGuidance}
-              showClipSkip={typeof clipSkip === 'number'}
-              onStepsChange={setSteps}
-              onCfgChange={setCfg}
-              onSamplerChange={setSampler}
-              onSchedulerChange={setScheduler}
-              onGuidanceChange={setGuidance}
-              onClipSkipChange={setClipSkip}
-              disabled={runtime.running}
-            />
-            <SeedControl seed={seed} locked={seedLocked} onSeedChange={setSeed} onLockedChange={setSeedLocked} disabled={runtime.running} />
+      </>
+    );
+    const footer = (
+        <SamplingFooter
+          connection={
+            serverDown
+              ? {
+                  kind: 'server',
+                  remote: remoteMode,
+                  retrying: retryingComfy,
+                  onRetry: () => void retryComfy(),
+                  starting: false,
+                  onStart: () => {},
+                }
+              : comfyOk === false
+              ? {
+                  kind: startingComfy ? 'starting' : reconnecting ? 'reconnecting' : 'offline',
+                  remote: remoteMode,
+                  retrying: retryingComfy,
+                  onRetry: () => void retryComfy(),
+                  starting: startingComfy,
+                  onStart: () => void handleStartComfy(),
+                }
+              : null
+          }
+          steps={steps}
+          cfgLabel={usingGuidance ? 'Guidance' : 'CFG'}
+          cfgValue={usingGuidance ? (guidance as number) : cfg}
+          seedLocked={seedLocked}
+          seed={seed}
+          onToggleSeedLock={() => setSeedLocked((l) => !l)}
+          sampler={sampler}
+          expanded={
+            <div className="st-embedded flex flex-col gap-3">
+              <SamplerControls
+                steps={steps}
+                cfg={cfg}
+                sampler={sampler}
+                scheduler={scheduler}
+                guidance={guidance}
+                clipSkip={clipSkip}
+                defaults={{
+                  steps: familyMeta?.settings.steps ?? 25,
+                  cfg: familyMeta?.settings.cfg ?? 7,
+                  sampler: familyMeta?.settings.sampler ?? 'euler',
+                  scheduler: familyMeta?.settings.scheduler ?? 'normal',
+                  guidance: familyMeta?.settings.guidance,
+                  clipSkip: familyMeta?.settings.clipSkip,
+                }}
+                samplerOptions={catalog.samplers}
+                schedulerOptions={catalog.schedulers}
+                showGuidance={usingGuidance}
+                showClipSkip={typeof clipSkip === 'number'}
+                onStepsChange={setSteps}
+                onCfgChange={setCfg}
+                onSamplerChange={setSampler}
+                onSchedulerChange={setScheduler}
+                onGuidanceChange={setGuidance}
+                onClipSkipChange={setClipSkip}
+                disabled={runtime.running}
+              />
+              <SeedControl seed={seed} locked={seedLocked} onSeedChange={setSeed} onLockedChange={setSeedLocked} disabled={runtime.running} />
+            </div>
+          }
+          generateLabel={`${workVerb} ${batchSize} image${batchSize > 1 ? 's' : ''}`}
+          onGenerate={() => void handleGenerate()}
+          generateDisabled={Boolean(generateBlockedReason) || !readiness.ready}
+          disabledReason={generateBlockedReason}
+          running={runtime.running}
+          progressStep={runtime.progressStep}
+          progressMax={runtime.progressMax}
+          onStop={stopCurrent}
+          queue={queue}
+          activeQueueId={activeQueueId}
+          onRemoveJob={(id) => void cancelQueueJob(id)}
+          onClearQueue={() => syncQueue(queueRef.current.filter((j) => j.id === activeQueueId))}
+          error={runtime.error}
+          notice={copyFlash}
+        />
+    );
+    if (phone) {
+      return (
+        <section className="st-ph-controls" data-tip-zone="above" style={{ maxHeight: phoneExpanded ? '74dvh' : '58dvh' }}>
+          <div className="st-scroll flex min-h-0 flex-col gap-2.5 overflow-y-auto px-3.5 pb-1">
+            <button
+              type="button"
+              className="st-ph-handle"
+              onClick={() => setPhoneExpanded((o) => !o)}
+              aria-expanded={phoneExpanded}
+              aria-label={phoneExpanded ? 'Fewer settings' : 'More settings'}
+              data-tip={phoneExpanded ? 'Fewer settings' : 'More settings — avoid, size, references, LoRAs'}
+            >
+              <span />
+            </button>
+            {missingCard}
+            {promptCard}
+            {phoneExpanded ? moreCards : null}
           </div>
-        }
-        generateLabel={`${workVerb} ${batchSize} image${batchSize > 1 ? 's' : ''}`}
-        onGenerate={() => void handleGenerate()}
-        generateDisabled={Boolean(generateBlockedReason) || !readiness.ready}
-        disabledReason={generateBlockedReason}
-        running={runtime.running}
-        progressStep={runtime.progressStep}
-        progressMax={runtime.progressMax}
-        onStop={stopCurrent}
-        queue={queue}
-        activeQueueId={activeQueueId}
-        onRemoveJob={(id) => void cancelQueueJob(id)}
-        onClearQueue={() => syncQueue(queueRef.current.filter((j) => j.id === activeQueueId))}
-        error={runtime.error}
-        notice={copyFlash}
-      />
-
-      {promptPanelOpen && !uiSettings.studioLeftCollapsed ? (
-        <PromptPopout
-          prompt={prompt}
-          onInsert={insertIntoPrompt}
-          embeddings={catalog.embeddings}
-          prefs={promptPrefs}
-          onPrefs={setPromptPrefs}
-          onClose={() => setPromptPanelOpen(false)}
-        />
-      ) : null}
-      {loraPickerOpen && !uiSettings.studioLeftCollapsed ? (
-        <LoraPicker
-          options={catalog.loras}
-          loras={loras}
-          loading={modelsLoading}
-          onAdd={(name) => setLoras((prev) => (prev.some((l) => l.name === name) ? prev : [...prev, { name, strength_model: 1, strength_clip: 1, enabled: true }]))}
-          onAddModel={() => openAddModel('lora')}
-          onClose={() => setLoraPickerOpen(false)}
-        />
-      ) : null}
-    </>
-  );
-
+          {footer}
+        </section>
+      );
+    }
+    return (
+      <>
+        {modelStyleRow}
+        <StScrollArea>
+          {missingCard}
+          {promptCard}
+          {moreCards}
+        </StScrollArea>
+        {footer}
+        {promptPanelOpen && !uiSettings.studioLeftCollapsed ? (
+          <PromptPopout
+            prompt={prompt}
+            onInsert={insertIntoPrompt}
+            embeddings={catalog.embeddings}
+            prefs={promptPrefs}
+            onPrefs={setPromptPrefs}
+            onClose={() => setPromptPanelOpen(false)}
+          />
+        ) : null}
+        {loraPickerOpen && !uiSettings.studioLeftCollapsed ? (
+          <LoraPicker
+            options={catalog.loras}
+            loras={loras}
+            loading={modelsLoading}
+            onAdd={(name) => setLoras((prev) => (prev.some((l) => l.name === name) ? prev : [...prev, { name, strength_model: 1, strength_clip: 1, enabled: true }]))}
+            onAddModel={() => openAddModel('lora')}
+            onClose={() => setLoraPickerOpen(false)}
+          />
+        ) : null}
+      </>
+    );
+  };
   const preferenceProps: PreferenceProps = {
     ui: uiSettings,
     onUiPatch: updateUiSettings,
@@ -2369,7 +1938,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     [planeEntries],
   );
   const recordTileId = selectedRecord ? tileId(selectedRecord.id, Math.min(selectedIndex, Math.max(0, selectedRecord.images.length - 1))) : null;
-  const runningSel = planeSel && runtime.running && planeSel.startsWith('running:') ? planeSel : null;
+  const runningSel = planeSel && historyThumbs.some((t) => t.id === planeSel) ? planeSel : null;
   const selectedTileId = runningSel ?? recordTileId;
   /** The finished image the toolbars act on (none while the running job is selected) */
   const actRecord = runningSel ? null : selectedRecord;
@@ -2380,7 +1949,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     if (entry.kind === 'record') {
       setPlaneSel(null);
       selectItem(entry.record, index);
-    } else if (entry.kind === 'running') {
+    } else {
       setPlaneSel(tileId(entry.key, index));
     }
     if (focus) requestFocus(tileId(entry.key, index));
@@ -2394,6 +1963,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const copyImageToClipboard = async (name: string) => {
     try {
       const blob = await (await fetch(imageUrl(name))).blob();
+      if (!canCopyImages()) {
+        flash('Copying images needs a secure connection — use Save instead', 2600);
+        return;
+      }
       await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
       flash('Image copied');
     } catch {
@@ -2402,7 +1975,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   };
   const copyText = async (text: string, what: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTextToClipboard(text);
       flash(`${what} copied`);
     } catch {
       flash('Copy failed');
@@ -2484,7 +2057,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const dropApply = useRef(applyDrop);
   dropApply.current = applyDrop;
   useEffect(() => {
-    if (!(variant === 'studio' && !narrow) || dropBlocked) return;
+    if (narrow || dropBlocked) return;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
     const targetOf = (e: DragEvent): DropTarget | null => {
       const el = (e.target as Element | null)?.closest?.('[data-drop]') as HTMLButtonElement | null;
@@ -2530,7 +2103,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       window.removeEventListener('dragleave', leave);
       window.removeEventListener('drop', dropped);
     };
-  }, [variant, narrow, dropBlocked]);
+  }, [narrow, dropBlocked]);
 
   // ---------- Inpaint & extend ----------
   // A different base image (or none) makes the saved mask meaningless
@@ -2713,21 +2286,21 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     }
   };
   useEffect(() => {
-    if (!(variant === 'studio' && !narrow)) return;
+    if (narrow) return;
     const onKey = (e: KeyboardEvent) => studioKeys.current(e);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [variant, narrow]);
+  }, [narrow]);
 
   // A job starting: select and show its tile (Preferences → Jump to newest)
   const lastActive = useRef<string | null>(null);
   useEffect(() => {
     if (!activeQueueId || activeQueueId === lastActive.current) return;
     lastActive.current = activeQueueId;
-    if (!uiSettings.jumpToNewest || !(variant === 'studio' && !narrow)) return;
+    if (!uiSettings.jumpToNewest) return;
     setPlaneSel('running:0');
     requestFocus('running:0');
-  }, [activeQueueId, narrow, requestFocus, uiSettings.jumpToNewest, variant]);
+  }, [activeQueueId, narrow, requestFocus, uiSettings.jumpToNewest]);
 
   const planeToast = pendingDelete
     ? {
@@ -2858,57 +2431,210 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     />
   );
 
-  const stageNode = (
-    <MainStage>
-      <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <PreviewCanvas
-            previewUrl={runtime.previewUrl}
-            resultImages={displayImages}
-            compareImage={previousImage}
-            running={runtime.running}
-            width={width}
-            height={height}
-            progressStep={runtime.progressStep}
-            progressMax={runtime.progressMax}
-            offline={comfyOk === false}
-            remoteMode={remoteMode}
-            onStartComfy={() => void handleStartComfy()}
-            startingComfy={startingComfy}
-            onDropSettingsFile={(file) => void applyDroppedSettings(file)}
-            canvasBackground={uiSettings.canvasBackground}
-            emptyModelState={readiness.nothingInstalled}
-            onAddModel={() => openAddModel()}
-          />
-        </div>
-        <div className="mt-4 shrink-0 space-y-2">
-          <ResultActionBar
-            record={selectedRecord}
-            upscaleModels={catalog.upscale_models}
-            defaultUpscaler={serverSettings.defaultUpscaler}
-            defaultUpscaleScale={serverSettings.defaultUpscaleScale}
-            visible={!runtime.running && Boolean(selectedRecord?.images[0])}
-            busy={runtime.running}
-            onReuse={() => {
-              if (selectedRecord) reuseSettings(selectedRecord);
-            }}
-            onDelete={deleteCurrent}
-            onCopySeed={() => void copySeed()}
-            onUpscale={handleUpscale}
-            onVary={handleVary}
-            onUseAsSource={
-              selectedRecord ? () => void setSourceFromGallery(selectedRecord) : undefined
-            }
-          />
-          {copyFlash && (
-            <p className="text-center text-[11px] text-muted-foreground">{copyFlash}</p>
-          )}
-        </div>
-      </div>
-    </MainStage>
-  );
 
-  const studio = variant === 'studio' && !narrow;
+  // ---------- Phone ----------
+  const phoneTile: ViewerTile | null = (() => {
+    const t = historyThumbs.find((x) => x.id === selectedTileId);
+    if (!t) return null;
+    const e = t.entry;
+    if (e.kind === 'record') return { kind: 'record', src: t.src, ...outputSize(e.record.settings) };
+    if (e.kind === 'running') return { kind: 'running', src: t.src, ...outputSize(e.settings), progress: e.progress };
+    return { kind: 'failed', src: null, ...outputSize(e.failed.settings), failed: e.failed };
+  })();
+  const phoneStep = (dir: 1 | -1) => {
+    const at = historyThumbs.findIndex((t) => t.id === selectedTileId);
+    const next = historyThumbs[at + dir];
+    if (next) pickTile(next.entry, next.index, false);
+  };
+  const openPhoneActions = (recordId: string, index: number) => {
+    setCtxMenu({ x: 0, y: 0, recordId, index });
+    setPhoneSheet('actions');
+  };
+  const closePhoneSheet = () => {
+    setPhoneSheet(null);
+    setCtxMenu(null);
+  };
+  const phoneTools: Array<{ label: string; icon: ReactNode; run: () => void; disabled?: boolean; on?: boolean }> = [
+    { label: 'Enhance', icon: <EnhanceIcon />, run: () => planeActions.enhance.run(), disabled: planeActions.enhance.disabled },
+    { label: 'Variation', icon: <VaryIcon />, run: () => planeActions.vary.run(), disabled: planeActions.vary.disabled },
+    { label: `Upscale ${upscaleScale}×`, icon: <UpscaleIcon />, run: () => planeActions.upscale.run(), disabled: planeActions.upscale.disabled },
+    { label: 'Use as base', icon: <UseAsBaseIcon />, run: () => planeActions.useAsBase.run(), disabled: planeActions.useAsBase.disabled },
+    { label: 'Edit', icon: <EditIcon />, run: () => planeActions.edit.run(), disabled: planeActions.edit.disabled },
+    { label: 'Inpaint', icon: <InpaintIcon />, run: () => planeActions.inpaint.run(), disabled: planeActions.inpaint.disabled },
+    {
+      label: actRecord && favorites.has(actRecord.id) ? 'Unpin' : 'Pin',
+      icon: <PinIcon filled={Boolean(actRecord && favorites.has(actRecord.id))} />,
+      run: () => actRecord && toggleFavorite(actRecord),
+      disabled: !actRecord,
+      on: Boolean(actRecord && favorites.has(actRecord.id)),
+    },
+    { label: 'Copy image', icon: <CopyImageIcon />, run: () => selectedImageName && void copyImageToClipboard(selectedImageName), disabled: !actRecord },
+    { label: 'Save', icon: <DownloadIcon />, run: () => selectedImageName && downloadImage(selectedImageName), disabled: !actRecord },
+    ...(parentRecord && actRecord
+      ? [{ label: phoneCompare ? 'Hide compare' : 'Compare', icon: <CompareIcon />, run: () => setPhoneCompare((c) => !c), on: phoneCompare }]
+      : []),
+  ];
+  const phoneSheetNode =
+    phoneSheet === 'tools' ? (
+      <PhoneSheet title="Tools" onClose={closePhoneSheet}>
+        <div className="st-sec px-1.5">Model</div>
+        {catalog.checkpoints.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className={`st-rowbtn ${modelMode === 'checkpoint' && checkpoint === c ? 'on' : ''}`}
+            disabled={runtime.running}
+            onClick={() => {
+              setModelMode('checkpoint');
+              setCheckpoint(c);
+              setStyleId(null);
+              setDismissedPositive([]);
+              setDismissedNegative([]);
+              prevFamily.current = null;
+              closePhoneSheet();
+            }}
+          >
+            <span className="flex min-w-0 flex-col gap-px">
+              <span className="truncate text-[15px] font-semibold">{shortModelName(c.replace(/\.(safetensors|ckpt|gguf)$/i, ''))}</span>
+              {modelMode === 'checkpoint' && checkpoint === c && resolved.familyName ? (
+                <span className="text-[12.5px]" style={{ color: 'var(--s-muted)' }}>{resolved.familyName}</span>
+              ) : null}
+            </span>
+          </button>
+        ))}
+        <button type="button" className="st-rowbtn" onClick={() => setPhoneSheet('models')}>
+          <span className="text-[14px]" style={{ color: 'var(--s-accent)' }}>
+            {modelMode === 'split' ? `${shortModelName(unet)} · more model options…` : 'More model options (Flux, split files, add a model)…'}
+          </span>
+        </button>
+        {styles.length ? (
+          <>
+            <div className="st-sec px-1.5 pt-1.5">Style</div>
+            <div className="flex flex-wrap gap-1.5 px-1">
+              {styles.map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  className={`st-pill h-9 ${st.id === activeStyleId ? 'st-pill-accent' : ''}`}
+                  disabled={runtime.running}
+                  onClick={() => {
+                    setStyleId(st.id);
+                    setDismissedPositive([]);
+                    setDismissedNegative([]);
+                  }}
+                >
+                  {st.name}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+        <div className="st-sec px-1.5 pt-1.5">This image</div>
+        <div className="grid grid-cols-3 gap-2">
+          {phoneTools.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              className={`st-tilebtn ${t.on ? 'on' : ''}`}
+              disabled={t.disabled}
+              onClick={() => {
+                t.run();
+                if (!t.label.startsWith('Pin') && !t.label.startsWith('Unpin') && !t.label.includes('ompare')) closePhoneSheet();
+              }}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+            </button>
+          ))}
+          <button type="button" className="st-tilebtn" disabled={!actRecord} onClick={() => setPhoneSheet('details')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v6M12 7.5v.5" />
+            </svg>
+            <span>Details</span>
+          </button>
+        </div>
+      </PhoneSheet>
+    ) : phoneSheet === 'models' ? (
+      <PhoneSheet title="Model" onClose={closePhoneSheet}>
+        <div className="flex flex-col gap-3 px-1">{modelPanel}</div>
+      </PhoneSheet>
+    ) : phoneSheet === 'panel' ? (
+      <PhoneSheet title="Prompt" onClose={closePhoneSheet}>
+        <PromptPopout
+          inline
+          prompt={prompt}
+          onInsert={(text, mode) => {
+            insertIntoPrompt(text, mode);
+            closePhoneSheet();
+          }}
+          embeddings={catalog.embeddings}
+          prefs={promptPrefs}
+          onPrefs={setPromptPrefs}
+          onClose={closePhoneSheet}
+        />
+      </PhoneSheet>
+    ) : phoneSheet === 'loraPick' ? (
+      <PhoneSheet title="Add a LoRA" onClose={closePhoneSheet}>
+        <LoraPicker
+          inline
+          options={catalog.loras}
+          loras={loras}
+          loading={modelsLoading}
+          onAdd={(name) => setLoras((prev) => (prev.some((l) => l.name === name) ? prev : [...prev, { name, strength_model: 1, strength_clip: 1, enabled: true }]))}
+          onAddModel={() => {
+            closePhoneSheet();
+            openAddModel('lora');
+          }}
+          onClose={closePhoneSheet}
+        />
+      </PhoneSheet>
+    ) : phoneSheet === 'details' && actRecord ? (
+      <PhoneSheet title="Details" onClose={closePhoneSheet}>
+        <DetailsPanel
+          inline
+          record={actRecord}
+          size={outputSize(actRecord.settings)}
+          onClose={closePhoneSheet}
+          onCopy={(text, what) => void copyText(text, what)}
+          onReuseAll={() => {
+            reuseSettings(actRecord);
+            closePhoneSheet();
+          }}
+          onReusePrompt={() => {
+            reusePromptOnly(actRecord);
+            closePhoneSheet();
+          }}
+        />
+      </PhoneSheet>
+    ) : phoneSheet === 'actions' && ctxItems.length ? (
+      <PhoneSheet title="This image" onClose={closePhoneSheet}>
+        {ctxItems.map((it, i) =>
+          it === 'sep' ? (
+            <div key={`sep-${i}`} className="mx-2 h-px" style={{ background: 'var(--s-line)' }} />
+          ) : (
+            <button
+              key={it.label}
+              type="button"
+              className="st-rowbtn"
+              disabled={it.disabled}
+              style={{ color: it.danger ? '#f0857f' : undefined }}
+              onClick={() => {
+                const run = it.label === 'Show details' ? () => setPhoneSheet('details') : it.onClick;
+                if (it.label !== 'Show details') closePhoneSheet();
+                run();
+              }}
+            >
+              <span className="text-[15.5px]">{it.label === 'Download PNG' ? 'Save image' : it.label}</span>
+            </button>
+          ),
+        )}
+      </PhoneSheet>
+    ) : null;
+
+
+  const studio = !narrow;
+  const phoneStudio = narrow;
 
   return (
     <>
@@ -2971,40 +2697,87 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           onPrefsOpenChange={setUiSettingsOpen}
           preferences={preferenceProps}
         />
-      ) : (
-        <AppShell
-          comfyOk={comfyOk}
-          controlsDimmed={comfyOk === false}
-          historyPosition={uiSettings.historyPosition}
-          resizablePanels={uiSettings.resizablePanels}
-          systemLabel={systemStats?.ok ? systemStats.label : null}
-          vramTooltip={systemStats?.vramTooltip}
-          queueCount={queue.length}
-          settingsOpen={settingsOpen}
-          onSettingsOpenChange={setSettingsOpen}
-          uiSettingsOpen={uiSettingsOpen}
-          onUiSettingsOpenChange={setUiSettingsOpen}
-          settings={renderSettings()}
-          settingsDrawer={renderSettings()}
-          uiSettings={<AppSettingsPanel {...preferenceProps} />}
-          stage={stageNode}
-          history={<Gallery {...historyShared} orientation="vertical" showInfo />}
-          historyMobile={<Gallery {...historyShared} orientation="horizontal" showInfo={false} />}
-        />
-      )}
-      {studio && ctxMenu && ctxItems.length ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxItems} onClose={() => setCtxMenu(null)} /> : null}
-      <UndoToast
-        open={Boolean(pendingDelete) && !studio}
-        message="Generation deleted"
-        onUndo={() => {
-          const restored = undoDelete()[0];
-          if (restored?.images[0]) {
-            setSelectedId(restored.id);
-            setViewImages(restored.images);
+      ) : phoneStudio ? (
+        <PhoneShell
+          modelName={primaryModel ? shortModelName(primaryModel.replace(/\.(safetensors|ckpt|gguf)$/i, '')) : 'No model'}
+          status={
+            comfyOk === null
+              ? { dot: 'var(--s-faint)', tip: 'Checking the ComfyUI connection' }
+              : serverDown
+                ? { dot: '#e5534b', tip: 'The Darkroom server isn’t answering — it may be restarting' }
+                : comfyOk
+                  ? { dot: '#5bd18b', tip: systemStats?.ok ? `ComfyUI connected · ${systemStats.label}` : 'ComfyUI connected' }
+                  : { dot: reconnecting ? '#e2b44f' : '#e5534b', tip: reconnecting ? 'Reconnecting to ComfyUI…' : 'ComfyUI offline' }
           }
-        }}
-        onDismiss={dismissUndo}
-      />
+          toolsOpen={phoneSheet === 'tools'}
+          onTools={() => setPhoneSheet((s) => (s === 'tools' ? null : 'tools'))}
+          prefsOpen={uiSettingsOpen}
+          onPrefsOpenChange={setUiSettingsOpen}
+          preferences={preferenceProps}
+          viewer={
+            <PhoneViewer
+              tile={phoneTile}
+              compare={parentRecord?.images[0] && actRecord ? { src: imageUrl(parentRecord.images[0]), kind: derivedKind(actRecord.settings) } : null}
+              compareOn={phoneCompare}
+              progress={runProgress}
+              toast={planeToast}
+              failedActions={{
+                retry: (f) => {
+                  setFailedJobs((prev) => prev.filter((x) => x.id !== f.id));
+                  setPlaneSel(null);
+                  enqueueJob(f.settings, f.label);
+                },
+                dismiss: (f) => {
+                  setFailedJobs((prev) => prev.filter((x) => x.id !== f.id));
+                  setPlaneSel(null);
+                },
+                copy: (f) => void copyText(`${f.label}\n\n${f.error}`, 'Error'),
+              }}
+              onLongPress={() => actRecord && openPhoneActions(actRecord.id, selectedIndex)}
+              onSwipe={phoneStep}
+              onTap={() => phoneTile?.src && phoneTile.kind !== 'failed' && setPhoneFull(true)}
+              empty={planeOverlay}
+            />
+          }
+          thumbs={
+            <PhoneThumbs
+              thumbs={historyThumbs}
+              selectedId={selectedTileId}
+              onPick={(t) => pickTile(t.entry, t.index, false)}
+              onLongPress={(t) => {
+                if (t.entry.kind !== 'record') return;
+                selectItem(t.entry.record, t.index);
+                openPhoneActions(t.entry.record.id, t.index);
+              }}
+              isPinned={(id) => favorites.has(id)}
+            />
+          }
+          controls={renderStudioControls('phone')}
+          sheet={phoneSheetNode}
+          overlay={
+            phoneFull && phoneTile?.src && !maskEditor ? (
+              <FullscreenImage
+                src={phoneTile.src}
+                counter={`${historyThumbs.findIndex((t) => t.id === selectedTileId) + 1} / ${historyThumbs.length}`}
+                onClose={() => setPhoneFull(false)}
+                onSwipe={phoneStep}
+              />
+            ) : maskEditor ? (
+              <MaskEditor
+                key={maskEditor.src}
+                compact
+                src={maskEditor.src}
+                initialMask={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.mask ?? null : null}
+                initialPad={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? inpaint?.pad : undefined}
+                saveLabel={!maskEditor.record && inpaint?.sourceName === source?.comfyName ? 'Update' : 'Add'}
+                onSave={(r) => void saveMask(r)}
+                onClose={() => setMaskEditor(null)}
+              />
+            ) : null
+          }
+        />
+      ) : null}
+      {studio && ctxMenu && ctxItems.length ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxItems} onClose={() => setCtxMenu(null)} /> : null}
       <MapFamilyDialog
         open={showMapDialog}
         checkpoint={primaryModel}

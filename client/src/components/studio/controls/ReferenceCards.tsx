@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { CheckSquare, ChevronDown, ImageIcon, PersonStanding, Plus, TriangleAlert, Upload, X } from 'lucide-react';
-import { DEFAULT_CONTROLNET_UI, type ControlNetUiState } from '@/components/controls/ControlNetPanel';
+import { DEFAULT_CONTROLNET_UI, type ControlNetUiState } from '@/lib/generationDefaults';
 import { shortModelName } from '@/lib/modelProfiles';
 import type { SourceFitMode, SourceImageState, SourceSizeMode, WorkMode } from '@/types/generation';
 import { StCard, StCardBtn, StMenuButton, StMenuItem, StSeg, StSlider } from './primitives';

@@ -37,7 +37,7 @@ authRouter.get('/lan', (req, res) => {
     res.status(403).json({ error: 'Only available on the computer running Darkroom' });
     return;
   }
-  res.json({ pin: getLanPin(), urls: lanUrls() });
+  res.json({ ...getLanPin(), urls: lanUrls() });
 });
 
 authRouter.post('/lan/regenerate', (req, res) => {
@@ -45,7 +45,7 @@ authRouter.post('/lan/regenerate', (req, res) => {
     res.status(403).json({ error: 'Only available on the computer running Darkroom' });
     return;
   }
-  res.json({ pin: regenerateLanPin(), urls: lanUrls() });
+  res.json({ ...regenerateLanPin(), urls: lanUrls() });
 });
 
 /** Devices signed in with the PIN — host only. */

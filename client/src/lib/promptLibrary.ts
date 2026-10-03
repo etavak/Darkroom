@@ -1,3 +1,5 @@
+import { newId } from '@/lib/uid';
+
 /** Device-local recent prompts + saved snippets. */
 
 const RECENT_KEY = 'darkroom.recentPrompts';
@@ -57,7 +59,7 @@ export function saveSnippet(name: string, text: string): PromptSnippet[] {
   const trimmed = text.trim();
   if (!trimmed) return loadSnippets();
   const snippet: PromptSnippet = {
-    id: crypto.randomUUID(),
+    id: newId(),
     name: name.trim() || trimmed.slice(0, 32),
     text: trimmed,
     createdAt: Date.now(),

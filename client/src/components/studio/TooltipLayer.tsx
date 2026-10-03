@@ -64,6 +64,9 @@ export function TooltipRoot({
   const muted = useRef<Element | null>(null);
   const timer = useRef<number | undefined>(undefined);
   const hiddenAt = useRef(0);
+  /** Touch: press and hold a control to see its tooltip (the tap that follows is swallowed) */
+  const hold = useRef<{ x: number; y: number; timer: number; shown: boolean } | null>(null);
+  const swallowClick = useRef(false);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -124,6 +127,7 @@ export function TooltipRoot({
   }, []);
 
   const onPointerOver = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return;
     const el = tipTarget(e.target);
     if (!el || el === current.current) return;
     current.current = el;
@@ -140,10 +144,31 @@ export function TooltipRoot({
     muted.current = null;
     hide();
   };
-  const onPointerDown = () => {
+  const onPointerDown = (e: PointerEvent) => {
     window.clearTimeout(timer.current);
     muted.current = current.current;
     hide();
+    if (e.pointerType !== 'touch') return;
+    const el = tipTarget(e.target);
+    if (!el) return;
+    const t = window.setTimeout(() => {
+      if (!hold.current) return;
+      hold.current.shown = true;
+      show(el);
+    }, 500);
+    hold.current = { x: e.clientX, y: e.clientY, timer: t, shown: false };
+  };
+  const endHold = () => {
+    const h = hold.current;
+    hold.current = null;
+    if (!h) return;
+    window.clearTimeout(h.timer);
+    if (h.shown) {
+      swallowClick.current = true;
+      window.setTimeout(() => (swallowClick.current = false), 400);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(hide, 1600);
+    }
   };
   const onFocus = (e: FocusEvent) => {
     const el = tipTarget(e.target);
@@ -161,6 +186,26 @@ export function TooltipRoot({
       onPointerOver={onPointerOver}
       onPointerOut={onPointerOut}
       onPointerDown={onPointerDown}
+      onPointerMove={(e) => {
+        const h = hold.current;
+        if (h && !h.shown && Math.hypot(e.clientX - h.x, e.clientY - h.y) > 10) {
+          window.clearTimeout(h.timer);
+          hold.current = null;
+        }
+      }}
+      onPointerUp={endHold}
+      onPointerCancel={endHold}
+      onClickCapture={(e) => {
+        if (swallowClick.current) {
+          swallowClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
+      onContextMenu={(e) => {
+        // A long press on touch would open the system menu over the tooltip
+        if (hold.current) e.preventDefault();
+      }}
       onFocus={onFocus}
       onBlur={() => hide()}
     >

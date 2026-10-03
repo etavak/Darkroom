@@ -51,7 +51,8 @@ export function submitLanPin(pin: string): Promise<{ ok: boolean }> {
   return request('/api/auth/pin', { method: 'POST', body: JSON.stringify({ pin }) });
 }
 
-export type LanAccessInfo = { pin: string; urls: string[] };
+/** pin rotates every periodS seconds (authenticator-style); expiresInMs until the next one */
+export type LanAccessInfo = { pin: string; urls: string[]; expiresInMs?: number; periodS?: number };
 
 /** PIN + LAN URLs; only answers on the computer running Darkroom. */
 export function fetchLanAccess(): Promise<LanAccessInfo> {

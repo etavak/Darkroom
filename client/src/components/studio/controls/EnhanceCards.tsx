@@ -184,10 +184,12 @@ type LoraPickerProps = {
   onAddModel: () => void;
   onClose: () => void;
   loading?: boolean;
+  /** Phone: render inside a sheet instead of popping out */
+  inline?: boolean;
 };
 
 /** Pops out beside the controls column: search the installed LoRAs and add them. */
-export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading }: LoraPickerProps) {
+export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading, inline }: LoraPickerProps) {
   const [q, setQ] = useState('');
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -202,15 +204,23 @@ export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading
   const hits = options.filter((o) => !q.trim() || o.toLowerCase().includes(q.trim().toLowerCase()));
 
   return (
-    <div className="st-popout" data-tip-avoid data-tip-zone="right" role="dialog" aria-label="Add a LoRA">
-      <div className="flex items-center justify-between">
-        <span className="text-[15px] font-semibold">Add a LoRA</span>
-        <button type="button" className="st-ibtn h-9 w-9" onClick={onClose} aria-label="Close" data-tip="Close  ·  Esc">
-          <X />
-        </button>
-      </div>
+    <div
+      className={inline ? 'flex flex-col gap-3 px-1' : 'st-popout'}
+      data-tip-avoid={inline ? undefined : true}
+      data-tip-zone={inline ? undefined : 'right'}
+      role={inline ? undefined : 'dialog'}
+      aria-label="Add a LoRA"
+    >
+      {inline ? null : (
+        <div className="flex items-center justify-between">
+          <span className="text-[15px] font-semibold">Add a LoRA</span>
+          <button type="button" className="st-ibtn h-9 w-9" onClick={onClose} aria-label="Close" data-tip="Close  ·  Esc">
+            <X />
+          </button>
+        </div>
+      )}
       <input
-        autoFocus
+        autoFocus={!inline}
         className="st-search h-[38px]"
         value={q}
         onChange={(e) => setQ(e.target.value)}

@@ -78,6 +78,8 @@ type PromptCardProps = {
   onShowFinal: () => void;
   panelOpen: boolean;
   onTogglePanel: () => void;
+  /** Height class for the text box (phone uses a shorter one) */
+  textHeight?: string;
 };
 
 export function PromptCard(p: PromptCardProps) {
@@ -240,7 +242,7 @@ export function PromptCard(p: PromptCardProps) {
           newTags={newTags}
           autocomplete={p.prefs.autocomplete}
           insertFormat={p.prefs.insertFormat}
-          className="h-[174px]"
+          className={p.textHeight ?? 'h-[174px]'}
         />
       </div>
       <div className="flex items-center justify-between gap-2 pb-0 pl-4 pr-3 pt-1.5">

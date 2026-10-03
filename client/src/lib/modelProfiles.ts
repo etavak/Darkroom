@@ -1,4 +1,5 @@
 import type { LoraSettings, ModelLoadMode } from '@/types/generation';
+import { newId } from '@/lib/uid';
 
 export type ModelProfile = {
   id: string;
@@ -48,7 +49,7 @@ export function upsertModelProfile(
   }
   const next: ModelProfile = {
     ...profile,
-    id: crypto.randomUUID(),
+    id: newId(),
     updatedAt: now,
   };
   return [...profiles, next];

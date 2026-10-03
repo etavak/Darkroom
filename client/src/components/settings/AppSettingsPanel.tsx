@@ -12,19 +12,13 @@ import {
   Loader,
   Moon,
   Network,
-  Search,
   Shield,
   Sparkles,
   Trash2,
   Wand2,
   Zap,
 } from 'lucide-react';
-import {
-  SettingRow,
-  SettingsGroup,
-  type SettingEntry,
-  type SettingScope,
-} from '@/components/settings/SettingPrimitives';
+import { type SettingEntry, type SettingScope } from '@/components/settings/SettingPrimitives';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -173,8 +167,8 @@ export function matchesQuery(entry: PrefEntry, q: string): boolean {
 }
 
 /**
- * Every preference as data (label, description, live control). Shared by the classic
- * panel and the studio's full-screen Preferences, so both stay wired to the same settings.
+ * Every preference as data (label, description, live control) for the full-screen
+ * Preferences, on the computer and on phones.
  */
 export function usePreferenceEntries({
   ui,
@@ -839,19 +833,19 @@ export function usePreferenceEntries({
               scope: 'server' as const,
               label: 'Other devices',
               description: lan
-                ? `Open ${lan.urls[0] ?? 'this computer’s address'} on your phone or tablet and enter this PIN. Regenerating signs every device out.`
+                ? `Open ${lan.urls[0] ?? 'this computer’s address'} on your phone or tablet and type the code — it changes every 30 seconds, like an authenticator. Signed-in devices stay signed in. Reset signs every device out.`
                 : 'Shown only on the computer running Darkroom.',
               keywords: ['pin', 'phone', 'tablet', 'lan', 'wifi', 'remote', 'password'],
               icon: <Shield />,
               control: lan ? (
                 <div className="flex items-center gap-2">
-                  <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 font-mono text-sm tracking-[0.2em]">{lan.pin}</span>
+                  <RotatingPin initial={lan} />
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      if (!window.confirm('Make a new PIN? Phones and tablets will need to enter it again.')) return;
+                      if (!window.confirm('Reset the codes? Every signed-in phone and tablet will need to enter a code again.')) return;
                       void regenerateLanPin()
                         .then((next) => {
                           setLan(next);
@@ -860,7 +854,7 @@ export function usePreferenceEntries({
                         .catch(() => {});
                     }}
                   >
-                    Regenerate
+                    Reset
                   </Button>
                 </div>
               ) : (
@@ -1088,104 +1082,40 @@ export function usePreferenceEntries({
   return entries;
 }
 
-/**
- * Photoshop-style Preferences: category list + searchable settings.
- * Changes apply instantly (localStorage / server PATCH).
- */
-export function AppSettingsPanel(props: PreferenceProps) {
-  const { serverLoading } = props;
-  const [category, setCategory] = useState<PrefCategory>('general');
-  const [query, setQuery] = useState('');
-  const entries = usePreferenceEntries(props);
+/** The current sign-in code with a countdown; fetches the next one when it runs out. */
+function RotatingPin({ initial }: { initial: LanAccessInfo }) {
+  const [info, setInfo] = useState(() => ({ ...initial, at: Date.now() }));
+  const [now, setNow] = useState(() => Date.now());
+  const period = (info.periodS ?? 30) * 1000;
+  const left = Math.max(0, (info.expiresInMs ?? period) - (now - info.at));
 
-  const searching = query.trim().length > 0;
-  const visible = useMemo(() => {
-    if (searching) return entries.filter((e) => matchesQuery(e, query));
-    return entries.filter((e) => e.category === category);
-  }, [category, entries, query, searching]);
-
-  const categoryCounts = useMemo(() => {
-    const q = query.trim();
-    if (!q) return null;
-    const counts: Partial<Record<PrefCategory, number>> = {};
-    for (const e of entries) {
-      if (matchesQuery(e, q)) counts[e.category] = (counts[e.category] ?? 0) + 1;
-    }
-    return counts;
-  }, [entries, query]);
+  useEffect(() => setInfo({ ...initial, at: Date.now() }), [initial]);
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (left > 0) return;
+    let cancelled = false;
+    void fetchLanAccess()
+      .then((next) => {
+        if (!cancelled) setInfo({ ...next, at: Date.now() });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [left]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b px-4 py-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search preferences…"
-            className="h-8 pl-8 text-sm"
-            aria-label="Search preferences"
-          />
-        </div>
-        {serverLoading && (
-          <p className="mt-1.5 text-[11px] text-muted-foreground">Loading server settings…</p>
-        )}
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[9.5rem] shrink-0 flex-col gap-0.5 overflow-y-auto border-r bg-muted/20 p-2">
-          {PREF_CATEGORIES.map((c) => {
-            const count = categoryCounts?.[c.id];
-            const active = !searching && category === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  setCategory(c.id);
-                  if (searching) setQuery('');
-                }}
-                className={cn(
-                  'rounded px-2.5 py-1.5 text-left text-[12px] transition-colors',
-                  active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-foreground/80 hover:bg-secondary',
-                )}
-              >
-                <span className="flex items-center justify-between gap-1">
-                  {c.label}
-                  {typeof count === 'number' && count > 0 && (
-                    <span className="font-mono text-[10px] opacity-70">{count}</span>
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
-          <p className="settings-intro">
-            {searching
-              ? `Results for “${query.trim()}” — changes apply immediately.`
-              : 'Changes apply immediately. Tags show whether a setting is local or shared.'}
-          </p>
-          {visible.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No matching settings</p>
-          ) : searching ? (
-            <div className="divide-y divide-border/40">
-              {visible.map((e) => (
-                <SettingRow key={e.id} entry={e} />
-              ))}
-            </div>
-          ) : (
-            <SettingsGroup label={PREF_CATEGORIES.find((c) => c.id === category)?.label ?? ''}>
-              {visible.map((e) => (
-                <SettingRow key={e.id} entry={e} />
-              ))}
-            </SettingsGroup>
-          )}
-        </div>
-      </div>
-    </div>
+    <span className="inline-flex flex-col items-stretch gap-1" data-tip="Type this on the phone or tablet — a new code every 30 seconds" tabIndex={0}>
+      <span className="rounded-md border border-border bg-secondary/40 px-2 py-1 text-center font-mono text-base tracking-[0.18em]">
+        {info.pin.slice(0, 3)} {info.pin.slice(3)}
+      </span>
+      <span className="h-[3px] overflow-hidden rounded-sm" style={{ background: 'var(--s-raised2)' }} aria-label={`New code in ${Math.ceil(left / 1000)} seconds`}>
+        <span className="block h-full" style={{ width: `${(left / period) * 100}%`, background: left < 6000 ? '#e2b44f' : 'var(--s-accent)', transition: 'width .25s linear' }} />
+      </span>
+    </span>
   );
 }
+

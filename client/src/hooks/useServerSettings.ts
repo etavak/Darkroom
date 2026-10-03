@@ -11,6 +11,7 @@ import {
   type ServerSettings,
   type ServerSettingsResponse,
 } from '@/types/serverSettings';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 export function useServerSettings() {
   const [settings, setSettings] = useState<ServerSettings>(DEFAULT_SERVER_SETTINGS);
@@ -60,7 +61,7 @@ export function useServerSettings() {
 
   const copyDiagnostics = useCallback(async () => {
     const { text } = await fetchDiagnostics();
-    await navigator.clipboard.writeText(text);
+    await copyTextToClipboard(text);
     return text;
   }, []);
 

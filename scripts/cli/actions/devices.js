@@ -1,8 +1,56 @@
+import { clearInterval, setInterval } from 'node:timers';
 import * as p from '@clack/prompts';
 import { getConfig } from '../lib/env.js';
 import { httpGetJson, httpJson } from '../lib/http.js';
 import { handleCancel } from '../lib/prompt.js';
 import { listLanUrls } from '../lib/status.js';
+
+/** Wait for any key (Ctrl+C quits). */
+function waitForKey() {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    const raw = stdin.isTTY;
+    if (raw) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.once('data', (d) => {
+      if (raw) stdin.setRawMode(false);
+      stdin.pause();
+      if (d.toString() === '\u0003') process.exit(0);
+      resolve(undefined);
+    });
+  });
+}
+
+/**
+ * The sign-in code, live: it changes every 30 seconds, so show it with a countdown until a
+ * key is pressed.
+ */
+async function showLiveCode(appUrl) {
+  const fetchCode = async () => {
+    const r = await httpGetJson(`${appUrl}/api/auth/lan`, { timeoutMs: 5000 }).catch(() => null);
+    return r?.status === 200 && r.json?.pin ? { pin: r.json.pin, until: Date.now() + (r.json.expiresInMs ?? 30_000) } : null;
+  };
+  let code = await fetchCode();
+  if (!code) return;
+  const fmt = () => {
+    const left = Math.max(0, Math.ceil((code.until - Date.now()) / 1000));
+    return `Code  ${code.pin.slice(0, 3)} ${code.pin.slice(3)}   ·   new code in ${left}s   ·   press any key when done`;
+  };
+  const s = p.spinner();
+  s.start(fmt());
+  let busy = false;
+  const tick = setInterval(async () => {
+    if (Date.now() >= code.until && !busy) {
+      busy = true;
+      code = (await fetchCode()) ?? code;
+      busy = false;
+    }
+    s.message(fmt());
+  }, 500);
+  await waitForKey();
+  clearInterval(tick);
+  s.stop('Code shown');
+}
 
 /** "3 min ago", "2 h ago", "4 d ago" */
 function ago(ms) {
@@ -40,7 +88,7 @@ export async function phonesAndTablets() {
       [
         urls.length ? `Open ${urls[0]} on the phone or tablet` : 'No network address found — is this computer on Wi-Fi?',
         ...urls.slice(1).map((u) => `  or ${u}`),
-        `and enter PIN ${lan.json.pin}`,
+        'and type the code below. It changes every 30 seconds; signed-in devices stay signed in.',
         '',
         items === null
           ? 'Signed-in devices: restart the server to see them (needs the latest version).'
@@ -51,10 +99,16 @@ export async function phonesAndTablets() {
       'Phones & tablets',
     );
 
+    await showLiveCode(cfg.appUrl);
+
     /** @type {{ value: string, label: string, hint?: string }[]} */
     const options = [];
     if (items?.length) options.push({ value: 'signout', label: 'Sign a device out' });
-    options.push({ value: 'newpin', label: 'Make a new PIN', hint: 'signs every device out' }, { value: 'back', label: 'Back' });
+    options.push(
+      { value: 'code', label: 'Show the code again' },
+      { value: 'newpin', label: 'Reset codes', hint: 'signs every device out' },
+      { value: 'back', label: 'Back' },
+    );
     const choice = await p.select({ message: 'Phones & tablets', options });
     if (handleCancel(choice) || choice === 'back') return;
 
@@ -70,11 +124,11 @@ export async function phonesAndTablets() {
     }
 
     if (choice === 'newpin') {
-      const ok = await p.confirm({ message: 'Make a new PIN? Every phone and tablet will need to enter it again.', initialValue: false });
+      const ok = await p.confirm({ message: 'Reset the codes? Every signed-in phone and tablet will need to enter a code again.', initialValue: false });
       if (handleCancel(ok) || !ok) continue;
       const r = await httpJson('POST', `${cfg.appUrl}/api/auth/lan/regenerate`, {}).catch(() => null);
-      if (r?.status === 200 && r.json?.pin) p.log.success(`New PIN: ${r.json.pin}`);
-      else p.log.error('Couldn’t make a new PIN.');
+      if (r?.status === 200 && r.json?.pin) p.log.success('Codes reset — every device has been signed out.');
+      else p.log.error('Couldn’t reset the codes.');
     }
   }
 }

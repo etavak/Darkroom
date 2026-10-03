@@ -268,3 +268,18 @@ export type SourceImageState = {
   height: number;
   parentId?: string | null;
 };
+
+/** A job waiting in (or running from) the generate queue */
+export type QueuedJob = {
+  id: string;
+  settings: GenerationSettings;
+  label: string;
+};
+
+export type UpscaleRequest = {
+  model: string;
+  scale: number;
+  refine: boolean;
+};
+
+export type VaryStrength = 'subtle' | 'strong';

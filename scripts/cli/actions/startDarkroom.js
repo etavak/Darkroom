@@ -66,12 +66,12 @@ export async function startStack(opts = {}) {
       p.log.warn('No LAN IPv4 addresses found');
     } else {
       p.note(
-        [...lans, '', pin ? `PIN: ${pin}` : 'PIN: see Preferences → Network'].join('\n'),
+        [...lans, '', pin ? `Code: ${pin} (changes every 30 s — live in “Phones & tablets”)` : 'Code: see Preferences → Network'].join('\n'),
         'Other devices on your network',
       );
     }
   } else if (lans.length && pin) {
-    p.log.info(`Phone / tablet: ${lans[0]} · PIN ${pin}`);
+    p.log.info(`Phone / tablet: ${lans[0]} · code in “Phones & tablets” (changes every 30 s)`);
   }
 
   p.log.info('Processes keep running in the background. Use “Stop everything” to shut them down.');

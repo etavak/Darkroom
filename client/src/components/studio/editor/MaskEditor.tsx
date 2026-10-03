@@ -83,13 +83,15 @@ type Props = {
   onClose: () => void;
   /** Save button text: "Add to references" (new) or "Update reference" (editing the current one) */
   saveLabel?: string;
+  /** Phone layout: header + bottom panel; one finger paints, two fingers zoom and move */
+  compact?: boolean;
 };
 
 /**
  * Inpaint & extend: paint what to redraw (brush, eraser, fill) and/or drag the edges out to
  * extend the canvas. Scroll or pinch to zoom; right-drag, middle-drag or Space-drag to pan.
  */
-export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, saveLabel = 'Add to references' }: Props) {
+export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, saveLabel = 'Add to references', compact }: Props) {
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [failed, setFailed] = useState(false);
   const [tool, setTool] = useState<Tool>('brush');
@@ -124,6 +126,19 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
   const tmp = useRef<HTMLCanvasElement | null>(null);
   const lastPtr = useRef<{ clientX: number; clientY: number } | null>(null);
   const spaceDown = useRef(false);
+  /** Pointer capture can throw for a pointer the browser no longer tracks; never let that stop painting */
+  const capture = (e: RPointerEvent<Element>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+  /** Touch points on the canvas, for two-finger zoom / pan */
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ d0: number; mx: number; my: number; zoom: number; x: number; y: number; f: number } | null>(null);
+  const [gestured, setGestured] = useState(false);
+  const [colorsOpen, setColorsOpen] = useState(false);
   const padRef = useRef(pad);
   padRef.current = pad;
   const lookRef = useRef(look);
@@ -573,11 +588,38 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
     if (!samePad(padRef.current, d.pad0)) pushHist(padRef.current);
   };
 
+  const startPinch = () => {
+    const pts = [...touches.current.values()];
+    if (pts.length < 2) return;
+    const [a, b] = pts;
+    const st = stageRef.current;
+    const f = st ? st.getBoundingClientRect().width / st.clientWidth || 1 : 1;
+    const v = curView();
+    pinch.current = { d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, zoom: v.zoom, x: v.x, y: v.y, f };
+  };
   const onDown = (e: RPointerEvent<HTMLCanvasElement>) => {
     if (!mask.current) return;
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      capture(e);
+      if (touches.current.size >= 2) {
+        // A second finger: this is a zoom / pan, not paint — take back the stroke just started
+        if (stroke.current) {
+          stroke.current = null;
+          const h = hist.current[histIdx.current];
+          if (h) mask.current = cloneCanvas(h.mask);
+          queueRedraw();
+        }
+        edgeDrag.current = null;
+        setFrozenK(null);
+        setGestured(true);
+        startPinch();
+        return;
+      }
+    }
     if ((e.pointerType === 'mouse' && (e.button === 1 || e.button === 2)) || (spaceDown.current && e.button === 0)) {
       e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
+      capture(e);
       const st = stageRef.current;
       const f = st ? st.getBoundingClientRect().width / st.clientWidth || 1 : 1;
       const v = curView();
@@ -590,7 +632,7 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
     setOptsOpen(false);
     setConfirm(false);
     setNotice(null);
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capture(e);
     const p = pointOf(e);
     if (tool === 'fill') {
       if (flood(Math.floor(p.x), Math.floor(p.y))) {
@@ -608,6 +650,24 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
     queueRedraw(segBox(p, p));
   };
   const onMove = (e: RPointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'touch' && touches.current.has(e.pointerId)) {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const g = pinch.current;
+      if (g && touches.current.size >= 2) {
+        const [a, b] = [...touches.current.values()];
+        const zoom = Math.min(8, Math.max(0.25, g.zoom * (Math.hypot(b.x - a.x, b.y - a.y) / g.d0)));
+        const st = stageRef.current!.getBoundingClientRect();
+        // Keep the point between the fingers under them while zooming
+        const cx = (g.mx - st.left) / g.f - stageRef.current!.clientWidth / 2;
+        const cy = (g.my - st.top) / g.f - stageRef.current!.clientHeight / 2;
+        const k = zoom / g.zoom;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        writeView({ zoom, x: cx - (cx - g.x) * k + (mx - g.mx) / g.f, y: cy - (cy - g.y) * k + (my - g.my) / g.f });
+        return;
+      }
+      if (pinch.current) return;
+    }
     lastPtr.current = { clientX: e.clientX, clientY: e.clientY };
     if (panDrag.current) {
       const d = panDrag.current;
@@ -625,7 +685,15 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
     queueRedraw(segBox(stroke.current.last, p));
     stroke.current.last = p;
   };
-  const onUp = () => {
+  const onUp = (e?: RPointerEvent<HTMLCanvasElement>) => {
+    if (e?.pointerType === 'touch') {
+      touches.current.delete(e.pointerId);
+      if (pinch.current) {
+        // Lift both fingers before painting again
+        if (touches.current.size === 0) pinch.current = null;
+        return;
+      }
+    }
     if (panDrag.current) {
       panDrag.current = null;
       setPanning(false);
@@ -747,6 +815,165 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
   const cursor = panning ? 'grabbing' : space ? 'grab' : tool === 'resize' ? (hasPad ? 'move' : 'default') : tool === 'fill' ? 'crosshair' : 'none';
   const colorName = COLORS.find(([hex]) => hex === look.color)?.[1] ?? '';
 
+  if (compact) {
+    return (
+      <div className="st-editor st-editor-c" role="dialog" aria-label="Inpaint and extend">
+        <div className="flex items-center justify-between gap-2 px-2.5 pb-2 pt-[max(10px,env(safe-area-inset-top))]">
+          <button type="button" className="st-ibtn" onClick={exit} aria-label="Close without saving" data-tip="Close without saving">
+            <X />
+          </button>
+          <span className="text-[15px] font-semibold">Inpaint &amp; extend</span>
+          <button type="button" className="st-pill st-pill-accent h-[38px] px-4 font-semibold" onClick={save} data-tip="Put this on the Reference images card">
+            {saveLabel}
+          </button>
+        </div>
+        <div ref={stageRef} className="st-ed-stage-c" onContextMenu={(e) => e.preventDefault()}>
+          {dims ? (
+            <div
+              ref={frameRef}
+              className="st-ed-frame"
+              style={{
+                width: fw,
+                height: fh,
+                transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+                backgroundImage: `repeating-conic-gradient(${look.color}b3 0 25%, #e6e6f2 0 50%)`,
+              }}
+            >
+              <img src={src} alt="" draggable={false} style={{ left: pad.l * k, top: pad.t * k, width: dims.w * k, height: dims.h * k }} />
+              <canvas
+                ref={canvasRef}
+                aria-label="Mask canvas"
+                style={{ cursor }}
+                onPointerDown={onDown}
+                onPointerMove={onMove}
+                onPointerUp={onUp}
+                onPointerCancel={onUp}
+                onPointerLeave={() => {
+                  if (compact) return;
+                  lastPtr.current = null;
+                  if (ringRef.current) ringRef.current.style.display = 'none';
+                }}
+              />
+              {hasPad ? <div className="st-ed-src" style={{ left: pad.l * k, top: pad.t * k, width: dims.w * k, height: dims.h * k }} /> : null}
+              <div ref={ringRef} className="st-ed-ring" />
+              {tool === 'resize'
+                ? handles.map((h) => (
+                    <div
+                      key={h.side}
+                      className="st-ed-handle"
+                      data-tip={h.tip}
+                      data-tip-zone={h.zone}
+                      style={{ left: h.l, top: h.t, width: h.w, height: h.h, cursor: h.cur, borderRadius: 5 / view.zoom }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        capture(e);
+                        startEdge(e, 'edge', h.side);
+                      }}
+                      onPointerMove={edgeMove}
+                      onPointerUp={edgeEnd}
+                      onPointerCancel={edgeEnd}
+                    />
+                  ))
+                : null}
+            </div>
+          ) : (
+            <span style={{ color: 'var(--s-muted)' }}>{failed ? 'Couldn’t load the image.' : 'Loading…'}</span>
+          )}
+          {!gestured && dims ? <span className="st-ed-hint">One finger paints · two fingers zoom and move</span> : null}
+        </div>
+        {confirm ? (
+          <div className="st-toast" role="alertdialog" style={{ top: 64, bottom: 'auto', whiteSpace: 'normal', maxWidth: 'calc(100% - 24px)' }}>
+            <span className="pr-1 text-[13px]">Discard your changes?</span>
+            <button type="button" className="st-pill h-[30px]" onClick={() => setConfirm(false)}>Keep</button>
+            <button type="button" className="st-pill h-[30px]" style={{ background: '#b8433d', borderColor: 'transparent', color: '#fff' }} onClick={onClose}>
+              Discard
+            </button>
+          </div>
+        ) : notice ? (
+          <div className="st-toast" role="status" style={{ top: 64, bottom: 'auto', whiteSpace: 'normal', maxWidth: 'calc(100% - 24px)' }}>
+            <span className="text-[13px]">{notice}</span>
+          </div>
+        ) : null}
+        <div className="st-ed-bottom" data-tip-zone="above">
+          {tool === 'brush' || tool === 'eraser' ? (
+            <label className="flex flex-col gap-1.5 px-1.5">
+              <span className="flex justify-between">
+                <span className="st-lbl text-[13px]">Brush size</span>
+                <span className="st-mono font-semibold">{look.size}</span>
+              </span>
+              <input className="st-rng" type="range" min={1} max={50} value={look.size} onChange={(e) => setLook({ size: Number(e.target.value) })} aria-label="Brush size" />
+            </label>
+          ) : null}
+          {tool === 'fill' ? (
+            <p className="m-0 px-1.5 text-[13px]" style={{ color: 'var(--s-muted)' }}>
+              Tap an empty area to fill it. Draw a closed outline first to fill just its inside.
+            </p>
+          ) : null}
+          {tool === 'resize' ? (
+            <div className="flex items-center gap-1.5 px-1.5">
+              <span className="st-mono flex-1 text-[13px]">{dims ? (hasPad ? `${dims.w}×${dims.h} → ${W}×${H}` : `${W}×${H}`) : ''}</span>
+              {([
+                ['l', '←', 'Extend left 64 px'],
+                ['t', '↑', 'Extend up 64 px'],
+                ['b', '↓', 'Extend down 64 px'],
+                ['r', '→', 'Extend right 64 px'],
+              ] as const).map(([side, glyph, tip]) => (
+                <button key={side} type="button" className="st-pill h-9 w-10 justify-center px-0" onClick={ext(side)} aria-label={tip} data-tip={tip}>
+                  {glyph}
+                </button>
+              ))}
+              <button type="button" className="st-pill h-9" disabled={!hasPad} onClick={() => setPad(NO_PAD, true)}>
+                Reset
+              </button>
+            </div>
+          ) : null}
+          {colorsOpen ? (
+            <div className="flex items-center gap-2 px-1.5">
+              {COLORS.slice(0, 6).map(([hex, name]) => (
+                <button
+                  key={hex}
+                  type="button"
+                  className={`st-ed-swatch h-8 w-8 ${hex === look.color ? 'on' : ''}`}
+                  style={{ background: hex }}
+                  onClick={() => setLook({ color: hex })}
+                  aria-label={name}
+                  data-tip={name}
+                />
+              ))}
+              <span className="flex-1" />
+              <span className="st-lbl">Opacity</span>
+              <input className="st-rng w-[90px]" type="range" min={20} max={90} step={10} value={look.opacity} onChange={(e) => setLook({ opacity: Number(e.target.value) })} aria-label="Mask opacity" />
+            </div>
+          ) : null}
+          <div className="flex justify-between">
+            {TOOLS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={`st-ibtn ${t.id === tool ? 'on' : ''}`}
+                onClick={() => setTool(t.id)}
+                aria-label={t.name}
+                aria-pressed={t.id === tool}
+                data-tip={t.name}
+              >
+                <ToolIcon d={t.d} />
+              </button>
+            ))}
+            <button type="button" className={`st-ibtn ${colorsOpen ? 'on' : ''}`} onClick={() => setColorsOpen((o) => !o)} aria-label="Mask colour" data-tip="Mask colour and opacity">
+              <span className="h-5 w-5 rounded-full" style={{ background: look.color, boxShadow: '0 0 0 2px var(--s-ground), 0 0 0 3px var(--s-line)' }} />
+            </button>
+            <button type="button" className="st-ibtn" onClick={() => restoreHist(histIdx.current - 1)} disabled={histIdx.current <= 0} aria-label="Undo" data-tip="Undo">
+              <Undo2 />
+            </button>
+            <button type="button" className="st-ibtn" onClick={() => restoreHist(histIdx.current + 1)} disabled={histIdx.current >= hist.current.length - 1} aria-label="Redo" data-tip="Redo">
+              <Redo2 />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="st-editor" role="dialog" aria-label="Inpaint and extend">
       <div ref={stageRef} className="st-ed-stage" onContextMenu={(e) => e.preventDefault()}>
@@ -771,6 +998,7 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
               onPointerUp={onUp}
               onPointerCancel={onUp}
               onPointerLeave={() => {
+                if (compact) return;
                 lastPtr.current = null;
                 if (ringRef.current) ringRef.current.style.display = 'none';
               }}
@@ -787,7 +1015,7 @@ export function MaskEditor({ src, initialMask, initialPad, onSave, onClose, save
                     style={{ left: h.l, top: h.t, width: h.w, height: h.h, cursor: h.cur, borderRadius: 5 / view.zoom }}
                     onPointerDown={(e) => {
                       e.stopPropagation();
-                      e.currentTarget.setPointerCapture(e.pointerId);
+                      capture(e);
                       startEdge(e, 'edge', h.side);
                     }}
                     onPointerMove={edgeMove}

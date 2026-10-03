@@ -12,7 +12,7 @@ type Props = {
 export function Tooltip({ content, children, side = 'top', className }: Props) {
   return (
     // data-tip lets the studio's tooltip layer place it outside clipping panels; the
-    // CSS tooltip below is the classic layout's and is hidden in the studio.
+    // CSS tooltip below is a fallback and is hidden in the studio.
     <span className={cn('group/tip relative inline-flex', className)} data-tip={content}>
       {children}
       <span
