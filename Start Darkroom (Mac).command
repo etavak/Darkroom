@@ -44,7 +44,8 @@ pause_err() {
 # Prefer Node 22 (LTS pin). Node 24+ can crash better-sqlite3 native addons.
 PIN_MAJOR="${PIN_NODE%%.*}"
 NODE_BIN=""
-if command -v node >/dev/null 2>&1; then
+# DARKROOM_FORCE_PORTABLE_NODE=1 ignores an installed Node (CI uses it to test the download)
+if [ -z "${DARKROOM_FORCE_PORTABLE_NODE:-}" ] && command -v node >/dev/null 2>&1; then
   SYS_MAJOR="$(node_major "$(command -v node)")"
   if [ "$SYS_MAJOR" = "$PIN_MAJOR" ]; then
     NODE_BIN="$(command -v node)"
@@ -98,6 +99,12 @@ if [ ! -d "$ROOT/node_modules/@clack/prompts" ]; then
 elif ! sqlite_ok; then
   echo "[Darkroom] Rebuilding native modules for Node $($NODE_BIN -v)…"
   "$NPM_BIN" rebuild better-sqlite3 --prefix "$ROOT" || pause_err "[Darkroom] npm rebuild failed."
+fi
+
+# --bootstrap-only: stop once Node and the dependencies are ready (CI checks this file this way)
+if [ "${1:-}" = "--bootstrap-only" ]; then
+  echo "[Darkroom] Bootstrap OK - Node $("$NODE_BIN" -v) at $NODE_BIN"
+  exit 0
 fi
 
 exec "$NODE_BIN" "$ROOT/launcher/index.js"

@@ -7,7 +7,7 @@ on:
 
 jobs:
   check:
-    name: Typecheck & lint (${{ matrix.os }})
+    name: Typecheck, lint & tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,3 +33,27 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      # The start files download portable Node on a fresh machine; force that path and
+      # stop before the menu, so a broken start file fails CI instead of a user's first run
+      - name: Start file (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          DARKROOM_FORCE_PORTABLE_NODE: '1'
+        run: call "Start Darkroom (Windows).bat" --bootstrap-only
+
+      - name: Start file (macOS)
+        if: runner.os == 'macOS'
+        env:
+          DARKROOM_FORCE_PORTABLE_NODE: '1'
+        run: bash "Start Darkroom (Mac).command" --bootstrap-only
+
+      - name: Start file (Linux)
+        if: runner.os == 'Linux'
+        env:
+          DARKROOM_FORCE_PORTABLE_NODE: '1'
+        run: bash launcher/start-linux.sh --bootstrap-only

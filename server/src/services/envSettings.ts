@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '../../..');
 
-export const envPath = path.join(rootDir, '.env');
+// DARKROOM_ENV_FILE points elsewhere (tests use a temp file, never the real .env)
+export const envPath = process.env.DARKROOM_ENV_FILE ? path.resolve(process.env.DARKROOM_ENV_FILE) : path.join(rootDir, '.env');
 
 export function getComfyDir(): string {
   return process.env.COMFY_DIR || readEnvValue('COMFY_DIR') || '';

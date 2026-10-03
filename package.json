@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Local ComfyUI frontend — NovelAI/SeaArt-style image generation",
+  "description": "Local ComfyUI frontend \u2014 NovelAI/SeaArt-style image generation",
   "scripts": {
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client && npm run build -w server",
@@ -14,7 +14,9 @@
     "dev:client": "npm run dev -w client",
     "mock:comfy": "MOCK=true tsx server/mock-comfy.ts",
     "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "workspaces": [
     "client",
@@ -25,7 +27,8 @@
     "concurrently": "^9.1.2",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "typescript-eslint": "^8.71.0"
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": ">=22"

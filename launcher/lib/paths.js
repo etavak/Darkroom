@@ -14,7 +14,8 @@ export const launcherDir = path.join(root, 'launcher');
  * until moved (launcher → Doctor → Tidy up folders).
  */
 export const dependenciesDir = path.join(root, 'dependencies');
-export const envPath = path.join(root, '.env');
+// DARKROOM_ENV_FILE points elsewhere (tests use a temp file, never the real .env)
+export const envPath = process.env.DARKROOM_ENV_FILE ? path.resolve(process.env.DARKROOM_ENV_FILE) : path.join(root, '.env');
 export const logsDir = path.join(root, 'logs');
 export const opsLogDir = path.join(logsDir, 'ops');
 export const pidPath = path.join(logsDir, 'pids.json');

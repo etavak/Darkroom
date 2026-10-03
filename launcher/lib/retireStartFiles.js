@@ -19,19 +19,20 @@ const WINDOWS_FORWARDER = [
  * Remove the old ones so there's one obvious file to open. macOS / Linux start scripts
  * replace themselves with node (exec), so deleting them is safe; a running Windows .bat
  * can't be touched, so its own update block swaps in a forwarder next time instead.
+ * @param {string} [dir] the Darkroom folder (tests pass a scratch one)
  * @returns {string | null} a note for the user when something was retired
  */
-export function retireOldStartFiles() {
+export function retireOldStartFiles(dir = root) {
   const removed = [];
   try {
     for (const name of [OLD.mac, OLD.linux]) {
-      const file = path.join(root, name);
+      const file = path.join(dir, name);
       if (fs.existsSync(file)) {
         fs.rmSync(file, { force: true });
         removed.push(name);
       }
     }
-    const bat = path.join(root, OLD.windows);
+    const bat = path.join(dir, OLD.windows);
     if (fs.existsSync(bat) && !fs.existsSync(`${bat}.new`)) {
       if (process.platform === 'win32') fs.writeFileSync(`${bat}.new`, WINDOWS_FORWARDER, 'utf8');
       else fs.rmSync(bat, { force: true });

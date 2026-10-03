@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { getFamily } from '../presets/catalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const tagsDir = path.resolve(__dirname, '../../tags');
+// DARKROOM_TAGS_DIR points elsewhere (tests use small fixture dictionaries)
+export const tagsDir = process.env.DARKROOM_TAGS_DIR ? path.resolve(process.env.DARKROOM_TAGS_DIR) : path.resolve(__dirname, '../../tags');
 
 export type TagCategory = 'general' | 'artist' | 'character' | 'copyright' | 'meta';
 

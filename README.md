@@ -103,9 +103,10 @@ npm install
 npm run dev        # UI on http://localhost:5173, API on http://localhost:3001
 npm run typecheck
 npm run lint
+npm test           # server, launcher and client tests (Node 22)
 ```
 
-`npm run cli` opens the launcher menu. `npm run build && npm start` serves the production build. A minimal fake ComfyUI for API smoke tests: `MOCK=true npm run mock:comfy`. To run a second dev UI against another server, start the server with `PORT=3002` and the client with `DARKROOM_API_PORT=3002`.
+`npm run cli` opens the launcher menu. Tests run against a recorded ComfyUI node list (`server/test/fixtures/object_info.json`; refresh it from a running ComfyUI with `node server/test/tools/capture-object-info.mjs`), a fake ComfyUI and throwaway folders — never your data. `npm run build && npm start` serves the production build. A minimal fake ComfyUI for API smoke tests: `MOCK=true npm run mock:comfy`. To run a second dev UI against another server, start the server with `PORT=3002` and the client with `DARKROOM_API_PORT=3002`.
 
 ## License
 

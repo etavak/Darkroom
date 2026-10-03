@@ -21,9 +21,14 @@ set "NODE_BIN="
 set "NODE_ARCH=x64"
 
 REM Prefer Node 22 (LTS pin). Node 24+ can crash better-sqlite3 native addons.
+REM DARKROOM_FORCE_PORTABLE_NODE=1 ignores an installed Node (CI uses it to test the download).
 for /f "tokens=1 delims=." %%M in ("%PIN_NODE%") do set PIN_MAJOR=%%M
-where node >nul 2>nul
-if not errorlevel 1 (
+set "HAVE_SYSTEM_NODE="
+if not defined DARKROOM_FORCE_PORTABLE_NODE (
+  where node >nul 2>nul
+  if not errorlevel 1 set "HAVE_SYSTEM_NODE=1"
+)
+if defined HAVE_SYSTEM_NODE (
   for /f "tokens=1 delims=v" %%V in ('node -v') do set NODEVER=%%V
   for /f "tokens=1 delims=." %%M in ("!NODEVER!") do set NODEMAJOR=%%M
   if not defined NODEMAJOR set NODEMAJOR=0
@@ -49,27 +54,33 @@ if not defined NODE_BIN (
 :have_node
 
 if not defined NODE_BIN (
-  echo [Darkroom] Node.js %PIN_MAJOR% not found — downloading portable Node v%PIN_NODE%…
+  echo [Darkroom] Node.js %PIN_MAJOR% not found - downloading portable Node v%PIN_NODE%...
+  REM Inside this block, values set here must be read with !NAME! (%NAME% is expanded
+  REM before the block runs, so it would still be empty).
   set "ARCHIVE=node-v%PIN_NODE%-win-%NODE_ARCH%.zip"
-  set "URL=https://nodejs.org/dist/v%PIN_NODE%/!ARCHIVE!"
-  set "TMP=%RUNTIME_NODE%\!ARCHIVE!"
+  set "NODE_URL=https://nodejs.org/dist/v%PIN_NODE%/!ARCHIVE!"
+  set "NODE_ZIP=%RUNTIME_NODE%\!ARCHIVE!"
   set "LOG=%OPS_LOG_DIR%\node-bootstrap.log"
-  echo Downloading !URL! > "!LOG!"
-  powershell -NoProfile -Command ^
-    "try { Invoke-WebRequest -Uri '%URL%' -OutFile '%TMP%' -UseBasicParsing } catch { exit 1 }"
+  echo Downloading !NODE_URL! > "!LOG!"
+  REM TLS 1.2 for older Windows PowerShell; no progress bar (it slows PowerShell 5.1 downloads a lot)
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '!NODE_URL!' -OutFile '!NODE_ZIP!' -UseBasicParsing } catch { Write-Host ('[Darkroom] ' + $_.Exception.Message); exit 1 }" >> "!LOG!" 2>&1
   if errorlevel 1 (
-    echo [Darkroom] Download failed.
+    echo [Darkroom] Download failed - could not fetch !NODE_URL!
+    type "!LOG!"
+    echo [Darkroom] Check your internet connection, or install Node.js 22 from nodejs.org and try again.
     pause
     exit /b 1
   )
-  powershell -NoProfile -Command ^
-    "Expand-Archive -Path '%TMP%' -DestinationPath '%RUNTIME_NODE%' -Force"
+  powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    "$ProgressPreference='SilentlyContinue'; try { Expand-Archive -Path '!NODE_ZIP!' -DestinationPath '!RUNTIME_NODE!' -Force } catch { Write-Host ('[Darkroom] ' + $_.Exception.Message); exit 1 }" >> "!LOG!" 2>&1
   if errorlevel 1 (
     echo [Darkroom] Extract failed.
+    type "!LOG!"
     pause
     exit /b 1
   )
-  del /f /q "%TMP%" >nul 2>nul
+  del /f /q "!NODE_ZIP!" >nul 2>nul
   for /d %%D in ("%RUNTIME_NODE%\node-v*-win-%NODE_ARCH%") do (
     if exist "%%D\node.exe" (
       for /f "tokens=1 delims=v" %%V in ('"%%D\node.exe" -v') do set PORTVER=%%V
@@ -94,7 +105,7 @@ set "PATH=%NODE_DIR%;%PATH%"
 for /f "delims=" %%V in ('"%NODE_BIN%" -v') do set "NODE_VER=%%V"
 
 if not exist "%ROOT%\node_modules\@clack\prompts" (
-  echo [Darkroom] Installing dependencies…
+  echo [Darkroom] Installing dependencies...
   if exist "%ROOT%\package-lock.json" (
     call "%NPM_BIN%" ci --prefix "%ROOT%"
     if errorlevel 1 call "%NPM_BIN%" install --prefix "%ROOT%"
@@ -106,7 +117,7 @@ if not exist "%ROOT%\node_modules\@clack\prompts" (
     pause
     exit /b 1
   )
-  echo [Darkroom] Rebuilding native modules for Node !NODE_VER!…
+  echo [Darkroom] Rebuilding native modules for Node !NODE_VER!...
   call "%NPM_BIN%" rebuild better-sqlite3 --prefix "%ROOT%"
   if errorlevel 1 (
     echo [Darkroom] npm rebuild failed.
@@ -114,10 +125,10 @@ if not exist "%ROOT%\node_modules\@clack\prompts" (
     exit /b 1
   )
 ) else (
-  REM bare require() only loads JS — native addon loads on new Database()
+  REM bare require() only loads JS - native addon loads on new Database()
   "%NODE_BIN%" -e "const D=require('better-sqlite3'); const d=new D(':memory:'); d.close();" >nul 2>nul
   if errorlevel 1 (
-    echo [Darkroom] Rebuilding native modules for Node !NODE_VER!…
+    echo [Darkroom] Rebuilding native modules for Node !NODE_VER!...
     call "%NPM_BIN%" rebuild better-sqlite3 --prefix "%ROOT%"
     if errorlevel 1 (
       echo [Darkroom] npm rebuild failed.
@@ -125,6 +136,12 @@ if not exist "%ROOT%\node_modules\@clack\prompts" (
       exit /b 1
     )
   )
+)
+
+REM --bootstrap-only: stop once Node and the dependencies are ready (CI checks this file this way)
+if /i "%~1"=="--bootstrap-only" (
+  echo [Darkroom] Bootstrap OK - Node !NODE_VER! at !NODE_BIN!
+  exit /b 0
 )
 
 "%NODE_BIN%" "%ROOT%\launcher\index.js"

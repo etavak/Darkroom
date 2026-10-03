@@ -1,0 +1,2200 @@
+{
+ "KSampler": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "The model used for denoising the input latent."
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 18446744073709552000,
+      "control_after_generate": true,
+      "tooltip": "The random seed used for creating the noise."
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 20,
+      "min": 1,
+      "max": 10000,
+      "tooltip": "The number of steps used in the denoising process."
+     }
+    ],
+    "cfg": [
+     "FLOAT",
+     {
+      "default": 8,
+      "min": 0,
+      "max": 100,
+      "step": 0.1,
+      "round": 0.01,
+      "tooltip": "The Classifier-Free Guidance scale balances creativity and adherence to the prompt. Higher values result in images more closely matching the prompt however too high values will negatively impact quality."
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_cfg_pp",
+      "euler_ancestral",
+      "euler_ancestral_cfg_pp",
+      "heun",
+      "heunpp2",
+      "exp_heun_2_x0",
+      "exp_heun_2_x0_sde",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "lms",
+      "dpm_fast",
+      "dpm_adaptive",
+      "dpmpp_2s_ancestral",
+      "dpmpp_2s_ancestral_cfg_pp",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_cfg_pp",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_2m_sde_heun",
+      "dpmpp_2m_sde_heun_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "lcm",
+      "ipndm",
+      "ipndm_v",
+      "deis",
+      "cfgpp_ud10_ab",
+      "res_multistep",
+      "res_multistep_cfg_pp",
+      "res_multistep_ancestral",
+      "res_multistep_ancestral_cfg_pp",
+      "gradient_estimation",
+      "gradient_estimation_cfg_pp",
+      "er_sde",
+      "seeds_2",
+      "seeds_3",
+      "sa_solver",
+      "sa_solver_pece",
+      "ddim",
+      "uni_pc",
+      "uni_pc_bh2"
+     ],
+     {
+      "tooltip": "The algorithm used when sampling, this can affect the quality, speed, and style of the generated output."
+     }
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal"
+     ],
+     {
+      "tooltip": "The scheduler controls how noise is gradually removed to form the image."
+     }
+    ],
+    "positive": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to include in the image."
+     }
+    ],
+    "negative": [
+     "CONDITIONING",
+     {
+      "tooltip": "The conditioning describing the attributes you want to exclude from the image."
+     }
+    ],
+    "latent_image": [
+     "LATENT",
+     {
+      "tooltip": "The latent image to denoise."
+     }
+    ],
+    "denoise": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "tooltip": "The amount of denoising applied, lower values will maintain the structure of the initial image allowing for image to image sampling."
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "name": "KSampler"
+ },
+ "CheckpointLoaderSimple": {
+  "input": {
+   "required": {
+    "ckpt_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ],
+     {
+      "tooltip": "The name of the checkpoint (model) to load."
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL",
+   "CLIP",
+   "VAE"
+  ],
+  "output_name": [
+   "MODEL",
+   "CLIP",
+   "VAE"
+  ],
+  "name": "CheckpointLoaderSimple"
+ },
+ "CLIPTextEncode": {
+  "input": {
+   "required": {
+    "text": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": true,
+      "tooltip": "The text to be encoded."
+     }
+    ],
+    "clip": [
+     "CLIP",
+     {
+      "tooltip": "The CLIP model used for encoding the text."
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ],
+  "name": "CLIPTextEncode"
+ },
+ "CLIPSetLastLayer": {
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP"
+    ],
+    "stop_at_clip_layer": [
+     "INT",
+     {
+      "default": -1,
+      "min": -24,
+      "max": -1,
+      "step": 1,
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "CLIPSetLastLayer"
+ },
+ "VAEDecode": {
+  "input": {
+   "required": {
+    "samples": [
+     "LATENT",
+     {
+      "tooltip": "The latent to be decoded."
+     }
+    ],
+    "vae": [
+     "VAE",
+     {
+      "tooltip": "The VAE model used for decoding the latent."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "VAEDecode"
+ },
+ "VAEEncode": {
+  "input": {
+   "required": {
+    "pixels": [
+     "IMAGE"
+    ],
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "name": "VAEEncode"
+ },
+ "VAELoader": {
+  "input": {
+   "required": {
+    "vae_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "VAE"
+  ],
+  "output_name": [
+   "VAE"
+  ],
+  "name": "VAELoader"
+ },
+ "EmptyLatentImage": {
+  "input": {
+   "required": {
+    "width": [
+     "INT",
+     {
+      "default": 1024,
+      "min": 16,
+      "max": 16384,
+      "step": 8,
+      "tooltip": "The width of the latent images in pixels."
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 1024,
+      "min": 16,
+      "max": 16384,
+      "step": 8,
+      "tooltip": "The height of the latent images in pixels."
+     }
+    ],
+    "batch_size": [
+     "INT",
+     {
+      "default": 1,
+      "min": 1,
+      "max": 4096,
+      "tooltip": "The number of latent images in the batch."
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "name": "EmptyLatentImage"
+ },
+ "LatentUpscaleBy": {
+  "input": {
+   "required": {
+    "samples": [
+     "LATENT"
+    ],
+    "upscale_method": [
+     [
+      "nearest-exact",
+      "bilinear",
+      "area",
+      "bicubic",
+      "bislerp"
+     ]
+    ],
+    "scale_by": [
+     "FLOAT",
+     {
+      "default": 1.5,
+      "min": 0.01,
+      "max": 8,
+      "step": 0.01
+     }
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "name": "LatentUpscaleBy"
+ },
+ "SaveImage": {
+  "input": {
+   "required": {
+    "images": [
+     "IMAGE",
+     {
+      "tooltip": "The images to save."
+     }
+    ],
+    "filename_prefix": [
+     "STRING",
+     {
+      "default": "ComfyUI",
+      "tooltip": "The prefix for the file to save. This may include formatting information such as %date:yyyy-MM-dd% or %Empty Latent Image.width% to include values from nodes."
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "images"
+  ],
+  "name": "SaveImage"
+ },
+ "PreviewImage": {
+  "input": {
+   "required": {
+    "images": [
+     "IMAGE"
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "images"
+  ],
+  "name": "PreviewImage"
+ },
+ "LoadImage": {
+  "input": {
+   "required": {
+    "image": [
+     [
+      "model-a.png",
+      "model-b.png"
+     ],
+     {
+      "image_upload": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE",
+   "MASK"
+  ],
+  "output_name": [
+   "IMAGE",
+   "MASK"
+  ],
+  "name": "LoadImage"
+ },
+ "LoadImageMask": {
+  "input": {
+   "required": {
+    "image": [
+     [
+      "model-a.png",
+      "model-b.png"
+     ],
+     {
+      "image_upload": true
+     }
+    ],
+    "channel": [
+     [
+      "alpha",
+      "red",
+      "green",
+      "blue"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ],
+  "name": "LoadImageMask"
+ },
+ "ImageScale": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ],
+    "upscale_method": [
+     [
+      "nearest-exact",
+      "bilinear",
+      "area",
+      "bicubic",
+      "lanczos"
+     ]
+    ],
+    "width": [
+     "INT",
+     {
+      "default": 512,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "height": [
+     "INT",
+     {
+      "default": 512,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "crop": [
+     [
+      "disabled",
+      "center"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "ImageScale"
+ },
+ "ImagePadForOutpaint": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ],
+    "left": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "top": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "right": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "bottom": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "feathering": [
+     "INT",
+     {
+      "default": 40,
+      "min": 0,
+      "max": 16384,
+      "step": 1,
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE",
+   "MASK"
+  ],
+  "output_name": [
+   "IMAGE",
+   "MASK"
+  ],
+  "name": "ImagePadForOutpaint"
+ },
+ "SetLatentNoiseMask": {
+  "input": {
+   "required": {
+    "samples": [
+     "LATENT"
+    ],
+    "mask": [
+     "MASK"
+    ]
+   }
+  },
+  "output": [
+   "LATENT"
+  ],
+  "output_name": [
+   "LATENT"
+  ],
+  "name": "SetLatentNoiseMask"
+ },
+ "LoraLoader": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "The diffusion model the LoRA will be applied to."
+     }
+    ],
+    "clip": [
+     "CLIP",
+     {
+      "tooltip": "The CLIP model the LoRA will be applied to."
+     }
+    ],
+    "lora_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ],
+     {
+      "tooltip": "The name of the LoRA."
+     }
+    ],
+    "strength_model": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": -100,
+      "max": 100,
+      "step": 0.01,
+      "tooltip": "How strongly to modify the diffusion model. This value can be negative."
+     }
+    ],
+    "strength_clip": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": -100,
+      "max": 100,
+      "step": 0.01,
+      "tooltip": "How strongly to modify the CLIP model. This value can be negative."
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL",
+   "CLIP"
+  ],
+  "output_name": [
+   "MODEL",
+   "CLIP"
+  ],
+  "name": "LoraLoader"
+ },
+ "CLIPLoader": {
+  "input": {
+   "required": {
+    "clip_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "type": [
+     [
+      "stable_diffusion",
+      "stable_cascade",
+      "sd3",
+      "stable_audio",
+      "mochi",
+      "ltxv",
+      "pixart",
+      "cosmos",
+      "lumina2",
+      "wan",
+      "hidream",
+      "chroma",
+      "ace",
+      "omnigen2",
+      "qwen_image",
+      "hunyuan_image",
+      "flux2",
+      "ovis",
+      "longcat_image",
+      "cogvideox",
+      "lens",
+      "pixeldit",
+      "ideogram4",
+      "boogu",
+      "krea2",
+      "joyimage",
+      "mage",
+      "minimax",
+      "yue2"
+     ]
+    ]
+   },
+   "optional": {
+    "device": [
+     [
+      "default",
+      "cpu"
+     ],
+     {
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "CLIPLoader"
+ },
+ "UNETLoader": {
+  "input": {
+   "required": {
+    "unet_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "weight_dtype": [
+     [
+      "default",
+      "fp8_e4m3fn",
+      "fp8_e4m3fn_fast",
+      "fp8_e5m2"
+     ],
+     {
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ],
+  "name": "UNETLoader"
+ },
+ "DualCLIPLoader": {
+  "input": {
+   "required": {
+    "clip_name1": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "clip_name2": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "type": [
+     [
+      "sdxl",
+      "sd3",
+      "flux",
+      "hunyuan_video",
+      "hidream",
+      "hunyuan_image",
+      "hunyuan_video_15",
+      "kandinsky5",
+      "kandinsky5_image",
+      "ltxv",
+      "newbie",
+      "ace"
+     ]
+    ]
+   },
+   "optional": {
+    "device": [
+     [
+      "default",
+      "cpu"
+     ],
+     {
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "DualCLIPLoader"
+ },
+ "ControlNetApplyAdvanced": {
+  "input": {
+   "required": {
+    "positive": [
+     "CONDITIONING"
+    ],
+    "negative": [
+     "CONDITIONING"
+    ],
+    "control_net": [
+     "CONTROL_NET"
+    ],
+    "image": [
+     "IMAGE"
+    ],
+    "strength": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": 0,
+      "max": 10,
+      "step": 0.01
+     }
+    ],
+    "start_percent": [
+     "FLOAT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+     }
+    ],
+    "end_percent": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.001
+     }
+    ]
+   },
+   "optional": {
+    "vae": [
+     "VAE"
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING",
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "positive",
+   "negative"
+  ],
+  "name": "ControlNetApplyAdvanced"
+ },
+ "ControlNetLoader": {
+  "input": {
+   "required": {
+    "control_net_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "CONTROL_NET"
+  ],
+  "output_name": [
+   "CONTROL_NET"
+  ],
+  "name": "ControlNetLoader"
+ },
+ "UpscaleModelLoader": {
+  "input": {
+   "required": {
+    "model_name": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "model-a.pth",
+       "model-b.pth"
+      ]
+     }
+    ]
+   }
+  },
+  "output": [
+   "UPSCALE_MODEL"
+  ],
+  "output_name": [
+   "UPSCALE_MODEL"
+  ],
+  "name": "UpscaleModelLoader"
+ },
+ "ImageUpscaleWithModel": {
+  "input": {
+   "required": {
+    "upscale_model": [
+     "UPSCALE_MODEL",
+     {}
+    ],
+    "image": [
+     "IMAGE",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "ImageUpscaleWithModel"
+ },
+ "ImageCompositeMasked": {
+  "input": {
+   "required": {
+    "destination": [
+     "IMAGE",
+     {}
+    ],
+    "source": [
+     "IMAGE",
+     {}
+    ],
+    "x": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "y": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "resize_source": [
+     "BOOLEAN",
+     {
+      "default": false
+     }
+    ]
+   },
+   "optional": {
+    "mask": [
+     "MASK",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "ImageCompositeMasked"
+ },
+ "MaskComposite": {
+  "input": {
+   "required": {
+    "destination": [
+     "MASK",
+     {}
+    ],
+    "source": [
+     "MASK",
+     {}
+    ],
+    "x": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "y": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 16384,
+      "step": 1
+     }
+    ],
+    "operation": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "multiply",
+       "add",
+       "subtract",
+       "and",
+       "or",
+       "xor"
+      ]
+     }
+    ]
+   }
+  },
+  "output": [
+   "MASK"
+  ],
+  "output_name": [
+   "MASK"
+  ],
+  "name": "MaskComposite"
+ },
+ "SamplerCustomAdvanced": {
+  "input": {
+   "required": {
+    "noise": [
+     "NOISE",
+     {}
+    ],
+    "guider": [
+     "GUIDER",
+     {}
+    ],
+    "sampler": [
+     "SAMPLER",
+     {}
+    ],
+    "sigmas": [
+     "SIGMAS",
+     {}
+    ],
+    "latent_image": [
+     "LATENT",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "LATENT",
+   "LATENT"
+  ],
+  "output_name": [
+   "output",
+   "denoised_output"
+  ],
+  "name": "SamplerCustomAdvanced"
+ },
+ "ModelSamplingDiscrete": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL"
+    ],
+    "sampling": [
+     [
+      "eps",
+      "v_prediction",
+      "lcm",
+      "x0",
+      "img_to_img",
+      "img_to_img_flow"
+     ]
+    ],
+    "zsnr": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "advanced": true
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ],
+  "name": "ModelSamplingDiscrete"
+ },
+ "DifferentialDiffusion": {
+  "input": {
+   "required": {
+    "model": [
+     "MODEL",
+     {}
+    ]
+   },
+   "optional": {
+    "strength": [
+     "FLOAT",
+     {
+      "default": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+     }
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ],
+  "name": "DifferentialDiffusion"
+ },
+ "SetUnionControlNetType": {
+  "input": {
+   "required": {
+    "control_net": [
+     "CONTROL_NET",
+     {}
+    ],
+    "type": [
+     "COMBO",
+     {
+      "multiselect": false,
+      "options": [
+       "auto",
+       "openpose",
+       "depth",
+       "hed/pidi/scribble/ted",
+       "canny/lineart/anime_lineart/mlsd",
+       "normal",
+       "segment",
+       "tile",
+       "repaint"
+      ]
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONTROL_NET"
+  ],
+  "output_name": [
+   "CONTROL_NET"
+  ],
+  "name": "SetUnionControlNetType"
+ },
+ "FluxGuidance": {
+  "input": {
+   "required": {
+    "conditioning": [
+     "CONDITIONING",
+     {}
+    ],
+    "guidance": [
+     "FLOAT",
+     {
+      "default": 3.5,
+      "min": 0,
+      "max": 100,
+      "step": 0.1
+     }
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ],
+  "name": "FluxGuidance"
+ },
+ "ReferenceLatent": {
+  "input": {
+   "required": {
+    "conditioning": [
+     "CONDITIONING",
+     {}
+    ]
+   },
+   "optional": {
+    "latent": [
+     "LATENT",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ],
+  "name": "ReferenceLatent"
+ },
+ "TextEncodeQwenImageEdit": {
+  "input": {
+   "required": {
+    "clip": [
+     "CLIP",
+     {}
+    ],
+    "prompt": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": true
+     }
+    ]
+   },
+   "optional": {
+    "vae": [
+     "VAE",
+     {}
+    ],
+    "image": [
+     "IMAGE",
+     {}
+    ]
+   }
+  },
+  "output": [
+   "CONDITIONING"
+  ],
+  "output_name": [
+   "CONDITIONING"
+  ],
+  "name": "TextEncodeQwenImageEdit"
+ },
+ "UnetLoaderGGUF": {
+  "input": {
+   "required": {
+    "unet_name": [
+     []
+    ]
+   }
+  },
+  "output": [
+   "MODEL"
+  ],
+  "output_name": [
+   "MODEL"
+  ],
+  "name": "UnetLoaderGGUF"
+ },
+ "CLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "type": [
+     [
+      "stable_diffusion",
+      "stable_cascade",
+      "sd3",
+      "stable_audio",
+      "mochi",
+      "ltxv",
+      "pixart",
+      "cosmos",
+      "lumina2",
+      "wan",
+      "hidream",
+      "chroma",
+      "ace",
+      "omnigen2",
+      "qwen_image",
+      "hunyuan_image",
+      "flux2",
+      "ovis",
+      "longcat_image",
+      "cogvideox",
+      "lens",
+      "pixeldit",
+      "ideogram4",
+      "boogu",
+      "krea2",
+      "joyimage",
+      "mage",
+      "minimax",
+      "yue2"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "CLIPLoaderGGUF"
+ },
+ "DualCLIPLoaderGGUF": {
+  "input": {
+   "required": {
+    "clip_name1": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "clip_name2": [
+     [
+      "model-a.safetensors",
+      "model-b.safetensors"
+     ]
+    ],
+    "type": [
+     [
+      "sdxl",
+      "sd3",
+      "flux",
+      "hunyuan_video",
+      "hidream",
+      "hunyuan_image",
+      "hunyuan_video_15",
+      "kandinsky5",
+      "kandinsky5_image",
+      "ltxv",
+      "newbie",
+      "ace"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "CLIP"
+  ],
+  "output_name": [
+   "CLIP"
+  ],
+  "name": "DualCLIPLoaderGGUF"
+ },
+ "FaceDetailer": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ],
+    "model": [
+     "MODEL",
+     {
+      "tooltip": "If the `ImpactDummyInput` is connected to the model, the inference stage is skipped."
+     }
+    ],
+    "clip": [
+     "CLIP"
+    ],
+    "vae": [
+     "VAE"
+    ],
+    "guide_size": [
+     "FLOAT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "guide_size_for": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "label_on": "bbox",
+      "label_off": "crop_region"
+     }
+    ],
+    "max_size": [
+     "FLOAT",
+     {
+      "default": 1024,
+      "min": 64,
+      "max": 16384,
+      "step": 8
+     }
+    ],
+    "seed": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 18446744073709552000
+     }
+    ],
+    "steps": [
+     "INT",
+     {
+      "default": 20,
+      "min": 1,
+      "max": 10000
+     }
+    ],
+    "cfg": [
+     "FLOAT",
+     {
+      "default": 8,
+      "min": 0,
+      "max": 100
+     }
+    ],
+    "sampler_name": [
+     [
+      "euler",
+      "euler_cfg_pp",
+      "euler_ancestral",
+      "euler_ancestral_cfg_pp",
+      "heun",
+      "heunpp2",
+      "exp_heun_2_x0",
+      "exp_heun_2_x0_sde",
+      "dpm_2",
+      "dpm_2_ancestral",
+      "lms",
+      "dpm_fast",
+      "dpm_adaptive",
+      "dpmpp_2s_ancestral",
+      "dpmpp_2s_ancestral_cfg_pp",
+      "dpmpp_sde",
+      "dpmpp_sde_gpu",
+      "dpmpp_2m",
+      "dpmpp_2m_cfg_pp",
+      "dpmpp_2m_sde",
+      "dpmpp_2m_sde_gpu",
+      "dpmpp_2m_sde_heun",
+      "dpmpp_2m_sde_heun_gpu",
+      "dpmpp_3m_sde",
+      "dpmpp_3m_sde_gpu",
+      "ddpm",
+      "lcm",
+      "ipndm",
+      "ipndm_v",
+      "deis",
+      "cfgpp_ud10_ab",
+      "res_multistep",
+      "res_multistep_cfg_pp",
+      "res_multistep_ancestral",
+      "res_multistep_ancestral_cfg_pp",
+      "gradient_estimation",
+      "gradient_estimation_cfg_pp",
+      "er_sde",
+      "seeds_2",
+      "seeds_3",
+      "sa_solver",
+      "sa_solver_pece",
+      "ddim",
+      "uni_pc",
+      "uni_pc_bh2"
+     ]
+    ],
+    "scheduler": [
+     [
+      "simple",
+      "sgm_uniform",
+      "karras",
+      "exponential",
+      "ddim_uniform",
+      "beta",
+      "normal",
+      "linear_quadratic",
+      "kl_optimal",
+      "AYS SDXL",
+      "AYS SD1",
+      "AYS SVD",
+      "GITS[coeff=1.2]",
+      "LTXV[default]",
+      "OSS FLUX",
+      "OSS Wan",
+      "OSS Chroma"
+     ]
+    ],
+    "positive": [
+     "CONDITIONING"
+    ],
+    "negative": [
+     "CONDITIONING"
+    ],
+    "denoise": [
+     "FLOAT",
+     {
+      "default": 0.5,
+      "min": 0.0001,
+      "max": 1,
+      "step": 0.01
+     }
+    ],
+    "feather": [
+     "INT",
+     {
+      "default": 5,
+      "min": 0,
+      "max": 100,
+      "step": 1
+     }
+    ],
+    "noise_mask": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "label_on": "enabled",
+      "label_off": "disabled"
+     }
+    ],
+    "force_inpaint": [
+     "BOOLEAN",
+     {
+      "default": true,
+      "label_on": "enabled",
+      "label_off": "disabled"
+     }
+    ],
+    "bbox_threshold": [
+     "FLOAT",
+     {
+      "default": 0.5,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+     }
+    ],
+    "bbox_dilation": [
+     "INT",
+     {
+      "default": 10,
+      "min": -512,
+      "max": 512,
+      "step": 1
+     }
+    ],
+    "bbox_crop_factor": [
+     "FLOAT",
+     {
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "step": 0.1
+     }
+    ],
+    "sam_detection_hint": [
+     [
+      "center-1",
+      "horizontal-2",
+      "vertical-2",
+      "rect-4",
+      "diamond-4",
+      "mask-area",
+      "mask-points",
+      "mask-point-bbox",
+      "none"
+     ]
+    ],
+    "sam_dilation": [
+     "INT",
+     {
+      "default": 0,
+      "min": -512,
+      "max": 512,
+      "step": 1
+     }
+    ],
+    "sam_threshold": [
+     "FLOAT",
+     {
+      "default": 0.93,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+     }
+    ],
+    "sam_bbox_expansion": [
+     "INT",
+     {
+      "default": 0,
+      "min": 0,
+      "max": 1000,
+      "step": 1
+     }
+    ],
+    "sam_mask_hint_threshold": [
+     "FLOAT",
+     {
+      "default": 0.7,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+     }
+    ],
+    "sam_mask_hint_use_negative": [
+     [
+      "False",
+      "Small",
+      "Outter"
+     ]
+    ],
+    "drop_size": [
+     "INT",
+     {
+      "min": 1,
+      "max": 16384,
+      "step": 1,
+      "default": 10
+     }
+    ],
+    "bbox_detector": [
+     "BBOX_DETECTOR"
+    ],
+    "wildcard": [
+     "STRING",
+     {
+      "multiline": true,
+      "dynamicPrompts": false
+     }
+    ],
+    "cycle": [
+     "INT",
+     {
+      "default": 1,
+      "min": 1,
+      "max": 10,
+      "step": 1
+     }
+    ]
+   },
+   "optional": {
+    "sam_model_opt": [
+     "SAM_MODEL"
+    ],
+    "segm_detector_opt": [
+     "SEGM_DETECTOR"
+    ],
+    "detailer_hook": [
+     "DETAILER_HOOK"
+    ],
+    "inpaint_model": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "enabled",
+      "label_off": "disabled"
+     }
+    ],
+    "noise_mask_feather": [
+     "INT",
+     {
+      "default": 20,
+      "min": 0,
+      "max": 100,
+      "step": 1
+     }
+    ],
+    "scheduler_func_opt": [
+     "SCHEDULER_FUNC"
+    ],
+    "tiled_encode": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "enabled",
+      "label_off": "disabled"
+     }
+    ],
+    "tiled_decode": [
+     "BOOLEAN",
+     {
+      "default": false,
+      "label_on": "enabled",
+      "label_off": "disabled"
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE",
+   "IMAGE",
+   "IMAGE",
+   "MASK",
+   "DETAILER_PIPE",
+   "IMAGE"
+  ],
+  "output_name": [
+   "image",
+   "cropped_refined",
+   "cropped_enhanced_alpha",
+   "mask",
+   "detailer_pipe",
+   "cnet_images"
+  ],
+  "name": "FaceDetailer"
+ },
+ "UltralyticsDetectorProvider": {
+  "input": {
+   "required": {
+    "model_name": [
+     [
+      "bbox/model-a.pt",
+      "bbox/model-b.pt"
+     ]
+    ]
+   }
+  },
+  "output": [
+   "BBOX_DETECTOR",
+   "SEGM_DETECTOR"
+  ],
+  "output_name": [
+   "BBOX_DETECTOR",
+   "SEGM_DETECTOR"
+  ],
+  "name": "UltralyticsDetectorProvider"
+ },
+ "TilePreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "pyrUp_iters": [
+     "INT",
+     {
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "step": 1
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "TilePreprocessor"
+ },
+ "Zoe-DepthMapPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "Zoe-DepthMapPreprocessor"
+ },
+ "DepthAnythingPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "ckpt_name": [
+     [
+      "model-a.pth",
+      "model-b.pth"
+     ],
+     {
+      "default": "depth_anything_vitl14.pth"
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "DepthAnythingPreprocessor"
+ },
+ "DWPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "detect_hand": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "detect_body": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "detect_face": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ],
+    "bbox_detector": [
+     [
+      "model-a.pt",
+      "model-b.pt"
+     ],
+     {
+      "default": "yolox_l.onnx"
+     }
+    ],
+    "pose_estimator": [
+     [
+      "model-a.pt",
+      "model-b.pt"
+     ],
+     {
+      "default": "dw-ll_ucoco_384_bs5.torchscript.pt"
+     }
+    ],
+    "scale_stick_for_xinsr_cn": [
+     [
+      "disable",
+      "enable"
+     ],
+     {
+      "default": "disable"
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE",
+   "POSE_KEYPOINT"
+  ],
+  "output_name": [
+   "IMAGE",
+   "POSE_KEYPOINT"
+  ],
+  "name": "DWPreprocessor"
+ },
+ "LineArtPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "coarse": [
+     [
+      "disable",
+      "enable"
+     ],
+     {
+      "default": "disable"
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "LineArtPreprocessor"
+ },
+ "MiDaS-DepthMapPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "a": [
+     "FLOAT",
+     {
+      "default": 6.283185307179586,
+      "min": 0,
+      "max": 15.707963267948966,
+      "step": 0.01
+     }
+    ],
+    "bg_threshold": [
+     "FLOAT",
+     {
+      "default": 0.1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "MiDaS-DepthMapPreprocessor"
+ },
+ "CannyEdgePreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "low_threshold": [
+     "INT",
+     {
+      "default": 100,
+      "min": 0,
+      "max": 255,
+      "step": 1
+     }
+    ],
+    "high_threshold": [
+     "INT",
+     {
+      "default": 200,
+      "min": 0,
+      "max": 255,
+      "step": 1
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "CannyEdgePreprocessor"
+ },
+ "AnimeLineArtPreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "AnimeLineArtPreprocessor"
+ },
+ "OpenposePreprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "detect_hand": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "detect_body": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "detect_face": [
+     [
+      "enable",
+      "disable"
+     ],
+     {
+      "default": "enable"
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ],
+    "scale_stick_for_xinsr_cn": [
+     [
+      "disable",
+      "enable"
+     ],
+     {
+      "default": "disable"
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE",
+   "POSE_KEYPOINT"
+  ],
+  "output_name": [
+   "IMAGE",
+   "POSE_KEYPOINT"
+  ],
+  "name": "OpenposePreprocessor"
+ },
+ "AIO_Preprocessor": {
+  "input": {
+   "required": {
+    "image": [
+     "IMAGE"
+    ]
+   },
+   "optional": {
+    "preprocessor": [
+     [
+      "none",
+      "TilePreprocessor",
+      "TTPlanet_TileGF_Preprocessor",
+      "TTPlanet_TileSimple_Preprocessor",
+      "AnimeFace_SemSegPreprocessor",
+      "BinaryPreprocessor",
+      "Zoe-DepthMapPreprocessor",
+      "ColorPreprocessor",
+      "DepthAnythingPreprocessor",
+      "Zoe_DepthAnythingPreprocessor",
+      "DensePosePreprocessor",
+      "OneFormer-COCO-SemSegPreprocessor",
+      "OneFormer-ADE20K-SemSegPreprocessor",
+      "M-LSDPreprocessor",
+      "AnyLineArtPreprocessor_aux",
+      "DWPreprocessor",
+      "AnimalPosePreprocessor",
+      "DSINE-NormalMapPreprocessor",
+      "MediaPipe-FaceMeshPreprocessor",
+      "LineArtPreprocessor",
+      "MiDaS-NormalMapPreprocessor",
+      "MiDaS-DepthMapPreprocessor",
+      "DepthAnythingV2Preprocessor",
+      "CannyEdgePreprocessor",
+      "ShufflePreprocessor",
+      "Metric3D-DepthMapPreprocessor",
+      "Metric3D-NormalMapPreprocessor",
+      "AnimeLineArtPreprocessor",
+      "SAMPreprocessor",
+      "PyraCannyPreprocessor",
+      "HEDPreprocessor",
+      "FakeScribblePreprocessor",
+      "ScribblePreprocessor",
+      "Scribble_XDoG_Preprocessor",
+      "Scribble_PiDiNet_Preprocessor",
+      "PiDiNetPreprocessor",
+      "OpenposePreprocessor",
+      "LeReS-DepthMapPreprocessor",
+      "ImageLuminanceDetector",
+      "ImageIntensityDetector",
+      "UniFormer-SemSegPreprocessor",
+      "SemSegPreprocessor",
+      "MeshGraphormer-DepthMapPreprocessor",
+      "Manga2Anime_LineArt_Preprocessor",
+      "BAE-NormalMapPreprocessor",
+      "TEEDPreprocessor",
+      "LineartStandardPreprocessor"
+     ],
+     {
+      "default": "none"
+     }
+    ],
+    "resolution": [
+     "INT",
+     {
+      "default": 512,
+      "min": 64,
+      "max": 16384,
+      "step": 64
+     }
+    ]
+   }
+  },
+  "output": [
+   "IMAGE"
+  ],
+  "output_name": [
+   "IMAGE"
+  ],
+  "name": "AIO_Preprocessor"
+ }
+}

@@ -44,7 +44,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['launcher/**/*.{js,mjs,cjs}'],
+    files: ['launcher/**/*.{js,mjs,cjs}', 'scripts/**/*.{js,mjs,cjs}', 'server/test/tools/**/*.{js,mjs}'],
     languageOptions: {
       globals: {
         console: 'readonly',

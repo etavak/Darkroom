@@ -62,10 +62,14 @@ function rebaseVenv(venv, from, to) {
  * Same disk, so it's a rename (instant, no copying). Fixes the venv scripts, .env and the
  * model-link records that name the old place.
  * @param {{ comfy: string | null, runtime: string | null }} what
+ * @param {{ dependenciesDir?: string, envFile?: string, rebaseLinks?: (from: string, to: string) => number }} [opts]
  * @returns {{ moved: string[], notes: string[] }}
  */
-export function tidyFolders(what) {
-  fs.mkdirSync(dependenciesDir, { recursive: true });
+export function tidyFolders(what, opts = {}) {
+  // Overridable for tests (a scratch Darkroom folder)
+  const deps = opts.dependenciesDir ?? dependenciesDir;
+  const envFile = opts.envFile;
+  fs.mkdirSync(deps, { recursive: true });
   const moved = [];
   const notes = [];
 
@@ -75,29 +79,29 @@ export function tidyFolders(what) {
     if (process.platform === 'win32' && runningFromIt) {
       notes.push('The portable tools stay in runtime\\ for now — Windows keeps them locked while the launcher runs from them.');
     } else {
-      fs.renameSync(what.runtime, path.join(dependenciesDir, 'runtime'));
+      fs.renameSync(what.runtime, path.join(deps, 'runtime'));
       moved.push('runtime → dependencies/runtime');
     }
   }
 
   if (what.comfy) {
     const from = what.comfy;
-    const to = path.join(dependenciesDir, path.basename(from));
+    const to = path.join(deps, path.basename(from));
     fs.renameSync(from, to);
     moved.push(`${path.basename(from)} → dependencies/${path.basename(from)}`);
     const venvFixed = rebaseVenv(path.join(to, 'venv'), from, to);
     if (venvFixed) notes.push(`Updated ${venvFixed} script(s) in ComfyUI's Python environment.`);
-    const env = loadEnvFile();
+    const env = loadEnvFile(envFile);
     for (const key of ['COMFY_DIR', 'COMFY_PYTHON']) {
       const v = env[key];
       if (v && (v === from || v.startsWith(from + path.sep))) {
         const next = to + v.slice(from.length);
-        upsertEnvValue(key, next);
+        upsertEnvValue(key, next, envFile);
         process.env[key] = next;
       }
     }
     try {
-      const n = rebaseModelLinks(from, to);
+      const n = (opts.rebaseLinks ?? rebaseModelLinks)(from, to);
       if (n) notes.push(`Updated ${n} linked-model record(s).`);
     } catch {
       notes.push('Could not update linked-model records (they are re-checked by Doctor).');

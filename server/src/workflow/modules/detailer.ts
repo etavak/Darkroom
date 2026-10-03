@@ -91,7 +91,6 @@ export const detailerModule: WorkflowModule = {
       sam_mask_hint_threshold: 0.7,
       sam_mask_hint_use_negative: 'False',
       drop_size: 10,
-      refiner_ratio: 0.2,
       cycle: 1,
       inpaint_model: false,
       noise_mask_feather: 20,

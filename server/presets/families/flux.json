@@ -15,6 +15,7 @@
   "disableNegative": true,
   "supportsGguf": true,
   "loaderKind": "transformer",
+  "defaultClipType": "flux",
   "requiredComponents": {
     "text_encoders": ["clip_l", "t5xxl"],
     "vae": ["ae"]

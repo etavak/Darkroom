@@ -12,6 +12,7 @@
   "promptMaxTokens": 512,
   "supportsGguf": true,
   "loaderKind": "transformer",
+  "defaultClipType": "sd3",
   "requiredComponents": {
     "text_encoders": ["clip_l", "clip_g"],
     "vae": ["sd3_vae"]
