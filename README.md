@@ -44,7 +44,7 @@ Clones (or updates) `~/Darkroom` and launches it. If git is missing on macOS, it
 
 From the launcher menu: **Install model from file** (drag a file into the terminal), **Download model from URL** (Civitai, Hugging Face, or a direct link), **Manage models**, or **ControlNet models**. In the web UI, use **Add model…** in any model picker (or **Add file** in the LoRA picker).
 
-- The model type is detected from the file. Checkpoints and diffusion models ask for their **family** (SDXL, Pony, Illustrious, NoobAI, Flux, SD3, …) so the right defaults and tags apply.
+- The model type is detected from the file. Checkpoints and diffusion models ask for their **family** (SDXL, Pony, Illustrious, NoobAI, Anima, Flux, SD3, …) so the right defaults and tags apply.
 - Families that need extra files (text encoders, VAE) offer to download them, sized to your VRAM and checksum-verified.
 - Files outside ComfyUI can be **linked** instead of copied.
 - `.gguf` quantized models are supported via the optional ComfyUI-GGUF node (offered automatically).

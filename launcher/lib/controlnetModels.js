@@ -14,6 +14,7 @@ export const FAMILY_ARCH = {
   flux: 'flux',
   'flux-kontext': 'flux',
   'flux2-klein': 'flux2',
+  anima: 'anima',
 };
 
 export const ARCH_LABELS = {
@@ -22,6 +23,7 @@ export const ARCH_LABELS = {
   flux: 'Flux.1',
   sd3: 'SD3',
   flux2: 'Flux.2',
+  anima: 'Anima',
 };
 
 /**

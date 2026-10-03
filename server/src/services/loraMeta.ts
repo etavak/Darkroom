@@ -4,7 +4,7 @@ import { loadServerSettings } from './appSettings.js';
 import { getComfyUiRoot } from './envSettings.js';
 
 /** Model architecture: a LoRA only loads on a model of the same one ("other:<name>" for bases Darkroom doesn't know). */
-export type LoraArch = 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2' | `other:${string}`;
+export type LoraArch = 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2' | 'anima' | `other:${string}`;
 
 export type LoraMeta = {
   /** As ComfyUI lists it (path under a loras folder, forward slashes) */
@@ -40,6 +40,8 @@ const THUMB_SUFFIXES = ['.preview.jpg', '.preview.jpeg', '.preview.png', '.previ
 
 /** Base-model names (Civitai labels, training metadata, filenames) → family + architecture. */
 const BASES: Array<{ re: RegExp; base: string; family: string | null; arch: LoraArch }> = [
+  // Anima (circlestone-labs) — not "animagine", an SDXL model
+  { re: /(^|[^a-z])anima(?![a-z])/i, base: 'Anima', family: 'anima', arch: 'anima' },
   { re: /illustrious|\bilxl\b/i, base: 'Illustrious', family: 'illustrious', arch: 'sdxl' },
   { re: /noob/i, base: 'NoobAI', family: 'noobai', arch: 'sdxl' },
   { re: /pony/i, base: 'Pony', family: 'pony', arch: 'sdxl' },

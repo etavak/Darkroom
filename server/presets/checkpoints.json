@@ -2,6 +2,43 @@
   "mappings": {
     "flux-2-klein-4b.safetensors": {
       "family": "flux2-klein"
+    },
+    "anima-base-v1.0.safetensors": {
+      "family": "anima"
+    },
+    "anima-aesthetic-v1.0.safetensors": {
+      "family": "anima"
+    },
+    "anima-aesthetic-v1.0b.safetensors": {
+      "family": "anima"
+    },
+    "anima-aesthetic-v1.1.safetensors": {
+      "family": "anima"
+    },
+    "anima-preview.safetensors": {
+      "family": "anima"
+    },
+    "anima-preview2.safetensors": {
+      "family": "anima"
+    },
+    "anima-preview3-base.safetensors": {
+      "family": "anima"
+    },
+    "anima-turbo-v1.0.safetensors": {
+      "family": "anima",
+      "settings": {
+        "cfg": 1,
+        "steps": 10,
+        "sampler": "euler"
+      }
+    },
+    "anima-turbo-v1.1.safetensors": {
+      "family": "anima",
+      "settings": {
+        "cfg": 1,
+        "steps": 10,
+        "sampler": "euler"
+      }
     }
   }
 }

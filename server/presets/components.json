@@ -246,6 +246,28 @@
       "licenseUrl": "https://huggingface.co/Bingsu/adetailer",
       "title": "Face finder (YOLOv8m)",
       "notes": "Finds faces for the face detailer (Bingsu/adetailer, Apache-2.0)"
+    },
+    {
+      "id": "qwen_3_06b",
+      "type": "text_encoder",
+      "filename": "qwen_3_06b_base.safetensors",
+      "url": "https://huggingface.co/circlestone-labs/Anima/resolve/f973fc41ec7545364ac9776c2440285f43ff2a30/split_files/text_encoders/qwen_3_06b_base.safetensors",
+      "sizeBytes": 1192135096,
+      "sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md",
+      "notes": "Qwen3 0.6B text encoder for Anima"
+    },
+    {
+      "id": "qwen_image_vae",
+      "type": "vae",
+      "filename": "qwen_image_vae.safetensors",
+      "url": "https://huggingface.co/circlestone-labs/Anima/resolve/f973fc41ec7545364ac9776c2440285f43ff2a30/split_files/vae/qwen_image_vae.safetensors",
+      "sizeBytes": 253806246,
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "gated": false,
+      "licenseUrl": "https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md",
+      "notes": "Qwen-Image VAE (Anima, Qwen-Image)"
     }
   ]
 }

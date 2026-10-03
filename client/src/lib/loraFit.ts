@@ -12,6 +12,7 @@ const FAMILY_ARCH: Record<string, string> = {
   flux: 'flux',
   'flux-kontext': 'flux',
   'flux2-klein': 'flux2',
+  anima: 'anima',
 };
 
 /** Families whose LoRAs work on each other (NoobAI is trained from Illustrious). */

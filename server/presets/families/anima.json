@@ -1,0 +1,200 @@
+{
+  "id": "anima",
+  "name": "Anima",
+  "settings": {
+    "cfg": 4,
+    "steps": 30,
+    "sampler": "er_sde",
+    "scheduler": "simple",
+    "baseRes": 1024
+  },
+  "promptTokenMode": "encoder",
+  "promptMaxTokens": 512,
+  "supportsGguf": false,
+  "loaderKind": "transformer",
+  "requiredComponents": {
+    "text_encoders": [
+      "qwen_3_06b"
+    ],
+    "vae": [
+      "qwen_image_vae"
+    ]
+  },
+  "filenameHints": {
+    "qwen_3_06b": [
+      "qwen_3_06b",
+      "qwen3_06b",
+      "qwen3-0.6b",
+      "qwen_3_0.6b"
+    ],
+    "qwen_image_vae": [
+      "qwen_image_vae",
+      "qwen-image-vae"
+    ]
+  },
+  "dependencies": [
+    {
+      "role": "text_encoder",
+      "required": true,
+      "options": [
+        "qwen_3_06b"
+      ]
+    },
+    {
+      "role": "vae",
+      "required": true,
+      "options": [
+        "qwen_image_vae"
+      ]
+    }
+  ],
+  "defaultClipType": "stable_diffusion",
+  "qualityPresets": [
+    {
+      "id": "none",
+      "name": "None",
+      "tags": []
+    },
+    {
+      "id": "standard",
+      "name": "Standard",
+      "tags": [
+        "masterpiece",
+        "best quality",
+        "safe"
+      ]
+    },
+    {
+      "id": "base",
+      "name": "Base model",
+      "tags": [
+        "masterpiece",
+        "best quality",
+        "score_7",
+        "safe"
+      ]
+    },
+    {
+      "id": "heavy",
+      "name": "Heavy",
+      "tags": [
+        "masterpiece",
+        "best quality",
+        "score_9",
+        "score_8",
+        "score_7",
+        "newest",
+        "highres",
+        "safe"
+      ]
+    }
+  ],
+  "defaultQuality": "standard",
+  "negativePresets": [
+    {
+      "id": "none",
+      "name": "None",
+      "tags": []
+    },
+    {
+      "id": "standard",
+      "name": "Standard",
+      "tags": [
+        "worst quality",
+        "low quality",
+        "artist name",
+        "blurry",
+        "jpeg artifacts",
+        "chromatic aberration"
+      ]
+    },
+    {
+      "id": "base",
+      "name": "Base model",
+      "tags": [
+        "worst quality",
+        "low quality",
+        "score_1",
+        "score_2",
+        "score_3",
+        "artist name",
+        "blurry",
+        "jpeg artifacts",
+        "chromatic aberration"
+      ]
+    },
+    {
+      "id": "heavy",
+      "name": "Heavy",
+      "tags": [
+        "worst quality",
+        "low quality",
+        "score_1",
+        "score_2",
+        "score_3",
+        "artist name",
+        "blurry",
+        "jpeg artifacts",
+        "chromatic aberration",
+        "bad anatomy",
+        "bad hands",
+        "watermark"
+      ]
+    }
+  ],
+  "defaultNegative": "standard",
+  "defaultStyle": "anime",
+  "styles": {
+    "anime": {
+      "name": "Anime",
+      "positive": [
+        "anime coloring"
+      ]
+    },
+    "cel": {
+      "name": "Cel",
+      "positive": [
+        "cel shading",
+        "flat color"
+      ]
+    },
+    "painterly": {
+      "name": "Painterly",
+      "positive": [
+        "watercolor (medium)",
+        "traditional media"
+      ]
+    },
+    "sketch": {
+      "name": "Sketch",
+      "positive": [
+        "sketch",
+        "lineart",
+        "monochrome"
+      ]
+    },
+    "retro90s": {
+      "name": "Retro 90s",
+      "positive": [
+        "1990s (style)",
+        "retro artstyle"
+      ]
+    },
+    "chibi": {
+      "name": "Chibi",
+      "positive": [
+        "(chibi:1.6)"
+      ]
+    },
+    "screenshot": {
+      "name": "Anime screenshot",
+      "positive": [
+        "anime screenshot"
+      ]
+    }
+  },
+  "tagSources": [
+    "danbooru"
+  ],
+  "tagFormat": "spaces"
+}
