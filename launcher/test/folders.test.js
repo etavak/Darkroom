@@ -16,10 +16,12 @@ afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 describe('Tidy up folders', () => {
   it('moves ComfyUI and runtime into dependencies/ and fixes what names the old place', () => {
     const comfy = path.join(root, 'ComfyUI');
-    fs.mkdirSync(path.join(comfy, 'venv', 'bin'), { recursive: true });
+    // A venv keeps its scripts in Scripts\ on Windows, bin/ elsewhere
+    const bin = process.platform === 'win32' ? 'Scripts' : 'bin';
+    fs.mkdirSync(path.join(comfy, 'venv', bin), { recursive: true });
     fs.writeFileSync(path.join(comfy, 'main.py'), '');
-    fs.writeFileSync(path.join(comfy, 'venv', 'bin', 'pip'), `#!${comfy}/venv/bin/python\nimport pip\n`, { mode: 0o755 });
-    fs.writeFileSync(path.join(comfy, 'venv', 'bin', 'activate'), `VIRTUAL_ENV=${comfy}/venv\n`);
+    fs.writeFileSync(path.join(comfy, 'venv', bin, 'pip'), `#!${path.join(comfy, 'venv', bin, 'python')}\nimport pip\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(comfy, 'venv', bin, 'activate'), `VIRTUAL_ENV=${path.join(comfy, 'venv')}\n`);
     fs.mkdirSync(path.join(root, 'runtime', 'node'), { recursive: true });
     const envFile = path.join(root, '.env');
     fs.writeFileSync(envFile, `COMFY_DIR=${comfy}\nCOMFY_PYTHON=${comfy}/venv/bin/python\nPORT=3001\n`);
@@ -34,8 +36,9 @@ describe('Tidy up folders', () => {
     expect(r.moved).toHaveLength(2);
     expect(fs.existsSync(path.join(moved, 'main.py'))).toBe(true);
     expect(fs.existsSync(path.join(root, 'dependencies', 'runtime', 'node'))).toBe(true);
-    expect(fs.readFileSync(path.join(moved, 'venv', 'bin', 'pip'), 'utf8').split('\n')[0]).toBe(`#!${moved}/venv/bin/python`);
-    expect(fs.statSync(path.join(moved, 'venv', 'bin', 'pip')).mode & 0o111).toBeTruthy();
+    expect(fs.readFileSync(path.join(moved, 'venv', bin, 'pip'), 'utf8').split('\n')[0]).toBe(`#!${path.join(moved, 'venv', bin, 'python')}`);
+    expect(fs.readFileSync(path.join(moved, 'venv', bin, 'activate'), 'utf8')).toBe(`VIRTUAL_ENV=${path.join(moved, 'venv')}\n`);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(moved, 'venv', bin, 'pip')).mode & 0o111).toBeTruthy();
     expect(fs.readFileSync(envFile, 'utf8')).toContain(`COMFY_DIR=${moved}\n`);
     expect(fs.readFileSync(envFile, 'utf8')).toContain('PORT=3001');
     expect(rebased).toEqual([comfy, moved]);

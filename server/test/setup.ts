@@ -21,5 +21,9 @@ process.env.COMFY_URL = comfy.url;
 
 afterAll(async () => {
   await comfy.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
+  } catch {
+    // Windows keeps the open SQLite file locked until the worker exits; the OS clears temp
+  }
 });
