@@ -39,6 +39,7 @@ export async function loadDownloadModule(): Promise<{
     triggerWords: string[];
     previewUrl: string | null;
     modelName: string;
+    baseModel?: string | null;
     headers?: Record<string, string>;
     candidates?: Array<{
       path: string;
@@ -72,6 +73,7 @@ export async function loadDownloadModule(): Promise<{
       previewUrl?: string | null;
       sourceUrl?: string;
       modelName?: string;
+      baseModel?: string | null;
       headers?: Record<string, string>;
     },
   ) => Promise<void>;
@@ -118,6 +120,7 @@ export async function loadDownloadModule(): Promise<{
         previewUrl?: string | null;
         sourceUrl?: string;
         modelName?: string;
+        baseModel?: string | null;
         headers?: Record<string, string>;
       },
     ) => Promise<void>;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  emptyTrashApi,
   fetchDiagnostics,
   fetchServerSettings,
   runBackupApi,
@@ -71,6 +72,12 @@ export function useServerSettings() {
     return res;
   }, []);
 
+  const emptyTrash = useCallback(async () => {
+    const res = await emptyTrashApi();
+    setDiskUsage(res.diskUsage);
+    return res.removed;
+  }, []);
+
   return {
     settings,
     diskUsage,
@@ -81,5 +88,6 @@ export function useServerSettings() {
     patch,
     copyDiagnostics,
     backupNow,
+    emptyTrash,
   };
 }

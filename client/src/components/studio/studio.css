@@ -444,6 +444,50 @@ html[data-ui='studio'] .legacy-tip {
   .st-chip:hover {
     background: var(--s-raised);
   }
+  /* LoRA preview square (image or the name's first letter) */
+  .st-lthumb {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--s-raised2);
+    color: var(--s-muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .st-lthumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* Trigger word: click to add to / remove from the prompt */
+  .st-trig {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    max-width: 100%;
+    padding: 0 9px;
+    border: 1px solid var(--s-line);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--s-muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .st-trig:hover {
+    background: var(--s-raised);
+    color: var(--s-text);
+  }
+  .st-trig.on {
+    border-color: transparent;
+    background: var(--s-accent-soft);
+    color: var(--s-accent);
+  }
   .st-menu {
     position: absolute;
     z-index: 40;

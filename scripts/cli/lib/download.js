@@ -132,6 +132,7 @@ export function downloadFile(url, destPath, opts = {}) {
  *   triggerWords: string[],
  *   previewUrl: string | null,
  *   modelName: string,
+ *   baseModel?: string | null,
  *   headers?: Record<string, string>,
  *   candidates?: { path: string, size: number, downloadUrl: string, filename: string, fileType?: string }[],
  *   companions?: ResolvedCompanion[],
@@ -242,6 +243,7 @@ async function resolveCivitai(pageUrl, token) {
     triggerWords: Array.isArray(version.trainedWords) ? version.trainedWords : [],
     previewUrl: preview,
     modelName: version.model?.name || version.name || file.name,
+    baseModel: typeof version.baseModel === 'string' ? version.baseModel : null,
     companions: companions.length ? companions : undefined,
   };
 }
@@ -363,7 +365,7 @@ async function resolveHuggingFace(pageUrl, token) {
 /**
  * Save sidecar metadata next to the model.
  * @param {string} modelDest
- * @param {{ triggerWords?: string[], previewUrl?: string | null, sourceUrl?: string, modelName?: string, headers?: Record<string, string> }} meta
+ * @param {{ triggerWords?: string[], previewUrl?: string | null, sourceUrl?: string, modelName?: string, baseModel?: string | null, headers?: Record<string, string> }} meta
  */
 export async function saveModelSidecars(modelDest, meta) {
   const base = modelDest.replace(/\.[^.]+$/, '');
@@ -375,6 +377,7 @@ export async function saveModelSidecars(modelDest, meta) {
         modelName: meta.modelName || null,
         sourceUrl: meta.sourceUrl || null,
         triggerWords: meta.triggerWords || [],
+        baseModel: meta.baseModel || null,
         preview: meta.previewUrl ? path.basename(`${base}.preview.jpg`) : null,
         savedAt: new Date().toISOString(),
       },
@@ -435,6 +438,7 @@ export async function fetchCivitaiSidecarsByHash(modelDest) {
     previewUrl: preview,
     sourceUrl: `https://civitai.com/models/${version.modelId}?modelVersionId=${version.id}`,
     modelName: version.model?.name || version.name,
+    baseModel: typeof version.baseModel === 'string' ? version.baseModel : null,
   });
   return true;
 }

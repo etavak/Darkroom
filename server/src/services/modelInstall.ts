@@ -42,6 +42,7 @@ export type InstallJob = {
     sha256?: string;
   }>;
   triggerWords?: string[];
+  baseModel?: string | null;
   previewUrl?: string | null;
   sourceUrl?: string;
   downloadUrl?: string;
@@ -79,6 +80,7 @@ export async function resolveModelFromUrl(pageUrl: string): Promise<InstallJob> 
     job.modelName = meta.modelName;
     job.filename = meta.filename;
     job.triggerWords = meta.triggerWords;
+    job.baseModel = meta.baseModel ?? null;
     job.previewUrl = meta.previewUrl;
     job.downloadUrl = meta.downloadUrl;
     job.headers = meta.headers;
@@ -291,6 +293,7 @@ export async function confirmInstall(opts: {
             previewUrl: job.previewUrl,
             sourceUrl: job.sourceUrl,
             modelName: job.modelName,
+            baseModel: job.baseModel,
             headers: job.headers,
           });
         } catch {

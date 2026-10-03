@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { Router } from 'express';
 import { config } from '../config.js';
+import { isLocalRequest } from '../services/lanAuth.js';
+import { checkForUpdate, currentVersion } from '../services/updates.js';
 import {
+  emptyTrash,
   getDiskUsage,
   loadServerSettings,
   runBackup,
@@ -81,6 +84,29 @@ settingsRouter.put('/', (req, res) => {
 
 settingsRouter.get('/disk', (_req, res) => {
   res.json(getDiskUsage());
+});
+
+/** Host only: permanently deletes the trashed images. */
+settingsRouter.post('/trash/empty', (req, res) => {
+  if (!isLocalRequest(req)) {
+    res.status(403).json({ error: 'Empty the trash from the computer running Darkroom.' });
+    return;
+  }
+  try {
+    const removed = emptyTrash();
+    res.json({ ok: true, removed, diskUsage: getDiskUsage() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Could not empty the trash' });
+  }
+});
+
+settingsRouter.get('/version', (_req, res) => {
+  res.json(currentVersion());
+});
+
+/** Newest commit on GitHub vs the installed one. Updating itself happens in the launcher. */
+settingsRouter.get('/updates', async (req, res) => {
+  res.json(await checkForUpdate(req.query.force === '1'));
 });
 
 settingsRouter.post('/backup', (_req, res) => {

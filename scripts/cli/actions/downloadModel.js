@@ -134,6 +134,7 @@ export async function downloadModelFromUrl() {
         previewUrl: meta.previewUrl,
         sourceUrl: pageUrl,
         modelName: meta.modelName,
+        baseModel: meta.baseModel,
         headers: meta.headers,
       });
       if (meta.triggerWords?.length) {

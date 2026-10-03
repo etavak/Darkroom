@@ -7,6 +7,8 @@ export type SettingEntry = {
   label: string;
   description?: string;
   hint?: string;
+  /** Extra content under the description (e.g. a usage bar) */
+  detail?: ReactNode;
   icon?: ReactNode;
   control: ReactNode;
   /** Device-local vs shared server setting. */

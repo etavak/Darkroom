@@ -50,11 +50,16 @@ import {
   fetchAuthStatus,
   fetchLanAccess,
   fetchLanDevices,
+  fetchVersionInfo,
+  checkUpdatesApi,
+  testEnhanceApi,
   regenerateLanPin,
   revokeLanDevice,
   signOutThisDevice,
   type LanAccessInfo,
   type LanDevice,
+  type UpdateCheck,
+  type VersionInfo,
 } from '@/lib/api';
 
 export type PrefCategory =
@@ -63,16 +68,20 @@ export type PrefCategory =
   | 'generation'
   | 'performance'
   | 'models'
+  | 'enhance'
   | 'network'
+  | 'updates'
   | 'advanced';
 
 export const PREF_CATEGORIES: { id: PrefCategory; label: string }[] = [
   { id: 'general', label: 'General' },
-  { id: 'interface', label: 'Interface' },
+  { id: 'interface', label: 'Appearance' },
   { id: 'generation', label: 'Generation' },
   { id: 'performance', label: 'Performance' },
-  { id: 'models', label: 'Models' },
+  { id: 'models', label: 'Models & folders' },
+  { id: 'enhance', label: 'Enhance' },
   { id: 'network', label: 'Network' },
+  { id: 'updates', label: 'Updates & backups' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -94,6 +103,7 @@ export type PreferenceProps = {
   onServerPatch: (partial: Partial<ServerSettings>) => void | Promise<unknown>;
   onCopyDiagnostics: () => Promise<void>;
   onBackupNow: () => Promise<void>;
+  onEmptyTrash: () => Promise<number>;
 };
 
 const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
@@ -110,6 +120,24 @@ function formatBytes(n: number): string {
   if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/** Proportions of images, trash, backups and the database. */
+function DiskBar({ usage }: { usage: DiskUsageInfo }) {
+  const parts = [
+    { k: 'Images', v: usage.imagesBytes, c: 'var(--s-accent)' },
+    { k: 'Trash', v: usage.trashBytes, c: '#e5534b' },
+    { k: 'Backups', v: usage.backupsBytes, c: '#6fa8dc' },
+    { k: 'Database', v: usage.dbBytes, c: 'var(--s-muted)' },
+  ];
+  const total = Math.max(1, usage.totalBytes);
+  return (
+    <span className="mt-1.5 flex h-2 w-full max-w-[320px] overflow-hidden rounded-full" style={{ background: 'var(--s-raised2)' }} role="img" aria-label="Disk usage">
+      {parts.map((p) =>
+        p.v > 0 ? <span key={p.k} data-tip={`${p.k} · ${formatBytes(p.v)}`} style={{ width: `${Math.max(1.5, (p.v / total) * 100)}%`, background: p.c }} /> : null,
+      )}
+    </span>
+  );
 }
 
 function CompactNumber({
@@ -182,11 +210,16 @@ export function usePreferenceEntries({
   onServerPatch,
   onCopyDiagnostics,
   onBackupNow,
+  onEmptyTrash,
 }: PreferenceProps): PrefEntry[] {
   const [diagFlash, setDiagFlash] = useState<string | null>(null);
   const [backupFlash, setBackupFlash] = useState<string | null>(null);
   const [foldersText, setFoldersText] = useState(server.extraModelFolders.join('\n'));
   const [keyDraft, setKeyDraft] = useState('');
+  const [keyTest, setKeyTest] = useState<{ busy: boolean; ok?: boolean; message?: string } | null>(null);
+  const [trashState, setTrashState] = useState<'idle' | 'confirm' | 'busy' | string>('idle');
+  const [version, setVersion] = useState<VersionInfo | null>(null);
+  const [update, setUpdate] = useState<{ busy: boolean; result?: UpdateCheck } | null>(null);
   const [lan, setLan] = useState<LanAccessInfo | null>(null);
   /** host = the computer running Darkroom; guest = a phone / other computer signed in with the PIN */
   const [role, setRole] = useState<'host' | 'guest' | null>(null);
@@ -207,6 +240,19 @@ export function usePreferenceEntries({
       })
       .catch(() => setRole(null));
   }, []);
+
+  useEffect(() => {
+    fetchVersionInfo()
+      .then(setVersion)
+      .catch(() => setVersion(null));
+  }, []);
+
+  const runUpdateCheck = (force: boolean) => {
+    setUpdate({ busy: true });
+    checkUpdatesApi(force)
+      .then((result) => setUpdate({ busy: false, result }))
+      .catch(() => setUpdate({ busy: false, result: undefined }));
+  };
 
   useEffect(() => {
     setFoldersText(server.extraModelFolders.join('\n'));
@@ -713,7 +759,7 @@ export function usePreferenceEntries({
       },
       {
         id: 'enhance-api-url',
-        category: 'generation',
+        category: 'enhance',
         scope: 'server',
         label: 'Enhance API URL',
         description: 'OpenAI-compatible base URL (…/v1). Leave blank to hide Enhance.',
@@ -731,10 +777,13 @@ export function usePreferenceEntries({
       },
       {
         id: 'enhance-api-key',
-        category: 'generation',
+        category: 'enhance',
         scope: 'server',
         label: 'Enhance API key',
-        description: 'Bearer token for the enhance endpoint',
+        description: server.enhanceApiKeySet
+          ? 'Saved on the computer running Darkroom — it is never shown again.'
+          : 'Bearer token for the API. Stored on the computer running Darkroom and never sent back to browsers.',
+        hint: keyTest?.busy ? 'Testing…' : keyTest?.message,
         keywords: ['openai', 'llm', 'prompt'],
         icon: <Shield />,
         control: (
@@ -753,15 +802,35 @@ export function usePreferenceEntries({
                 setKeyDraft('');
               }}
             />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 px-2 text-xs"
+              disabled={keyTest?.busy || !server.enhanceApiUrl.trim()}
+              data-tip={server.enhanceApiUrl.trim() ? 'Check the URL, key and model' : 'Set the API URL first'}
+              onClick={() => {
+                setKeyTest({ busy: true });
+                testEnhanceApi()
+                  .then((r) => setKeyTest({ busy: false, ok: r.ok, message: `${r.ok ? '✓' : '✕'} ${r.message}` }))
+                  .catch(() => setKeyTest({ busy: false, ok: false, message: '✕ Could not run the test.' }));
+              }}
+            >
+              Test
+            </Button>
             {server.enhanceApiKeySet ? (
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
                 className="h-8 px-2 text-xs"
-                onClick={() => void onServerPatch({ enhanceApiKey: '' })}
+                data-tip="Delete the saved key"
+                onClick={() => {
+                  setKeyTest(null);
+                  void onServerPatch({ enhanceApiKey: '' });
+                }}
               >
-                Clear
+                Remove
               </Button>
             ) : null}
           </div>
@@ -769,7 +838,7 @@ export function usePreferenceEntries({
       },
       {
         id: 'enhance-model',
-        category: 'generation',
+        category: 'enhance',
         scope: 'server',
         label: 'Enhance model',
         description: 'Chat model id used by Enhance',
@@ -931,8 +1000,35 @@ export function usePreferenceEntries({
         ),
       },
       {
+        id: 'version',
+        category: 'updates',
+        scope: 'server',
+        label: 'Version',
+        description: version
+          ? `Darkroom ${version.version}${version.sha ? ` · ${version.sha.slice(0, 7)}` : ''}${version.updatedAt ? ` · updated ${new Date(version.updatedAt).toLocaleDateString()}` : ''}`
+          : 'Checking…',
+        hint: update?.busy
+          ? 'Checking GitHub…'
+          : update?.result
+            ? update.result.error
+              ? `Couldn’t check: ${update.result.error}`
+              : update.result.updateAvailable
+                ? `Update available (${update.result.latest?.slice(0, 7)}). Open the launcher and choose Update.`
+                : update.result.updateAvailable === false
+                  ? 'You’re up to date.'
+                  : `Latest is ${update.result.latest?.slice(0, 7)}. Use the launcher’s Update to install it.`
+            : undefined,
+        keywords: ['update', 'upgrade', 'release', 'github'],
+        icon: <Aperture />,
+        control: (
+          <Button type="button" size="sm" variant="outline" disabled={update?.busy} onClick={() => runUpdateCheck(Boolean(update?.result))}>
+            {update?.busy ? 'Checking…' : 'Check for updates'}
+          </Button>
+        ),
+      },
+      {
         id: 'auto-backup',
-        category: 'advanced',
+        category: 'updates',
         scope: 'server',
         label: 'Auto-backup',
         description: 'Snapshot DB + settings on change',
@@ -947,7 +1043,7 @@ export function usePreferenceEntries({
       },
       {
         id: 'backup-keep',
-        category: 'advanced',
+        category: 'updates',
         scope: 'server',
         label: 'Keep backups',
         icon: <Database />,
@@ -963,12 +1059,13 @@ export function usePreferenceEntries({
       },
       {
         id: 'disk-usage',
-        category: 'advanced',
+        category: 'updates',
         scope: 'server',
         label: 'Disk usage',
         description: diskUsage
           ? `${formatBytes(diskUsage.totalBytes)} · images ${formatBytes(diskUsage.imagesBytes)} · trash ${formatBytes(diskUsage.trashBytes)} · backups ${formatBytes(diskUsage.backupsBytes)}`
           : 'Unavailable',
+        detail: diskUsage ? <DiskBar usage={diskUsage} /> : undefined,
         icon: <HardDrive />,
         control: (
           <Button
@@ -990,6 +1087,53 @@ export function usePreferenceEntries({
             {backupFlash ?? 'Backup now'}
           </Button>
         ),
+      },
+      {
+        id: 'empty-trash',
+        category: 'updates',
+        scope: 'server',
+        label: 'Trash',
+        description: diskUsage
+          ? diskUsage.trashBytes > 0
+            ? `${formatBytes(diskUsage.trashBytes)} of deleted images. Emptying it removes them for good.`
+            : 'Empty.'
+          : 'Deleted images wait here until you empty it.',
+        hint: trashState !== 'idle' && trashState !== 'confirm' && trashState !== 'busy' ? trashState : undefined,
+        keywords: ['delete', 'space', 'disk', 'clean'],
+        icon: <Trash2 />,
+        control:
+          role !== 'host' ? (
+            <span className="text-[11px] text-muted-foreground">On the computer</span>
+          ) : trashState === 'confirm' ? (
+            <div className="flex items-center gap-1">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setTrashState('idle')}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setTrashState('busy');
+                  onEmptyTrash()
+                    .then((n) => setTrashState(n ? `Removed ${n} file${n === 1 ? '' : 's'}` : 'Trash was already empty'))
+                    .catch(() => setTrashState('Could not empty the trash'));
+                }}
+              >
+                Delete for good
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={trashState === 'busy' || !diskUsage?.trashBytes}
+              onClick={() => setTrashState('confirm')}
+            >
+              {trashState === 'busy' ? 'Emptying…' : 'Empty trash'}
+            </Button>
+          ),
       },
       {
         id: 'diagnostics',
@@ -1061,6 +1205,11 @@ export function usePreferenceEntries({
   }, [
     backupFlash,
     diagFlash,
+    keyTest,
+    trashState,
+    version,
+    update,
+    onEmptyTrash,
     foldersText,
     keyDraft,
     lan,

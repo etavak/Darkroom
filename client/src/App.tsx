@@ -65,6 +65,8 @@ import {
   resolvePresetsApi,
   startComfyApi,
   updatePreviewQuality,
+  fetchLoraMeta,
+  type LoraMeta,
 } from '@/lib/api';
 import { parseImageSettings } from '@/lib/imageMeta';
 import { shortModelName } from '@/lib/modelProfiles';
@@ -256,6 +258,7 @@ export default function App() {
     patch: patchServerSettings,
     copyDiagnostics,
     backupNow,
+    emptyTrash,
   } = useServerSettings();
 
   const foreverRef = useRef(false);
@@ -279,6 +282,7 @@ export default function App() {
   const [resolved, setResolved] = useState<ResolvedPresets>(emptyResolved);
 
   const [prompt, setPrompt] = useState('');
+  const [loraMeta, setLoraMeta] = useState<Record<string, LoraMeta>>({});
   const [negativePrompt, setNegativePrompt] = useState('');
   const [modelMode, setModelMode] = useState<ModelLoadMode>('checkpoint');
   const [checkpoint, setCheckpoint] = useState('');
@@ -1496,6 +1500,22 @@ export default function App() {
   const workVerb = workMode === 'edit' ? 'Edit' : workMode === 'outpaint' ? inpaintVerb : 'Generate';
 
   /** The studio's controls column (phase 2 of the rebuild). */
+  // What each LoRA was made for, trigger words and previews; re-read when a picker opens (new files)
+  const lorasPicking = loraPickerOpen || phoneSheet === 'loraPick';
+  const loraCount = catalog.loras.length;
+  useEffect(() => {
+    let live = true;
+    fetchLoraMeta()
+      .then((r) => {
+        if (live) setLoraMeta(Object.fromEntries(r.items.map((m) => [m.name, m])));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [lorasPicking, loraCount]);
+  const loraContext = { meta: loraMeta, familyId: resolved.familyId, familyName: resolved.familyName };
+
   const renderStudioControls = (layout: 'desktop' | 'phone' = 'desktop') => {
     const phone = layout === 'phone';
     const modelStyleRow = (
@@ -1721,6 +1741,9 @@ export default function App() {
         <LoraCard
           loras={loras}
           onChange={setLoras}
+          {...loraContext}
+          prompt={prompt}
+          onPrompt={setPrompt}
           pickerOpen={phone ? phoneSheet === 'loraPick' : loraPickerOpen}
           onPickerOpen={(o) => {
             if (phone) {
@@ -1865,6 +1888,7 @@ export default function App() {
         ) : null}
         {loraPickerOpen && !uiSettings.studioLeftCollapsed ? (
           <LoraPicker
+            {...loraContext}
             options={catalog.loras}
             loras={loras}
             loading={modelsLoading}
@@ -1893,6 +1917,7 @@ export default function App() {
     onBackupNow: async () => {
       await backupNow();
     },
+    onEmptyTrash: emptyTrash,
   };
 
   // ---------- Studio: image plane, History, details ----------
@@ -1943,7 +1968,8 @@ export default function App() {
   /** The finished image the toolbars act on (none while the running job is selected) */
   const actRecord = runningSel ? null : selectedRecord;
   const selectedImageName = selectedRecord ? selectedRecord.images[selectedIndex] ?? selectedRecord.images[0] ?? null : null;
-  const parentRecord = selectedRecord?.parentId ? items.find((i) => i.id === selectedRecord.parentId) ?? null : null;
+  const parentId = selectedRecord ? selectedRecord.parentId ?? selectedRecord.settings.parentId ?? null : null;
+  const parentRecord = parentId ? items.find((i) => i.id === parentId) ?? null : null;
 
   const pickTile = (entry: PlaneEntry, index: number, focus: boolean) => {
     if (entry.kind === 'record') {
@@ -1954,6 +1980,19 @@ export default function App() {
     }
     if (focus) requestFocus(tileId(entry.key, index));
   };
+  const madeFrom =
+    actRecord && parentId
+      ? {
+          kind: derivedKind(actRecord.settings),
+          onShow: parentRecord
+            ? () => {
+                setPlaneSel(null);
+                selectItem(parentRecord, 0);
+                requestFocus(tileId(parentRecord.id, 0));
+              }
+            : null,
+        }
+      : null;
   const downloadImage = (name: string) => {
     const a = document.createElement('a');
     a.href = imageUrl(name);
@@ -2578,6 +2617,7 @@ export default function App() {
       <PhoneSheet title="Add a LoRA" onClose={closePhoneSheet}>
         <LoraPicker
           inline
+          {...loraContext}
           options={catalog.loras}
           loras={loras}
           loading={modelsLoading}
@@ -2594,6 +2634,7 @@ export default function App() {
         <DetailsPanel
           inline
           record={actRecord}
+          madeFrom={madeFrom}
           size={outputSize(actRecord.settings)}
           onClose={closePhoneSheet}
           onCopy={(text, what) => void copyText(text, what)}
@@ -2678,6 +2719,7 @@ export default function App() {
                 onCopy={(text, what) => void copyText(text, what)}
                 onReuseAll={() => actRecord && reuseSettings(actRecord)}
                 onReusePrompt={() => actRecord && reusePromptOnly(actRecord)}
+                madeFrom={madeFrom}
               />
             ) : null
           }

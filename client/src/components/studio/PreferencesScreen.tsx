@@ -14,8 +14,10 @@ const DESCRIPTIONS: Record<PrefCategory, string> = {
   generation: 'Defaults for new jobs and the queue.',
   performance: 'How ComfyUI uses memory.',
   models: 'Where models and wildcards come from.',
+  enhance: 'The AI service that rewrites prompts (any OpenAI-compatible API).',
   network: 'The ComfyUI connection and access from other devices.',
-  advanced: 'Enhance, logs, backups and diagnostics.',
+  updates: 'Version, updates, backups and disk space.',
+  advanced: 'Logs and diagnostics.',
 };
 
 /**
@@ -166,6 +168,7 @@ export function PreferencesScreen({ onClose, onOpenKeys, ...props }: PreferenceP
                     <span className="text-[13px] leading-[1.45]" style={{ color: 'var(--s-muted)' }}>{e.description}</span>
                   ) : null}
                   {e.hint ? <span className="text-[12.5px]" style={{ color: 'var(--s-accent)' }}>{e.hint}</span> : null}
+                  {e.detail ?? null}
                   {q ? <span className="st-sec pt-0.5 text-[11px]">{PREF_CATEGORIES.find((c) => c.id === e.category)?.label}</span> : null}
                 </div>
                 <div className="shrink-0">{e.control}</div>

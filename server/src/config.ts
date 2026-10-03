@@ -11,5 +11,6 @@ export const config = {
   dataDir: path.join(serverDir, 'data'),
   imagesDir: path.join(serverDir, 'data', 'images'),
   dbPath: path.join(serverDir, 'data', 'darkroom.db'),
+  rootDir,
   clientDist: path.join(rootDir, 'client', 'dist'),
 };

@@ -149,7 +149,12 @@ export function ratioLabel(w: number, h: number): string {
 /** What a derived image was made by, for the compare labels. */
 export function derivedKind(s: GenerationSettings): string {
   if (s.generationMode === 'upscale') return s.upscale?.scale ? `Upscale ${s.upscale.scale}×` : 'Upscale';
-  if (s.generationMode === 'outpaint') return 'Extend';
+  if (s.generationMode === 'outpaint') {
+    const o = s.outpaint;
+    const extended = Boolean(o && o.left + o.right + o.top + o.bottom > 0);
+    const masked = Boolean(s.maskImage);
+    return masked && extended ? 'Inpaint & extend' : masked ? 'Inpaint' : 'Extend';
+  }
   if (s.generationMode === 'edit') return 'Edit';
   if (s.generationMode === 'img2img') return 'Variation';
   return 'After';

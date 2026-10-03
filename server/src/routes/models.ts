@@ -3,6 +3,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { Router } from 'express';
 import { ComfyError } from '../services/comfyClient.js';
+import { listLoraMeta, loraThumbFile } from '../services/loraMeta.js';
 import { listModelCatalog } from '../services/modelLists.js';
 import {
   confirmInstall,
@@ -39,6 +40,26 @@ modelsRouter.get('/', async (_req, res) => {
 });
 
 /** Installed files on disk (with link metadata for Manage models). */
+/** LoRAs on disk: what they were made for, trigger words, preview. */
+modelsRouter.get('/loras/meta', (_req, res) => {
+  try {
+    res.json({ items: listLoraMeta() });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Could not read LoRAs' });
+  }
+});
+
+modelsRouter.get('/loras/thumb', (req, res) => {
+  const name = typeof req.query.name === 'string' ? req.query.name : '';
+  const file = name ? loraThumbFile(name) : null;
+  if (!file) {
+    res.status(404).end();
+    return;
+  }
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.sendFile(file);
+});
+
 modelsRouter.get('/installed', async (req, res) => {
   try {
     const type = req.query.type ? String(req.query.type) : undefined;

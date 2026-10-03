@@ -183,6 +183,48 @@ export function dictionaryKey(tag: string): string {
     .replace(/ /g, '_');
 }
 
+/**
+ * How well a tag name matches the query (lower is better, -1 = no match):
+ * 0 prefix · 2 a word starts with it (light → dramatic_lighting) · 3 substring ·
+ * 4 every query word appears, in any order. 1 is an alias prefix (checked by the caller).
+ */
+function matchRank(name: string, q: string, words: string[]): number {
+  if (name.startsWith(q)) return 0;
+  if (name.includes(`_${q}`) || name.includes(`(${q}`)) return 2;
+  if (name.includes(q)) return 3;
+  if (words.length > 1 && words.every((w) => name.includes(w))) return 4;
+  return -1;
+}
+
+/**
+ * q's letters appear in name in order, starting at the beginning of the name or of a word
+ * (drmtc → drumsticks). Returns how many extra letters the match spans (lower is tighter), or -1.
+ */
+function looseSpan(q: string, name: string): number {
+  if (q.length < 3) return -1;
+  let best = -1;
+  for (let start = name.indexOf(q[0]); start >= 0; start = name.indexOf(q[0], start + 1)) {
+    if (start > 0 && name[start - 1] !== '_') continue;
+    let i = 1;
+    let j = start + 1;
+    for (; j < name.length && i < q.length; j++) if (name[j] === q[i]) i++;
+    if (i < q.length) break;
+    const extra = j - start - q.length;
+    if (best < 0 || extra < best) best = extra;
+  }
+  return best;
+}
+
+function toHit(entry: TagEntry, tagFormat: 'spaces' | 'underscores', rank: number): TagSuggestion & { rank: number } {
+  return {
+    name: entry.name,
+    displayName: formatTagForInsert(entry.name, tagFormat),
+    category: entry.category,
+    postCount: entry.postCount,
+    rank,
+  };
+}
+
 export function searchTags(params: {
   q: string;
   familyId: string;
@@ -200,9 +242,11 @@ export function searchTags(params: {
   if (!q) return { suggestions: [], enabled: true, tagFormat };
 
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 50);
-  type Hit = TagSuggestion & { score: number };
+  type Hit = TagSuggestion & { rank: number };
   const hits: Hit[] = [];
+  const loose: Hit[] = [];
   const seen = new Set<string>();
+  const words = q.split('_').filter(Boolean);
 
   for (const source of sources) {
     const dict = dictionaries.get(source);
@@ -213,39 +257,46 @@ export function searchTags(params: {
       if (seen.has(nameKey)) continue;
 
       let matchedAlias: string | undefined;
-      let rank = -1;
-      if (nameKey.startsWith(q)) {
-        rank = 0;
-      } else {
+      const rank = matchRank(nameKey, q, words);
+      let best = rank;
+      if (best !== 0) {
+        // An alias that starts with the query beats a looser match on the name (smiling → smile)
         for (const a of entry.aliases) {
           if (a.toLowerCase().startsWith(q)) {
-            rank = 1;
-            matchedAlias = a;
+            if (best < 0 || best > 1) {
+              best = 1;
+              matchedAlias = a;
+            }
             break;
           }
         }
       }
-      if (rank < 0) continue;
+      if (best < 0) {
+        const span = loose.length < 2000 ? looseSpan(q.replace(/_/g, ''), nameKey) : -1;
+        if (span >= 0) loose.push(toHit(entry, tagFormat, 5 + span / 100));
+        continue;
+      }
 
       seen.add(nameKey);
-      hits.push({
-        name: entry.name,
-        displayName: formatTagForInsert(entry.name, tagFormat),
-        category: entry.category,
-        postCount: entry.postCount,
-        matchedAlias,
-        score: rank * 1e15 + (1e15 - Math.min(entry.postCount, 1e15 - 1)),
-      });
+      hits.push({ ...toHit(entry, tagFormat, best), matchedAlias });
     }
   }
 
-  hits.sort((a, b) => {
-    if (a.score !== b.score) return a.score - b.score;
-    return b.postCount - a.postCount;
-  });
+  const byRank = (a: Hit, b: Hit) => a.rank - b.rank || b.postCount - a.postCount;
+  hits.sort(byRank);
+  // Loose letter matches only when nothing better is found
+  if (hits.length === 0) {
+    loose.sort(byRank);
+    for (const h of loose) {
+      if (hits.length >= limit) break;
+      if (seen.has(h.name.toLowerCase())) continue;
+      seen.add(h.name.toLowerCase());
+      hits.push(h);
+    }
+  }
 
   return {
-    suggestions: hits.slice(0, limit).map(({ score: _s, ...rest }) => rest),
+    suggestions: hits.slice(0, limit).map(({ rank: _r, ...rest }) => rest),
     enabled: true,
     tagFormat,
   };

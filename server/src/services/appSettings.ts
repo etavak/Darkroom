@@ -362,6 +362,17 @@ export function runBackup(keep = loadServerSettings().autoBackupKeep): { ok: boo
   }
 }
 
+/** Permanently delete everything in the trash. Returns how many files were removed. */
+export function emptyTrash(): number {
+  ensureDirs();
+  let n = 0;
+  for (const name of fs.readdirSync(trashDir)) {
+    fs.rmSync(path.join(trashDir, name), { recursive: true, force: true });
+    n++;
+  }
+  return n;
+}
+
 /** Move or permanently delete an image file based on deleteMode. */
 export function disposeFile(filename: string): void {
   const filePath = path.join(config.imagesDir, filename);

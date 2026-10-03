@@ -94,6 +94,39 @@ promptRouter.get('/random', (req, res) => {
   res.json({ prompt: randomPromptFor(family) });
 });
 
+/** Checks the Enhance URL, key and model without spending tokens on a real prompt. */
+promptRouter.post('/enhance/test', async (_req, res) => {
+  const settings = loadServerSettings();
+  const endpoint = settings.enhanceApiUrl?.trim().replace(/\/$/, '') ?? '';
+  const model = settings.enhanceModel?.trim() ?? '';
+  if (!endpoint) {
+    res.json({ ok: false, message: 'Set the Enhance API URL first.' });
+    return;
+  }
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (settings.enhanceApiKey?.trim()) headers.Authorization = `Bearer ${settings.enhanceApiKey.trim()}`;
+  try {
+    const r = await fetch(`${endpoint}/models`, { headers, signal: AbortSignal.timeout(10_000) });
+    if (r.status === 401 || r.status === 403) {
+      res.json({ ok: false, message: `The key was refused (${r.status}).` });
+      return;
+    }
+    if (r.ok) {
+      const body = (await r.json().catch(() => null)) as { data?: Array<{ id?: unknown }> } | null;
+      const ids = Array.isArray(body?.data) ? body.data.map((m) => String(m.id ?? '')) : [];
+      if (model && ids.length && !ids.includes(model)) {
+        res.json({ ok: false, message: `Connected, but the model “${model}” isn’t offered by this API.` });
+        return;
+      }
+      res.json({ ok: true, message: model ? `Connected · ${model}` : 'Connected — now set a model.' });
+      return;
+    }
+    res.json({ ok: false, message: `The API answered ${r.status}. Check the URL (it usually ends in /v1).` });
+  } catch (err) {
+    res.json({ ok: false, message: err instanceof Error && err.name === 'TimeoutError' ? 'No answer within 10 s.' : 'Could not reach the API URL.' });
+  }
+});
+
 promptRouter.post('/enhance', async (req, res) => {
   const settings = loadServerSettings();
   const endpoint = settings.enhanceApiUrl?.trim() ?? '';

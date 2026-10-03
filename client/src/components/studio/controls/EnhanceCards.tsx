@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { Check, ChevronDown, GripVertical, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, GripVertical, Plus, TriangleAlert, X } from 'lucide-react';
+import { loraThumbUrl, type LoraMeta } from '@/lib/api';
+import { loraFit, promptHasTag, togglePromptTag } from '@/lib/loraFit';
 import { shortModelName } from '@/lib/modelProfiles';
 import type { DetailerSettings, HiresFixSettings, LoraSettings } from '@/types/generation';
-import { StCard, StCardBtn, StMenuButton, StMenuItem, StSlider, StSwitch } from './primitives';
+import { StCard, StCardBtn, StMenuButton, StMenuItem, StSeg, StSlider, StSwitch } from './primitives';
 
 const MAX_LORAS = 8;
 
@@ -15,16 +17,45 @@ function folderOf(name: string): string {
   return i > 0 ? name.slice(0, i) : '';
 }
 
-type LoraCardProps = {
+/** Preview image, or the name's first letter */
+function LoraThumb({ name, meta }: { name: string; meta?: LoraMeta }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="st-lthumb" aria-hidden>
+      {meta?.thumb && !broken ? (
+        <img src={loraThumbUrl(name)} alt="" loading="lazy" draggable={false} onError={() => setBroken(true)} />
+      ) : (
+        loraLabel(name).slice(0, 1).toUpperCase()
+      )}
+    </span>
+  );
+}
+
+/** "Illustrious · folder" under a LoRA's name */
+function loraSubline(name: string, meta?: LoraMeta): string {
+  return [meta?.base, folderOf(name)].filter(Boolean).join(' · ');
+}
+
+/** What each LoRA was made for, its trigger words and preview, plus the current model to check against */
+export type LoraContext = {
+  meta: Record<string, LoraMeta>;
+  familyId: string | null;
+  familyName: string | null;
+};
+
+type LoraCardProps = LoraContext & {
   loras: LoraSettings[];
   onChange: (l: LoraSettings[]) => void;
+  /** Trigger-word chips add to / remove from the prompt */
+  prompt: string;
+  onPrompt: (next: string) => void;
   pickerOpen: boolean;
   onPickerOpen: (open: boolean) => void;
   disabled?: boolean;
 };
 
 /** Stacked LoRAs: on/off, weight, remove, drag the grip (or ↑↓ on it) to reorder. */
-export function LoraCard({ loras, onChange, pickerOpen, onPickerOpen, disabled }: LoraCardProps) {
+export function LoraCard({ loras, onChange, pickerOpen, onPickerOpen, disabled, meta, familyId, familyName, prompt, onPrompt }: LoraCardProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ from: number; over: number } | null>(null);
   const on = loras.filter((l) => l.enabled !== false).length;
@@ -122,13 +153,14 @@ export function LoraCard({ loras, onChange, pickerOpen, onPickerOpen, disabled }
                 >
                   <GripVertical className="pointer-events-none h-4 w-4" />
                 </span>
+                <LoraThumb name={l.name} meta={meta[l.name]} />
                 <div className="flex min-w-0 flex-1 flex-col gap-px">
-                  <span className="truncate text-sm font-semibold" data-tip={l.name}>
+                  <span className="truncate text-sm font-semibold" data-tip={meta[l.name]?.title ? `${meta[l.name]?.title}\n${l.name}` : l.name}>
                     {loraLabel(l.name)}
                   </span>
-                  {folderOf(l.name) ? (
+                  {loraSubline(l.name, meta[l.name]) ? (
                     <span className="truncate text-xs" style={{ color: 'var(--s-muted)' }}>
-                      {folderOf(l.name)}
+                      {loraSubline(l.name, meta[l.name])}
                     </span>
                   ) : null}
                 </div>
@@ -169,6 +201,36 @@ export function LoraCard({ loras, onChange, pickerOpen, onPickerOpen, disabled }
                 />
                 <span className="st-mono w-[42px] text-right text-[13px] font-semibold">{l.strength_model.toFixed(2)}</span>
               </div>
+              {(() => {
+                const fit = loraFit(meta[l.name], familyId, familyName);
+                return fit.note ? (
+                  <div className="flex items-start gap-1.5 pl-[26px] text-[12.5px] leading-snug" style={{ color: '#e2b44f' }} role="note">
+                    <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                    <span>{fit.note}</span>
+                  </div>
+                ) : null;
+              })()}
+              {meta[l.name]?.triggers.length ? (
+                <div className="flex flex-wrap gap-1.5 pl-[26px]">
+                  {meta[l.name].triggers.map((t) => {
+                    const inPrompt = promptHasTag(prompt, t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        className={`st-trig ${inPrompt ? 'on' : ''}`}
+                        disabled={disabled}
+                        aria-pressed={inPrompt}
+                        onClick={() => onPrompt(togglePromptTag(prompt, t))}
+                        data-tip={inPrompt ? 'In the prompt — click to remove it' : 'Trigger word — click to add it to the prompt'}
+                      >
+                        {inPrompt ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                        <span className="truncate">{t}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -177,7 +239,7 @@ export function LoraCard({ loras, onChange, pickerOpen, onPickerOpen, disabled }
   );
 }
 
-type LoraPickerProps = {
+type LoraPickerProps = LoraContext & {
   options: string[];
   loras: LoraSettings[];
   onAdd: (name: string) => void;
@@ -189,8 +251,9 @@ type LoraPickerProps = {
 };
 
 /** Pops out beside the controls column: search the installed LoRAs and add them. */
-export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading, inline }: LoraPickerProps) {
+export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading, inline, meta, familyId, familyName }: LoraPickerProps) {
   const [q, setQ] = useState('');
+  const [show, setShow] = useState<'compatible' | 'all'>('compatible');
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -201,7 +264,17 @@ export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading
 
   const added = new Set(loras.map((l) => l.name));
   const full = loras.length >= MAX_LORAS;
-  const hits = options.filter((o) => !q.trim() || o.toLowerCase().includes(q.trim().toLowerCase()));
+  const fits = (o: string) => {
+    const k = loraFit(meta[o], familyId, familyName).kind;
+    return k === 'ok' || k === 'unknown';
+  };
+  const compatibleCount = options.filter(fits).length;
+  const needle = q.trim().toLowerCase();
+  const hits = options.filter(
+    (o) =>
+      (show === 'all' || fits(o)) &&
+      (!needle || o.toLowerCase().includes(needle) || (meta[o]?.title ?? '').toLowerCase().includes(needle) || (meta[o]?.base ?? '').toLowerCase().includes(needle)),
+  );
 
   return (
     <div
@@ -227,16 +300,31 @@ export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading
         placeholder="Search LoRAs"
         aria-label="Search LoRAs"
       />
+      {options.length ? (
+        <StSeg
+          small
+          value={show}
+          onChange={setShow}
+          options={[
+            { value: 'compatible', label: `Compatible · ${compatibleCount}`, tip: familyName ? `Made for ${familyName} (or unknown)` : 'Made for the current model (or unknown)' },
+            { value: 'all', label: `All · ${options.length}`, tip: 'Every installed LoRA, including ones made for other models' },
+          ]}
+        />
+      ) : null}
       <div className="flex flex-col gap-1.5">
         {loading ? (
           <p className="m-0 px-0.5 text-[13px]" style={{ color: 'var(--s-muted)' }}>Loading…</p>
         ) : options.length === 0 ? (
           <p className="m-0 px-0.5 text-[13px]" style={{ color: 'var(--s-muted)' }}>No LoRAs installed yet.</p>
         ) : hits.length === 0 ? (
-          <p className="m-0 px-0.5 text-[13px]" style={{ color: 'var(--s-muted)' }}>No LoRAs match.</p>
+          <p className="m-0 px-0.5 text-[13px]" style={{ color: 'var(--s-muted)' }}>
+            {show === 'compatible' && !needle ? `None of your LoRAs are made for ${familyName ?? 'this model'}. See All.` : 'No LoRAs match.'}
+          </p>
         ) : (
           hits.map((name) => {
             const isAdded = added.has(name);
+            const fit = loraFit(meta[name], familyId, familyName);
+            const sub = loraSubline(name, meta[name]);
             return (
               <button
                 key={name}
@@ -245,13 +333,20 @@ export function LoraPicker({ options, loras, onAdd, onAddModel, onClose, loading
                 disabled={isAdded || full}
                 style={{ opacity: isAdded ? 0.55 : 1 }}
                 onClick={() => onAdd(name)}
-                data-tip={isAdded ? 'Already added' : full ? `Up to ${MAX_LORAS} LoRAs` : name}
+                data-tip={isAdded ? 'Already added' : full ? `Up to ${MAX_LORAS} LoRAs` : fit.note ? `${name}\n${fit.note}` : name}
               >
+                <LoraThumb name={name} meta={meta[name]} />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate text-sm font-semibold">{loraLabel(name)}</span>
-                  {folderOf(name) ? (
+                  {sub ? (
                     <span className="truncate text-xs" style={{ color: 'var(--s-muted)' }}>
-                      {folderOf(name)}
+                      {sub}
+                    </span>
+                  ) : null}
+                  {fit.note ? (
+                    <span className="flex items-center gap-1 text-xs" style={{ color: '#e2b44f' }}>
+                      <TriangleAlert className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{fit.kind === 'wrong-arch' ? `Made for ${meta[name]?.base ?? 'another model'} — won’t work here` : `Made for ${meta[name]?.base}`}</span>
                     </span>
                   ) : null}
                 </span>

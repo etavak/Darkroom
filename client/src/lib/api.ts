@@ -278,6 +278,45 @@ export function runBackupApi(): Promise<{
   return request('/api/settings/backup', { method: 'POST' });
 }
 
+export type LoraMeta = {
+  name: string;
+  title: string | null;
+  base: string | null;
+  family: string | null;
+  arch: 'sd15' | 'sdxl' | 'sd3' | 'flux' | 'flux2' | null;
+  triggers: string[];
+  thumb: boolean;
+};
+
+export function fetchLoraMeta(): Promise<{ items: LoraMeta[] }> {
+  return request('/api/models/loras/meta');
+}
+
+export const loraThumbUrl = (name: string) => `/api/models/loras/thumb?name=${encodeURIComponent(name)}`;
+
+export function emptyTrashApi(): Promise<{
+  ok: boolean;
+  removed: number;
+  diskUsage: import('../types/serverSettings').DiskUsageInfo;
+}> {
+  return request('/api/settings/trash/empty', { method: 'POST' });
+}
+
+export type VersionInfo = { version: string; sha: string | null; updatedAt: string | null; git: boolean };
+export type UpdateCheck = VersionInfo & { latest: string | null; updateAvailable: boolean | null; checkedAt: string; error?: string };
+
+export function fetchVersionInfo(): Promise<VersionInfo> {
+  return request('/api/settings/version');
+}
+
+export function checkUpdatesApi(force = false): Promise<UpdateCheck> {
+  return request(`/api/settings/updates${force ? '?force=1' : ''}`);
+}
+
+export function testEnhanceApi(): Promise<{ ok: boolean; message: string }> {
+  return request('/api/prompt/enhance/test', { method: 'POST' });
+}
+
 export function cancelGenerate(jobId: string | null): Promise<{ ok: boolean }> {
   return request('/api/generate/cancel', {
     method: 'POST',

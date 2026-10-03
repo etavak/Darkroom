@@ -11,6 +11,8 @@ type Props = {
   onCopy: (text: string, what: string) => void;
   onReuseAll: () => void;
   onReusePrompt: () => void;
+  /** Made from another image (upscale, inpaint, variation…): how, and showing that image */
+  madeFrom?: { kind: string; onShow: (() => void) | null } | null;
   /** Phone: plain content for a sheet (no column, no close button) */
   inline?: boolean;
 };
@@ -30,7 +32,7 @@ function formatTook(ms: number | null | undefined): string | null {
 }
 
 /** How the selected image was made, with Reuse. Toggle with I. */
-export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReusePrompt, inline }: Props) {
+export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReusePrompt, madeFrom, inline }: Props) {
   const [showFinal, setShowFinal] = useState(false);
   const s = record?.settings;
   const typed = s ? (s.userPrompt ?? s.promptTemplate ?? s.prompt) : '';
@@ -107,6 +109,21 @@ export function DetailsPanel({ record, size, onClose, onCopy, onReuseAll, onReus
               </div>
             ))}
           </div>
+          {madeFrom ? (
+            <div className="flex flex-col gap-0.5">
+              <span className="st-lbl">Made by</span>
+              <span className="flex flex-wrap items-baseline gap-x-2 text-[13.5px] font-semibold">
+                {madeFrom.kind} of an earlier image
+                {madeFrom.onShow ? (
+                  <button type="button" className="border-0 bg-transparent p-0 text-xs font-normal" style={{ color: 'var(--s-accent)', cursor: 'pointer' }} onClick={madeFrom.onShow} data-tip="Select the image this was made from">
+                    Show original
+                  </button>
+                ) : (
+                  <span className="text-xs font-normal" style={{ color: 'var(--s-faint)' }}>(original deleted)</span>
+                )}
+              </span>
+            </div>
+          ) : null}
           {loras.length ? (
             <div className="flex flex-col gap-0.5">
               <span className="st-lbl">LoRAs</span>
