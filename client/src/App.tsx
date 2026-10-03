@@ -44,6 +44,12 @@ import { ImageSettings } from '@/components/studio/controls/ImageSettings';
 import { ControlNetCard, ImageToImageCard } from '@/components/studio/controls/ReferenceCards';
 import { PromptPopout } from '@/components/studio/controls/PromptPopout';
 import { SamplingFooter } from '@/components/studio/controls/SamplingFooter';
+import { ContextMenu, type CtxItem } from '@/components/studio/plane/ContextMenu';
+import { DetailsPanel } from '@/components/studio/plane/DetailsPanel';
+import { HistoryPanel, type HistoryThumb } from '@/components/studio/plane/HistoryPanel';
+import { ImagePlane } from '@/components/studio/plane/ImagePlane';
+import { derivedKind, outputSize, tileId, type FailedJob, type PlaneEntry, type Tile } from '@/components/studio/plane/layout';
+import { downloadZip } from '@/lib/zip';
 import {
   StCard,
   StChipFace,
@@ -56,12 +62,13 @@ import { usePromptPrefs } from '@/lib/promptPrefs';
 import { UndoToast } from '@/components/ui/UndoToast';
 import { scaleAspectPresets } from '@/constants/aspectRatios';
 import { useFamilies } from '@/hooks/useFamilies';
-import { useGeneration } from '@/hooks/useGeneration';
+import { CancelledError, useGeneration } from '@/hooks/useGeneration';
 import { useHistory } from '@/hooks/useHistory';
 import { useModels } from '@/hooks/useModels';
 import { useServerSettings } from '@/hooks/useServerSettings';
 import { useUiSettings } from '@/hooks/useUiSettings';
 import {
+  imageUrl,
   fetchHealth,
   fetchPreviewSettings,
   fetchSystemStats,
@@ -152,6 +159,22 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const [promptPanelOpen, setPromptPanelOpen] = useState(false);
   const [loraPickerOpen, setLoraPickerOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  /** Studio plane / History */
+  const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [histQuery, setHistQuery] = useState('');
+  const [histModel, setHistModel] = useState('all');
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  /** Selected tile that isn't a finished image (the running job) — overrides the record selection */
+  const [planeSel, setPlaneSel] = useState<string | null>(null);
+  const planeSelRef = useRef<string | null>(null);
+  planeSelRef.current = planeSel;
+  const [planeFocus, setPlaneFocus] = useState<{ id: string; n: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; recordId: string; index: number } | null>(null);
+  const studioRef = useRef(false);
+  studioRef.current = variant === 'studio' && !narrow;
+  const requestFocus = useCallback((id: string) => setPlaneFocus((f) => ({ id, n: (f?.n ?? 0) + 1 })), []);
   const { catalog, loading: modelsLoading, reload: reloadModels } = useModels();
   const { families } = useFamilies();
   const {
@@ -522,13 +545,23 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const onComplete = useCallback(
     (record: GenerationRecord) => {
       void reload();
-      if (uiSettings.jumpToNewest || !selectedId) {
+      const followRun = planeSelRef.current?.startsWith('running:') ?? false;
+      const runIndex = followRun ? Number(planeSelRef.current!.split(':')[1]) || 0 : 0;
+      setPlaneSel(null);
+      if (followRun) {
         setSelectedId(record.id);
         setViewImages(record.images);
+        setSelectedIndex(Math.min(runIndex, Math.max(0, record.images.length - 1)));
+        requestFocus(tileId(record.id, Math.min(runIndex, Math.max(0, record.images.length - 1))));
+      } else if (uiSettings.jumpToNewest || !selectedId) {
+        setSelectedId(record.id);
+        setViewImages(record.images);
+        setSelectedIndex(0);
+        requestFocus(tileId(record.id, 0));
       }
       setSettingsOpen(false);
     },
-    [reload, selectedId, uiSettings.jumpToNewest],
+    [reload, requestFocus, selectedId, uiSettings.jumpToNewest],
   );
 
   const { runtime, generate, cancel, setLivePreviewEnabled } = useGeneration(onComplete);
@@ -665,8 +698,9 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     ],
   );
 
+  /** Runs one job; resolves to the error message when it failed (null when done or cancelled). */
   const runGenerate = useCallback(
-    async (settings: GenerationSettings) => {
+    async (settings: GenerationSettings): Promise<string | null> => {
       try {
         await generate(settings, {
           livePreview: uiSettings.livePreview,
@@ -675,8 +709,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
               ? qualityToPreviewMethod(uiSettings.previewQuality)
               : undefined,
         });
-      } catch {
-        // runtime.error
+        return null;
+      } catch (err) {
+        if (err instanceof CancelledError) return null;
+        return err instanceof Error ? err.message : String(err);
       }
     },
     [generate, perPromptPreview, uiSettings.livePreview, uiSettings.previewQuality],
@@ -695,7 +731,13 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           }
           const next = queueRef.current[0];
           setActiveQueueId(next.id);
-          await runGenerate(next.settings);
+          const failure = await runGenerate(next.settings);
+          if (failure) {
+            setFailedJobs((prev) => [
+              { id: next.id, settings: next.settings, label: next.label, error: failure, at: Date.now() },
+              ...prev,
+            ]);
+          }
           syncQueue(queueRef.current.filter((j) => j.id !== next.id));
           setActiveQueueId(null);
         }
@@ -818,14 +860,17 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   );
 
   const setSourceFromGallery = useCallback(
-    async (item: GenerationRecord) => {
-      if (!item.images[0]) return;
+    async (item: GenerationRecord, index = 0): Promise<boolean> => {
+      const img = item.images[index] ?? item.images[0];
+      if (!img) return false;
       try {
-        const next = await useGalleryAsSource(item.images[0], item.id);
+        const next = await useGalleryAsSource(img, item.id);
         applySource(next, 'img2img');
+        return true;
       } catch (err) {
         setCopyFlash(err instanceof Error ? err.message : 'Source upload failed');
         window.setTimeout(() => setCopyFlash(null), 2500);
+        return false;
       }
     },
     [applySource],
@@ -892,8 +937,9 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     if (first) {
       setSelectedId(first.id);
       setViewImages(first.images);
+      requestFocus(tileId(first.id, 0));
     }
-  }, [histLoading, items, selectedId, viewImages.length]);
+  }, [histLoading, items, requestFocus, selectedId, viewImages.length]);
 
   const handleGenerate = useCallback(async () => {
     if (!readiness.ready || !resolved.finalPositive.trim() || comfyOk === false) {
@@ -1142,8 +1188,9 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       }
 
       if (
-        eventMatchesShortcut(e, shortcuts.prevHistory) ||
-        eventMatchesShortcut(e, shortcuts.nextHistory)
+        !studioRef.current &&
+        (eventMatchesShortcut(e, shortcuts.prevHistory) ||
+          eventMatchesShortcut(e, shortcuts.nextHistory))
       ) {
         if (items.length === 0) return;
         e.preventDefault();
@@ -1284,9 +1331,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     if (window.matchMedia('(max-width: 1023.98px)').matches) setSettingsOpen(true);
   };
 
-  const selectItem = (item: GenerationRecord) => {
+  const selectItem = (item: GenerationRecord, index = 0) => {
     setSelectedId(item.id);
     setViewImages(item.images);
+    setSelectedIndex(index);
   };
 
   const selectedRecord = items.find((i) => i.id === selectedId) ?? null;
@@ -1343,6 +1391,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
   const handleVary = useCallback(
     (strength: VaryStrength) => {
       if (!selectedRecord?.images[0] || !readiness.ready) return;
+      const srcImage = selectedRecord.images[selectedIndex] ?? selectedRecord.images[0];
       const denoise = strength === 'subtle' ? 0.3 : 0.6;
       const nextSeed = randomSeed();
       const base = buildSettings(nextSeed);
@@ -1354,7 +1403,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           height: selectedRecord.settings.height,
           seed: nextSeed,
           generationMode: 'img2img',
-          sourceImage: selectedRecord.images[0],
+          sourceImage: srcImage,
           parentId: selectedRecord.id,
           denoise,
           hiresFix: undefined,
@@ -1363,7 +1412,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
         `Vary ${strength}`,
       );
     },
-    [buildSettings, enqueueJob, readiness.ready, selectedRecord],
+    [buildSettings, enqueueJob, readiness.ready, selectedIndex, selectedRecord],
   );
 
   const handleUpscale = useCallback(
@@ -1379,7 +1428,7 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           height: selectedRecord.settings.height,
           seed: nextSeed,
           generationMode: 'upscale',
-          sourceImage: selectedRecord.images[0],
+          sourceImage: selectedRecord.images[selectedIndex] ?? selectedRecord.images[0],
           parentId: selectedRecord.id,
           hiresFix: undefined,
           upscale: {
@@ -1391,10 +1440,10 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
             refineSteps: 12,
           },
         },
-        `Upscale ${req.scale}×`,
+        req.refine ? `Enhance ${req.scale}×` : `Upscale ${req.scale}×`,
       );
     },
-    [buildSettings, enqueueJob, readiness.ready, selectedRecord],
+    [buildSettings, enqueueJob, readiness.ready, selectedIndex, selectedRecord],
   );
 
   const copySeed = async () => {
@@ -2157,6 +2206,387 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
     },
   };
 
+  // ---------- Studio: image plane, History, details ----------
+  const flash = useCallback((text: string, ms = 1800) => {
+    setCopyFlash(text);
+    window.setTimeout(() => setCopyFlash((cur) => (cur === text ? null : cur)), ms);
+  }, []);
+  const recordModelKey = (r: GenerationRecord) =>
+    (r.settings.modelMode === 'split' ? r.settings.unet || r.settings.checkpoint : r.settings.checkpoint) || 'unknown';
+  const histModels = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of items) counts.set(recordModelKey(r), (counts.get(recordModelKey(r)) ?? 0) + r.images.length);
+    return [...counts.entries()].map(([key, count]) => ({ key, name: shortModelName(key), count }));
+  }, [items]);
+  const activeJob = queue.find((j) => j.id === activeQueueId) ?? null;
+  const runProgress = runtime.running ? (runtime.progressMax ? runtime.progressStep / runtime.progressMax : 0) : null;
+  const planeEntries = useMemo<PlaneEntry[]>(() => {
+    const q = histQuery.trim().toLowerCase();
+    const records = items
+      .filter((r) => r.images.length)
+      .filter((r) => !pinnedOnly || favorites.has(r.id))
+      .filter((r) => histModel === 'all' || recordModelKey(r) === histModel)
+      .filter((r) => !q || `${r.settings.userPrompt ?? ''} ${r.settings.prompt}`.toLowerCase().includes(q));
+    const rows: Array<{ at: number; entry: PlaneEntry }> = [
+      ...records.map((r) => ({ at: r.createdAt, entry: { kind: 'record' as const, key: r.id, record: r, images: r.images.map(imageUrl), pinned: favorites.has(r.id) } })),
+      ...(pinnedOnly || histModel !== 'all' || q ? [] : failedJobs.map((f) => ({ at: f.at, entry: { kind: 'failed' as const, key: `failed-${f.id}`, failed: f } }))),
+    ].sort((a, b) => b.at - a.at);
+    const list = rows.map((r) => r.entry);
+    if (runtime.running && activeJob) {
+      list.unshift({ kind: 'running', key: 'running', settings: activeJob.settings, previewUrl: runtime.previewUrl, progress: runProgress ?? 0 });
+    }
+    return list;
+  }, [items, pinnedOnly, favorites, histModel, histQuery, failedJobs, runtime.running, runtime.previewUrl, activeJob, runProgress]);
+  const historyThumbs = useMemo<HistoryThumb[]>(
+    () =>
+      planeEntries.flatMap((e): HistoryThumb[] =>
+        e.kind === 'record'
+          ? e.images.map((src, i) => ({ id: tileId(e.key, i), entry: e, index: i, src }))
+          : e.kind === 'running'
+            ? Array.from({ length: Math.max(1, e.settings.batch_size || 1) }, (_, i) => ({ id: tileId(e.key, i), entry: e, index: i, src: i === 0 ? e.previewUrl : null }))
+            : [{ id: tileId(e.key, 0), entry: e, index: 0, src: null }],
+      ),
+    [planeEntries],
+  );
+  const recordTileId = selectedRecord ? tileId(selectedRecord.id, Math.min(selectedIndex, Math.max(0, selectedRecord.images.length - 1))) : null;
+  const runningSel = planeSel && runtime.running && planeSel.startsWith('running:') ? planeSel : null;
+  const selectedTileId = runningSel ?? recordTileId;
+  /** The finished image the toolbars act on (none while the running job is selected) */
+  const actRecord = runningSel ? null : selectedRecord;
+  const selectedImageName = selectedRecord ? selectedRecord.images[selectedIndex] ?? selectedRecord.images[0] ?? null : null;
+  const parentRecord = selectedRecord?.parentId ? items.find((i) => i.id === selectedRecord.parentId) ?? null : null;
+
+  const pickTile = (entry: PlaneEntry, index: number, focus: boolean) => {
+    if (entry.kind === 'record') {
+      setPlaneSel(null);
+      selectItem(entry.record, index);
+    } else if (entry.kind === 'running') {
+      setPlaneSel(tileId(entry.key, index));
+    }
+    if (focus) requestFocus(tileId(entry.key, index));
+  };
+  const downloadImage = (name: string) => {
+    const a = document.createElement('a');
+    a.href = imageUrl(name);
+    a.download = name;
+    a.click();
+  };
+  const copyImageToClipboard = async (name: string) => {
+    try {
+      const blob = await (await fetch(imageUrl(name))).blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
+      flash('Image copied');
+    } catch {
+      flash('Copy failed — your browser may not allow image copying');
+    }
+  };
+  const copyText = async (text: string, what: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      flash(`${what} copied`);
+    } catch {
+      flash('Copy failed');
+    }
+  };
+  const reusePromptOnly = (r: GenerationRecord) => {
+    const st = r.settings;
+    setPrompt(st.userPrompt ?? st.promptTemplate ?? st.prompt);
+    setNegativePrompt(st.userNegative ?? st.negativeTemplate ?? st.negative_prompt ?? '');
+    flash('Prompt loaded');
+  };
+  const deleteRecords = (ids: string[]) => {
+    const list = items.filter((i) => ids.includes(i.id));
+    if (!list.length) return;
+    if (uiSettings.confirmDelete && !window.confirm(list.length > 1 ? `Delete ${list.length} generations?` : 'Delete this generation?')) return;
+    if (selectedId && ids.includes(selectedId)) {
+      const rest = items.filter((i) => !ids.includes(i.id) && i.images[0]);
+      const idx = items.findIndex((i) => i.id === selectedId);
+      const next = rest.find((i) => items.indexOf(i) > idx) ?? rest[rest.length - 1] ?? null;
+      if (next) {
+        selectItem(next);
+        requestFocus(tileId(next.id, 0));
+      } else {
+        setSelectedId(null);
+        setViewImages([]);
+      }
+    }
+    softDelete(list);
+  };
+  const upscaler = serverSettings.defaultUpscaler && catalog.upscale_models.includes(serverSettings.defaultUpscaler) ? serverSettings.defaultUpscaler : catalog.upscale_models[0] ?? '';
+  const upscaleScale = serverSettings.defaultUpscaleScale && serverSettings.defaultUpscaleScale > 1 ? serverSettings.defaultUpscaleScale : 2;
+  const canAct = Boolean(actRecord?.images[0]) && readiness.ready && comfyOk !== false;
+  const notReadyTip = !actRecord ? 'Select an image first' : comfyOk === false ? 'ComfyUI is offline' : readiness.reason || 'Not ready';
+  const useSelectedAs = async (mode: 'img2img' | 'edit' | 'outpaint', msg: string) => {
+    if (!actRecord) return;
+    if (await setSourceFromGallery(actRecord, selectedIndex)) {
+      setWorkMode(mode);
+      flash(msg, 2600);
+      if (mode === 'edit') window.setTimeout(() => document.getElementById('prompt')?.focus(), 50);
+    }
+  };
+  const planeActions = {
+    enhance: {
+      run: () => handleUpscale({ model: upscaler, scale: upscaleScale, refine: true }),
+      disabled: !canAct || !upscaler,
+      tip: !upscaler ? 'Enhance needs an upscale model — add one in Preferences → Models' : canAct ? `Enhance — upscale ${upscaleScale}× and redraw fine detail` : notReadyTip,
+    },
+    vary: {
+      run: (alt?: boolean) => handleVary(alt ? 'strong' : 'subtle'),
+      disabled: !canAct,
+      tip: canAct ? 'Vary — a close variation with a new seed  ·  Shift-click for a stronger one' : notReadyTip,
+    },
+    upscale: {
+      run: () => handleUpscale({ model: upscaler, scale: upscaleScale, refine: false }),
+      disabled: !canAct || !upscaler,
+      tip: !upscaler ? 'Upscale needs an upscale model — add one in Preferences → Models' : canAct ? `Upscale ${upscaleScale}× with ${shortModelName(upscaler)}` : notReadyTip,
+    },
+    useAsBase: {
+      run: () => void useSelectedAs('img2img', 'Set as the base image — see Image to image'),
+      disabled: !actRecord || runtime.running,
+      tip: actRecord ? 'Use as base image (image to image)' : 'Select an image first',
+    },
+    edit: {
+      run: () => void useSelectedAs('edit', 'Describe the change in the prompt, then Generate'),
+      disabled: !actRecord || runtime.running || !familyMeta?.supportsEdit,
+      tip: !familyMeta?.supportsEdit ? 'Edit by instruction needs an edit model (e.g. Flux Kontext)' : 'Edit image — describe the change in the prompt',
+    },
+    inpaint: {
+      run: () => void useSelectedAs('outpaint', 'Choose how far to extend in Image to image'),
+      disabled: !actRecord || runtime.running,
+      tip: 'Inpaint / extend — grows the canvas for now; painting a mask comes with the mask editor',
+    },
+  };
+  const ctxRecord = ctxMenu ? items.find((i) => i.id === ctxMenu.recordId) ?? null : null;
+  const ctxItems: CtxItem[] = ctxRecord && ctxMenu
+    ? [
+        { label: 'Reuse prompt', onClick: () => reusePromptOnly(ctxRecord) },
+        { label: 'Reuse all settings', onClick: () => reuseSettings(ctxRecord) },
+        { label: 'Copy prompt', onClick: () => void copyText(ctxRecord.settings.userPrompt ?? ctxRecord.settings.prompt, 'Prompt') },
+        {
+          label: 'Show details',
+          hint: 'I',
+          onClick: () => {
+            selectItem(ctxRecord, ctxMenu.index);
+            setDetailsOpen(true);
+          },
+        },
+        'sep',
+        {
+          label: 'Use as base image',
+          disabled: runtime.running,
+          onClick: () => {
+            selectItem(ctxRecord, ctxMenu.index);
+            void setSourceFromGallery(ctxRecord, ctxMenu.index).then((ok) => ok && flash('Set as the base image — see Image to image', 2600));
+          },
+        },
+        { label: favorites.has(ctxRecord.id) ? 'Unpin' : 'Pin', hint: 'F', onClick: () => toggleFavorite(ctxRecord) },
+        { label: 'Copy image', onClick: () => void copyImageToClipboard(ctxRecord.images[ctxMenu.index] ?? ctxRecord.images[0]) },
+        { label: 'Download PNG', onClick: () => downloadImage(ctxRecord.images[ctxMenu.index] ?? ctxRecord.images[0]) },
+        'sep',
+        { label: 'Delete', hint: 'Del', danger: true, onClick: () => deleteRecords([ctxRecord.id]) },
+      ]
+    : [];
+
+  // Studio keys: arrows walk the shown images, I toggles details, Delete removes
+  const studioKeys = useRef<(e: KeyboardEvent) => void>(() => {});
+  studioKeys.current = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || uiSettingsOpen || document.querySelector('[role="menu"], [role="dialog"]')) return;
+    const list = historyThumbs.filter((x) => x.entry.kind !== 'failed');
+    const at = list.findIndex((x) => x.id === selectedTileId);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (!list.length) return;
+      e.preventDefault();
+      let next = at;
+      if (e.key === 'ArrowLeft') next = Math.max(0, at - 1);
+      else if (e.key === 'ArrowRight') next = at < 0 ? 0 : Math.min(list.length - 1, at + 1);
+      else {
+        // Up/Down jump a whole generation
+        const cur = list[at]?.entry.key;
+        const keys = [...new Set(list.map((x) => x.entry.key))];
+        const ki = cur ? keys.indexOf(cur) : -1;
+        const nk = keys[e.key === 'ArrowUp' ? Math.max(0, ki - 1) : Math.min(keys.length - 1, ki + 1)];
+        next = list.findIndex((x) => x.entry.key === nk);
+      }
+      const n = list[next];
+      if (n) pickTile(n.entry, n.index, true);
+    } else if (e.key.toLowerCase() === 'i') {
+      setDetailsOpen((o) => !o);
+    } else if (e.key === 'Escape' && detailsOpen && !runtime.running) {
+      setDetailsOpen(false);
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && actRecord) {
+      e.preventDefault();
+      deleteRecords([actRecord.id]);
+    }
+  };
+  useEffect(() => {
+    if (!(variant === 'studio' && !narrow)) return;
+    const onKey = (e: KeyboardEvent) => studioKeys.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [variant, narrow]);
+
+  // A job starting: select and show its tile (Preferences → Jump to newest)
+  const lastActive = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeQueueId || activeQueueId === lastActive.current) return;
+    lastActive.current = activeQueueId;
+    if (!uiSettings.jumpToNewest || !(variant === 'studio' && !narrow)) return;
+    setPlaneSel('running:0');
+    requestFocus('running:0');
+  }, [activeQueueId, narrow, requestFocus, uiSettings.jumpToNewest, variant]);
+
+  const planeToast = pendingDelete
+    ? {
+        text: pendingDelete.length > 1 ? `${pendingDelete.length} generations deleted` : 'Deleted',
+        action: {
+          label: 'Undo',
+          run: () => {
+            const restored = undoDelete()[0];
+            if (restored) {
+              selectItem(restored);
+              requestFocus(tileId(restored.id, 0));
+            }
+          },
+        },
+      }
+    : copyFlash
+      ? { text: copyFlash }
+      : null;
+
+  const planeOverlay =
+    comfyOk === false ? (
+      <div className="st-errcard" style={{ position: 'absolute', left: '50%', top: 84, transform: 'translateX(-50%)', width: 380, borderColor: 'var(--s-line)', zIndex: 6 }} role="alert">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <span className="st-dot" style={{ background: '#e5534b' }} /> ComfyUI is offline
+        </div>
+        <span className="text-[12.5px] leading-snug" style={{ color: 'var(--s-muted)' }}>
+          {remoteMode ? 'Start ComfyUI on the remote host — Darkroom reconnects on its own.' : 'Start ComfyUI to generate. Your images stay browsable meanwhile.'}
+        </span>
+        {!remoteMode ? (
+          <div className="flex justify-end">
+            <button type="button" className="st-pill st-pill-accent" disabled={startingComfy} onClick={() => void handleStartComfy()}>
+              {startingComfy ? 'Starting…' : 'Start ComfyUI'}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    ) : planeEntries.length === 0 && !histLoading ? (
+      <div className="st-hint">
+        {readiness.nothingInstalled ? (
+          <>
+            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>Add a model to start</span>
+            <span className="text-[13px]">Install a checkpoint or a diffusion stack, then write a prompt and press Generate.</span>
+            <button type="button" className="st-pill st-pill-accent mt-2" onClick={() => openAddModel()}>Add model</button>
+          </>
+        ) : histQuery || histModel !== 'all' || pinnedOnly ? (
+          <>
+            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>No images match</span>
+            <button type="button" className="st-pill mt-2" onClick={() => { setHistQuery(''); setHistModel('all'); setPinnedOnly(false); }}>Clear filters</button>
+          </>
+        ) : (
+          <>
+            <span className="text-[15px] font-semibold" style={{ color: 'var(--s-text)' }}>No images yet</span>
+            <span className="text-[13px]">Write a prompt on the left and press Generate (Ctrl ↵).</span>
+          </>
+        )}
+      </div>
+    ) : null;
+
+  const studioPlane = (
+    <ImagePlane
+      entries={planeEntries}
+      selectedId={selectedTileId}
+      onSelect={(t: Tile) => pickTile(t.entry, t.index, t.entry.kind === 'failed')}
+      focus={planeFocus}
+      onContext={(t, x, y) => {
+        if (t.entry.kind !== 'record') return;
+        selectItem(t.entry.record, t.index);
+        setCtxMenu({ x, y, recordId: t.entry.record.id, index: t.index });
+      }}
+      actions={planeActions}
+      info={
+        actRecord && selectedImageName
+          ? {
+              seed: actRecord.settings.seed ?? null,
+              pinned: favorites.has(actRecord.id),
+              onPin: () => toggleFavorite(actRecord),
+              onCopyImage: () => void copyImageToClipboard(selectedImageName),
+              onDownload: () => downloadImage(selectedImageName),
+              onCopySeed: () => void copyText(String(actRecord.settings.seed), 'Seed'),
+            }
+          : null
+      }
+      compare={parentRecord?.images[0] && actRecord ? { src: imageUrl(parentRecord.images[0]), kind: derivedKind(actRecord.settings) } : null}
+      failedActions={{
+        retry: (f) => {
+          setFailedJobs((prev) => prev.filter((x) => x.id !== f.id));
+          enqueueJob(f.settings, f.label);
+        },
+        dismiss: (f) => setFailedJobs((prev) => prev.filter((x) => x.id !== f.id)),
+        copy: (f) => void copyText(`${f.label}\n\n${f.error}`, 'Error'),
+      }}
+      progress={runProgress}
+      toast={planeToast}
+      background={uiSettings.canvasBackground}
+      overlay={planeOverlay}
+      onDropFile={(file) => void applyDroppedSettings(file)}
+    />
+  );
+
+  const studioHistory = (
+    <HistoryPanel
+      thumbs={historyThumbs}
+      total={items.reduce((a, r) => a + r.images.length, 0)}
+      selectedId={selectedTileId}
+      onPick={(t) => pickTile(t.entry, t.index, true)}
+      onContext={(t, x, y) => {
+        if (t.entry.kind !== 'record') return;
+        selectItem(t.entry.record, t.index);
+        setCtxMenu({ x, y, recordId: t.entry.record.id, index: t.index });
+      }}
+      isPinned={(id) => favorites.has(id)}
+      query={histQuery}
+      onQuery={setHistQuery}
+      models={histModels}
+      model={histModel}
+      onModel={setHistModel}
+      pinnedOnly={pinnedOnly}
+      onPinnedOnly={setPinnedOnly}
+      pinnedCount={items.filter((i) => favorites.has(i.id)).reduce((a, r) => a + r.images.length, 0)}
+      onDownload={(list) => {
+        const files = list
+          .filter((t) => t.entry.kind === 'record')
+          .map((t) => (t.entry.kind === 'record' ? t.entry.record.images[t.index] : ''))
+          .filter(Boolean);
+        if (files.length === 1) {
+          downloadImage(files[0]);
+          return;
+        }
+        flash(`Preparing ${files.length} images…`, 4000);
+        void downloadZip(
+          files.map((f) => ({ url: imageUrl(f), name: f })),
+          `darkroom-${new Date().toISOString().slice(0, 10)}.zip`,
+        )
+          .then(() => flash('Download ready'))
+          .catch(() => flash('Download failed'));
+      }}
+      onDelete={deleteRecords}
+      onPin={(ids, pin) =>
+        setFavorites((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) {
+            if (pin) next.add(id);
+            else next.delete(id);
+          }
+          return next;
+        })
+      }
+      loading={histLoading}
+    />
+  );
+
   const stageNode = (
     <MainStage>
       <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2214,9 +2644,21 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
       {studio ? (
         <StudioShell
           controls={renderStudioControls()}
-          stage={stageNode}
-          history={<Gallery {...historyShared} orientation="vertical" showInfo={false} showHeader={false} />}
-          historyCount={items.length}
+          stage={studioPlane}
+          history={studioHistory}
+          historyCount={items.reduce((a, r) => a + r.images.length, 0)}
+          details={
+            detailsOpen ? (
+              <DetailsPanel
+                record={actRecord}
+                size={actRecord ? outputSize(actRecord.settings) : null}
+                onClose={() => setDetailsOpen(false)}
+                onCopy={(text, what) => void copyText(text, what)}
+                onReuseAll={() => actRecord && reuseSettings(actRecord)}
+                onReusePrompt={() => actRecord && reusePromptOnly(actRecord)}
+              />
+            ) : null
+          }
           comfyOk={comfyOk}
           systemLabel={systemStats?.ok ? systemStats.label : null}
           vramTooltip={systemStats?.vramTooltip}
@@ -2254,11 +2696,12 @@ export default function App({ variant = 'studio' }: { variant?: 'studio' | 'clas
           historyMobile={<Gallery {...historyShared} orientation="horizontal" showInfo={false} />}
         />
       )}
+      {studio && ctxMenu && ctxItems.length ? <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxItems} onClose={() => setCtxMenu(null)} /> : null}
       <UndoToast
-        open={Boolean(pendingDelete)}
+        open={Boolean(pendingDelete) && !studio}
         message="Generation deleted"
         onUndo={() => {
-          const restored = undoDelete();
+          const restored = undoDelete()[0];
           if (restored?.images[0]) {
             setSelectedId(restored.id);
             setViewImages(restored.images);

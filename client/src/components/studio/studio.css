@@ -831,4 +831,240 @@ html[data-ui='studio'] .legacy-tip {
     border: 1px solid rgba(226, 180, 79, 0.35);
     font-size: 12.5px;
   }
+
+  /* ---------- Image plane ---------- */
+  .st-float {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 14px;
+    background: var(--s-panel);
+    border: 1px solid var(--s-line);
+    box-shadow: var(--s-shadow);
+    z-index: 5;
+  }
+  .st-vsep {
+    width: 1px;
+    height: 24px;
+    margin: 0 4px;
+    background: var(--s-line);
+  }
+  .st-tile {
+    position: absolute;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--s-ground);
+    cursor: pointer;
+    box-shadow: 0 0 0 calc(1px / var(--z, 1)) var(--s-line);
+    transition: box-shadow 0.15s;
+  }
+  .st-tile img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+  .st-tile:hover {
+    box-shadow: 0 0 0 calc(2px / var(--z, 1)) var(--s-line);
+  }
+  .st-tile.on {
+    box-shadow:
+      0 0 0 calc(2px / var(--z, 1)) var(--s-accent),
+      0 calc(20px / var(--z, 1)) calc(60px / var(--z, 1)) rgba(0, 0, 0, 0.55);
+  }
+  .st-tile.failed {
+    box-shadow: 0 0 0 calc(2px / var(--z, 1)) rgba(229, 83, 75, 0.85);
+  }
+  .st-noise {
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-radial-gradient(circle at 17% 32%, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 3px),
+      repeating-radial-gradient(circle at 71% 64%, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 4px);
+    transition: background-color 0.3s, backdrop-filter 0.3s;
+  }
+  .st-compare {
+    position: absolute;
+    z-index: 3;
+    overflow: hidden;
+    border-radius: 6px;
+    cursor: ew-resize;
+    touch-action: none;
+    outline: none;
+  }
+  .st-compare img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: var(--s-ground);
+    pointer-events: none;
+  }
+  .st-compare-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+  .st-compare-knob {
+    position: absolute;
+    top: 50%;
+    width: 34px;
+    height: 34px;
+    margin: -17px 0 0 -17px;
+    border-radius: 50%;
+    background: #fff;
+    color: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+  .st-compare-tag {
+    position: absolute;
+    top: 10px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .st-errcard {
+    position: absolute;
+    z-index: 4;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--s-panel);
+    border: 1px solid rgba(229, 83, 75, 0.5);
+    box-shadow: var(--s-shadow);
+  }
+  .st-errdot {
+    position: absolute;
+    z-index: 4;
+    transform: translate(-50%, -50%);
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--s-panel);
+    background: #b8433d;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--s-shadow);
+  }
+  .st-pill.st-pill-accent {
+    background: var(--s-accent);
+    color: var(--s-accent-ink);
+    border-color: transparent;
+  }
+  .st-toast {
+    position: absolute;
+    left: 50%;
+    z-index: 6;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 36px;
+    padding: 6px 6px 6px 14px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--s-raised2);
+    border: 1px solid var(--s-line);
+    font-size: 13px;
+    white-space: nowrap;
+    box-shadow: var(--s-shadow);
+  }
+  .st-hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 48px);
+    text-align: center;
+    color: var(--s-muted);
+  }
+
+  /* ---------- History ---------- */
+  .st-hthumb {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--s-ground);
+    box-shadow: inset 0 0 0 1px var(--s-line);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition: outline-color 0.15s;
+  }
+  .st-hthumb:hover {
+    outline-color: var(--s-line);
+  }
+  .st-hthumb.on {
+    outline-color: var(--s-accent);
+  }
+  .st-hthumb img {
+    position: absolute;
+    pointer-events: none;
+  }
+  .st-hbadge {
+    position: absolute;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 11px;
+  }
+  .st-hcheck {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    width: 20px;
+    height: 20px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    color: var(--s-accent-ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  }
+  .st-tile-pin {
+    position: absolute;
+    top: calc(8px / var(--z, 1));
+    right: calc(8px / var(--z, 1));
+    width: calc(18px / var(--z, 1));
+    height: calc(18px / var(--z, 1));
+    color: var(--s-accent);
+    stroke: rgba(0, 0, 0, 0.5);
+    stroke-width: 1;
+    z-index: 1;
+  }
 }

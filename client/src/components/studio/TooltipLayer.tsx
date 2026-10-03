@@ -20,7 +20,8 @@ const TIP_SELECTOR = '[data-tip], [title], button[aria-label], [role="button"][a
 function tipTarget(from: EventTarget | null): Element | null {
   const el = (from as Element | null)?.closest?.(TIP_SELECTOR);
   if (!el) return null;
-  if (el.hasAttribute('data-tip')) return el;
+  // data-tip="" opts out (e.g. image tiles, whose label is for screen readers only)
+  if (el.hasAttribute('data-tip')) return el.getAttribute('data-tip') ? el : null;
   const title = el.getAttribute('title');
   if (title) {
     el.setAttribute('data-tip', title);

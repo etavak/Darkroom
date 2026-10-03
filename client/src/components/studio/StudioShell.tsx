@@ -12,8 +12,11 @@ const HISTORY = { min: 120, max: 440, initial: 176 };
 type Props = {
   /** Left column body (controls + pinned Generate footer) */
   controls: ReactNode;
+  /** The image plane (renders its own <main>) */
   stage: ReactNode;
   history: ReactNode;
+  /** Details panel between the plane and History (null when closed) */
+  details?: ReactNode;
   historyCount: number;
   comfyOk: boolean | null;
   systemLabel?: string | null;
@@ -36,6 +39,7 @@ export function StudioShell({
   controls,
   stage,
   history,
+  details,
   historyCount,
   comfyOk,
   systemLabel,
@@ -216,9 +220,8 @@ export function StudioShell({
         </aside>
       )}
 
-      <main className="st-plane" aria-label="Image plane">
-        {stage}
-      </main>
+      {stage}
+      {details}
 
       {historyHidden ? null : ui.studioHistoryCollapsed ? (
         <aside
