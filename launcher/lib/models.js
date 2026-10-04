@@ -92,6 +92,10 @@ export function normalizeDraggedPath(raw) {
   let p = String(raw).trim();
   if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
     p = p.slice(1, -1);
+  } else if (process.platform !== 'win32') {
+    // macOS Terminal escapes spaces and brackets in a dragged path ("My\\ Models/a\\ \\(1\\).safetensors");
+    // on Windows a backslash is the path separator, and drags arrive quoted instead
+    p = p.replace(/\\(.)/g, '$1');
   }
   // path.resolve('') would be the cwd — keep "no path" distinguishable
   if (!p) return '';

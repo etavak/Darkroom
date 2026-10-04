@@ -10,6 +10,17 @@ import { ensureLogsDir, logsDir } from './paths.js';
 
 const WEIGHT_RE = /\.(safetensors|ckpt|pt|pth|bin|gguf)$/i;
 
+/** Civitai's sites share one account and API (civitai.red is the mature-content site; .green redirects to .com). */
+export const isCivitaiHost = (/** @type {string} */ host) => /(^|\.)civitai\.(com|red|green)$/i.test(host);
+/** Hugging Face itself and its short domain (keys only ever go to these). */
+export const isHuggingFaceHost = (/** @type {string} */ host) => /(^|\.)(huggingface\.co|hf\.co)$/i.test(host);
+/** hf-mirror.com: a third-party Hugging Face mirror (popular where huggingface.co is blocked) — never sent a token. */
+const isHfMirrorHost = (/** @type {string} */ host) => /(^|\.)hf-mirror\.com$/i.test(host);
+const isModelScopeHost = (/** @type {string} */ host) => /(^|\.)modelscope\.(cn|ai)$/i.test(host);
+
+export const SUPPORTED_SITES =
+  'Civitai (civitai.com / .red / .green), Hugging Face (or hf-mirror.com), ModelScope, GitHub, OpenModelDB, Google Drive, Dropbox, or a direct file link';
+
 /**
  * @param {NodeJS.WritableStream} stream
  * @param {number} transferred
@@ -46,7 +57,7 @@ function writeProgress(stream, transferred, total) {
  * @param {boolean} sentKey
  */
 export function downloadErrorMessage(code, host, sentKey) {
-  if ((code === 401 || code === 403) && /(^|\.)civitai\.com$/i.test(host)) {
+  if ((code === 401 || code === 403) && isCivitaiHost(host)) {
     if (!sentKey && getConfig().civitaiTokenInvalid) {
       return `The saved Civitai key isn't a valid key (it looks like a link or has spaces), so it wasn't used — and this file needs sign-in (HTTP ${code}). Paste the key itself from civitai.com → Account settings → API keys.`;
     }
@@ -54,7 +65,7 @@ export function downloadErrorMessage(code, host, sentKey) {
       ? `Civitai refused your API key (HTTP ${code}). Check the key in Preferences → Models & folders — or the file is early access and needs a supporter account.`
       : `No Civitai API key is saved, and this file's creator requires sign-in to download it (HTTP ${code}). Add your key in Preferences → Models & folders — get one at civitai.com → Account settings → API keys.`;
   }
-  if ((code === 401 || code === 403) && /(^|\.)huggingface\.co$/i.test(host)) {
+  if ((code === 401 || code === 403) && (isHuggingFaceHost(host) || isHfMirrorHost(host))) {
     return sentKey
       ? `Hugging Face refused the download (HTTP ${code}) — accept the model's licence on its page, then check your token.`
       : `No Hugging Face token is saved, and this file is gated (HTTP ${code}). Accept its licence on the model page, then add a token in Preferences → Models & folders.`;
@@ -105,7 +116,7 @@ export function downloadFile(url, destPath, opts = {}) {
             res.resume();
             reject(
               new Error(
-                'URL returned HTML instead of a model file. Use a direct file link, or a Hugging Face / Civitai model page.',
+                `The link opened a web page instead of a model file. Paste a model page from ${SUPPORTED_SITES}.`,
               ),
             );
             return;
@@ -121,12 +132,22 @@ export function downloadFile(url, destPath, opts = {}) {
             if (!opts.quiet) writeProgress(process.stdout, transferred, total);
           });
           res.pipe(out);
+          res.on('aborted', () => out.destroy(new Error('The download was cut off — try again.')));
           out.on('finish', () => {
             if (!opts.quiet) process.stdout.write('\n');
+            // a dropped connection can end the stream early; never keep half a file
+            if (total > 0 && transferred !== total) {
+              fs.rmSync(tmp, { force: true });
+              reject(new Error(`The download was cut off at ${formatBytes(transferred)} of ${formatBytes(total)} — try again.`));
+              return;
+            }
             fs.renameSync(tmp, destPath);
             resolve({ destPath, bytes: transferred });
           });
-          out.on('error', reject);
+          out.on('error', (err) => {
+            fs.rmSync(tmp, { force: true });
+            reject(err);
+          });
         },
       );
       req.on('error', reject);
@@ -165,31 +186,246 @@ export function downloadFile(url, destPath, opts = {}) {
  */
 
 /**
+ * Rewrite a share / viewer link into one that downloads the file itself
+ * (Google Drive, Dropbox, GitHub "blob" pages). Other links come back unchanged.
+ * @param {string} pageUrl
+ */
+export function directLink(pageUrl) {
+  const u = new URL(pageUrl);
+  const host = u.hostname.toLowerCase();
+  if (host === 'drive.google.com' || host === 'docs.google.com') {
+    const id = u.pathname.match(/\/file\/d\/([\w-]+)/)?.[1] || u.searchParams.get('id');
+    if (id) return `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+  }
+  if (/(^|\.)dropbox\.com$/.test(host)) {
+    u.searchParams.set('dl', '1');
+    return u.toString();
+  }
+  if (host === 'github.com') {
+    const m = u.pathname.match(/^\/([^/]+)\/([^/]+)\/blob\/(.+)$/);
+    if (m) return `https://github.com/${m[1]}/${m[2]}/raw/${m[3]}`;
+  }
+  return pageUrl;
+}
+
+/** The file name a server gives in Content-Disposition, if any. */
+export function dispositionFilename(/** @type {string | null} */ header) {
+  if (!header) return null;
+  const star = header.match(/filename\*\s*=\s*(?:UTF-8|utf-8)?''([^;]+)/i);
+  if (star) {
+    try {
+      return path.basename(decodeURIComponent(star[1].trim().replace(/^"|"$/g, '')));
+    } catch {
+      // fall through to the plain form
+    }
+  }
+  const plain = header.match(/filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i);
+  const name = (plain?.[1] ?? plain?.[2] ?? '').trim();
+  return name ? path.basename(name) : null;
+}
+
+/**
+ * Peek at a link without downloading it: the file name it would save as and what it is.
+ * Used for links whose path doesn't end in a file name (Drive, signed storage URLs…).
+ * @param {string} url
+ */
+async function probeLink(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': 'Darkroom/1.0', Range: 'bytes=0-0' }, redirect: 'follow' });
+  void res.body?.cancel();
+  if (!res.ok) throw new Error(downloadErrorMessage(res.status, new URL(res.url || url).hostname, false));
+  const finalName = path.basename(new URL(res.url || url).pathname);
+  return {
+    filename: dispositionFilename(res.headers.get('content-disposition')) || (WEIGHT_RE.test(finalName) ? finalName : null),
+    html: /text\/html/i.test(res.headers.get('content-type') || ''),
+  };
+}
+
+/**
+ * A file name every OS accepts. Windows refuses \\ / : * ? " < > | and control characters,
+ * device names (CON, NUL, COM1…) and a trailing dot or space — names macOS takes happily, so a
+ * download named that way would only fail on Windows.
+ * @param {string} name
+ * @param {string} [fallback]
+ */
+export function safeFileName(name, fallback = 'model.safetensors') {
+  let n = [...String(name ?? '')]
+    .map((ch) => (ch.charCodeAt(0) < 32 ? '_' : ch))
+    .join('')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/[. ]+$/, '')
+    .trim();
+  if (/^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$/i.test(n)) n = `_${n}`;
+  return n || fallback;
+}
+
+/**
+ * Resolve a model link to a download (see SUPPORTED_SITES), with file names safe on every OS.
  * @param {string} pageUrl
  * @returns {Promise<ResolvedModel>}
  */
 export async function resolveModelUrl(pageUrl) {
+  const meta = await resolveModelUrlRaw(pageUrl);
+  return {
+    ...meta,
+    filename: safeFileName(meta.filename),
+    candidates: meta.candidates?.map((c) => ({ ...c, filename: safeFileName(c.filename) })),
+    companions: meta.companions?.map((c) => ({ ...c, filename: safeFileName(c.filename) })),
+  };
+}
+
+/**
+ * @param {string} pageUrl
+ * @returns {Promise<ResolvedModel>}
+ */
+async function resolveModelUrlRaw(pageUrl) {
   const cfg = getConfig();
-  if (/civitai\.com/i.test(pageUrl)) {
-    return resolveCivitai(pageUrl, cfg.civitaiToken);
+  let u;
+  try {
+    u = new URL(pageUrl.trim());
+  } catch {
+    throw new Error(`That isn't a link. Paste a model page from ${SUPPORTED_SITES}.`);
   }
-  if (/huggingface\.co/i.test(pageUrl)) {
-    return resolveHuggingFace(pageUrl, cfg.hfToken);
+  const host = u.hostname.toLowerCase();
+
+  if (isCivitaiHost(host)) return resolveCivitai(u.toString(), cfg.civitaiToken);
+  if (isHuggingFaceHost(host)) return resolveHuggingFace(u.toString(), cfg.hfToken, 'https://huggingface.co');
+  if (isHfMirrorHost(host)) return resolveHuggingFace(u.toString(), '', `https://${host}`);
+  if (isModelScopeHost(host)) return resolveModelScope(u);
+  if (host === 'openmodeldb.info') return resolveOpenModelDb(u);
+  if (host === 'github.com' && /^\/[^/]+\/[^/]+\/releases(\/(tag\/[^/]+|latest))?\/?$/.test(u.pathname)) {
+    return resolveGitHubRelease(u);
   }
-  // Direct file URL
-  const u = new URL(pageUrl);
-  const filename = path.basename(u.pathname) || 'model.safetensors';
+
+  // A direct file link, or a share link that becomes one
+  const downloadUrl = directLink(u.toString());
+  let filename = path.basename(new URL(downloadUrl).pathname);
   if (!WEIGHT_RE.test(filename)) {
-    throw new Error(
-      'That looks like a page URL, not a model file. Paste a Hugging Face / Civitai model page, or a direct .safetensors link.',
-    );
+    const probe = await probeLink(downloadUrl).catch((err) => {
+      throw new Error(`Couldn't open that link: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    if (!probe.filename || !WEIGHT_RE.test(probe.filename)) {
+      throw new Error(
+        probe.html
+          ? `That's a web page, not a model file. Paste a model page from ${SUPPORTED_SITES}.`
+          : `That link isn't a model file (.safetensors, .ckpt, .pt, .pth, .bin or .gguf).`,
+      );
+    }
+    filename = probe.filename;
   }
   return {
-    downloadUrl: pageUrl,
+    downloadUrl,
     filename,
     triggerWords: [],
     previewUrl: null,
     modelName: filename,
+  };
+}
+
+/**
+ * ModelScope (modelscope.cn / modelscope.ai) — the Hugging Face of China; same repo layout.
+ * Accepts the repo page, a folder or a single file link.
+ * @param {URL} u
+ * @returns {Promise<ResolvedModel>}
+ */
+async function resolveModelScope(u) {
+  const parts = u.pathname.split('/').filter(Boolean);
+  const at = parts.indexOf('models');
+  if (at < 0 || parts.length < at + 3) throw new Error('Unrecognised ModelScope link — expected modelscope.cn/models/owner/name');
+  const repoId = `${parts[at + 1]}/${parts[at + 2]}`;
+  const rest = parts.slice(at + 3);
+  let rev = 'master';
+  /** @type {string | null} */
+  let filePath = null;
+  // …/resolve/<rev>/<file>, …/file/view/<rev>/<file>, …/files/<folder>
+  if (rest[0] === 'resolve' && rest[1]) [rev, filePath] = [rest[1], rest.slice(2).join('/')];
+  else if (rest[0] === 'file' && rest[1] === 'view' && rest[2]) [rev, filePath] = [rest[2], rest.slice(3).join('/')];
+  else if (rest[0] === 'files' && rest.length > 1) filePath = rest.slice(1).join('/');
+  if (filePath) filePath = decodeURIComponent(filePath);
+  const origin = `https://${u.hostname}`;
+  const fileUrl = (/** @type {string} */ p) => `${origin}/models/${repoId}/resolve/${encodeURIComponent(rev)}/${p.split('/').map(encodeURIComponent).join('/')}`;
+
+  if (filePath && WEIGHT_RE.test(filePath)) {
+    return { downloadUrl: fileUrl(filePath), filename: path.basename(filePath), triggerWords: [], previewUrl: null, modelName: `${repoId}/${filePath}` };
+  }
+  const res = await httpGetJson(`${origin}/api/v1/models/${repoId}/repo/files?Recursive=true&Revision=${encodeURIComponent(rev)}`, {
+    headers: { 'User-Agent': 'Darkroom/1.0' },
+  });
+  const files = res.json?.Data?.Files;
+  if (res.status !== 200 || !Array.isArray(files)) throw new Error(`ModelScope listing failed (${res.status}). Check the link.`);
+  const prefix = filePath ? `${filePath.replace(/\/$/, '')}/` : '';
+  const candidates = files
+    .filter((f) => f?.Type === 'blob' && typeof f.Path === 'string' && WEIGHT_RE.test(f.Path) && (!prefix || f.Path.startsWith(prefix)))
+    .filter((f) => !(Number(f.Size) > 0 && Number(f.Size) < 1024 * 1024))
+    .map((f) => ({ path: f.Path, size: Number(f.Size) || 0, downloadUrl: fileUrl(f.Path), filename: path.basename(f.Path) }))
+    .sort((a, b) => b.size - a.size);
+  return pickCandidate(candidates, repoId);
+}
+
+/**
+ * A GitHub release page — lists its model-file assets (upscalers often ship this way).
+ * @param {URL} u
+ * @returns {Promise<ResolvedModel>}
+ */
+async function resolveGitHubRelease(u) {
+  const [owner, repo, , kind, tag] = u.pathname.split('/').filter(Boolean);
+  const which = kind === 'tag' && tag ? `tags/${encodeURIComponent(decodeURIComponent(tag))}` : 'latest';
+  const res = await httpGetJson(`https://api.github.com/repos/${owner}/${repo}/releases/${which}`, {
+    headers: { 'User-Agent': 'Darkroom/1.0', Accept: 'application/vnd.github+json' },
+  });
+  if (res.status !== 200 || !res.json) throw new Error(`GitHub release lookup failed (${res.status}).`);
+  const candidates = (res.json.assets || [])
+    .filter((a) => typeof a?.name === 'string' && WEIGHT_RE.test(a.name) && a.browser_download_url)
+    .map((a) => ({ path: a.name, size: Number(a.size) || 0, downloadUrl: a.browser_download_url, filename: a.name }))
+    .sort((a, b) => b.size - a.size);
+  return pickCandidate(candidates, `${owner}/${repo} ${res.json.tag_name || ''}`.trim());
+}
+
+/**
+ * OpenModelDB (openmodeldb.info) — the upscaler catalogue. Its entries link out to GitHub,
+ * Hugging Face, Drive or plain storage; the first one we can download is used.
+ * @param {URL} u
+ * @returns {Promise<ResolvedModel>}
+ */
+async function resolveOpenModelDb(u) {
+  const id = u.pathname.match(/^\/models\/([^/]+)/)?.[1];
+  if (!id) throw new Error('Unrecognised OpenModelDB link — open a model page (openmodeldb.info/models/…)');
+  const res = await httpGetJson(
+    `https://raw.githubusercontent.com/OpenModelDB/open-model-database/main/data/models/${encodeURIComponent(decodeURIComponent(id))}.json`,
+    { headers: { 'User-Agent': 'Darkroom/1.0' } },
+  );
+  if (res.status !== 200 || !res.json) throw new Error(`OpenModelDB lookup failed (${res.status}).`);
+  const urls = (res.json.resources || [])
+    .filter((r) => r?.platform === 'pytorch' || /^(pth|safetensors)$/i.test(String(r?.type)))
+    .flatMap((r) => r.urls || []);
+  for (const link of urls) {
+    try {
+      const host = new URL(link).hostname;
+      // folders and sites that need a browser (Mega, Icedrive, Drive folders) can't be fetched
+      if (/(^|\.)(mega\.nz|icedrive\.net)$/i.test(host) || /\/folders\//.test(link)) continue;
+      const found = await resolveModelUrl(link);
+      return { ...found, modelName: res.json.name ? `${res.json.name} (${id})` : found.modelName };
+    } catch {
+      // try the next mirror
+    }
+  }
+  throw new Error(`None of this model's download links can be fetched automatically (${urls.join(', ') || 'none listed'}). Download it in your browser, then add the file with "Local path" or "Or upload a copy".`);
+}
+
+/**
+ * @param {{ path: string, size: number, downloadUrl: string, filename: string }[]} candidates biggest first
+ * @param {string} modelName
+ * @returns {ResolvedModel}
+ */
+function pickCandidate(candidates, modelName) {
+  if (!candidates.length) throw new Error(`No model files (.safetensors, .pth…) found in ${modelName}`);
+  const first = candidates[0];
+  return {
+    downloadUrl: first.downloadUrl,
+    filename: first.filename,
+    triggerWords: [],
+    previewUrl: null,
+    modelName: candidates.length === 1 ? `${modelName}/${first.path}` : modelName,
+    candidates,
   };
 }
 
@@ -199,10 +435,13 @@ export async function resolveModelUrl(pageUrl) {
  */
 async function resolveCivitai(pageUrl, token) {
   const u = new URL(pageUrl);
+  // civitai.red has the same API (and shows mature models .com hides); .green just redirects to .com
+  const api = /(^|\.)civitai\.red$/i.test(u.hostname) ? 'https://civitai.red' : 'https://civitai.com';
   const versionParam = u.searchParams.get('modelVersionId');
   let versionId = versionParam;
-  const modelMatch = u.pathname.match(/\/models\/(\d+)/);
-  const versionMatch = u.pathname.match(/\/model-versions\/(\d+)/);
+  const downloadMatch = u.pathname.match(/\/api\/download\/models\/(\d+)/);
+  const modelMatch = downloadMatch ? null : u.pathname.match(/\/models\/(\d+)/);
+  const versionMatch = u.pathname.match(/\/model-versions\/(\d+)/) || downloadMatch;
   if (versionMatch) versionId = versionMatch[1];
 
   /** @type {any} */
@@ -213,7 +452,7 @@ async function resolveCivitai(pageUrl, token) {
   };
 
   if (versionId) {
-    const res = await httpGetJson(`https://civitai.com/api/v1/model-versions/${versionId}`, {
+    const res = await httpGetJson(`${api}/api/v1/model-versions/${versionId}`, {
       headers,
     });
     if (res.status !== 200 || !res.json) {
@@ -225,7 +464,7 @@ async function resolveCivitai(pageUrl, token) {
     }
     version = res.json;
   } else if (modelMatch) {
-    const res = await httpGetJson(`https://civitai.com/api/v1/models/${modelMatch[1]}`, {
+    const res = await httpGetJson(`${api}/api/v1/models/${modelMatch[1]}`, {
       headers,
     });
     if (res.status !== 200 || !res.json) {
@@ -238,7 +477,7 @@ async function resolveCivitai(pageUrl, token) {
     version = res.json.modelVersions?.[0];
     if (!version) throw new Error('No model versions found on Civitai');
   } else {
-    throw new Error('Unrecognized Civitai URL — use a model or model version page');
+    throw new Error('Unrecognised Civitai link — open a model page (civitai.com/models/…)');
   }
 
   const files = Array.isArray(version.files) ? version.files : [];
@@ -290,7 +529,7 @@ function parseHuggingFaceUrl(pageUrl) {
   const u = new URL(pageUrl);
   const parts = u.pathname.split('/').filter(Boolean);
   if (parts.length < 2) {
-    throw new Error('Unrecognized Hugging Face URL — expected huggingface.co/owner/repo');
+    throw new Error('Unrecognised Hugging Face link — expected huggingface.co/owner/repo');
   }
   const owner = parts[0];
   const repo = parts[1];
@@ -311,9 +550,10 @@ function parseHuggingFaceUrl(pageUrl) {
 /**
  * @param {string} pageUrl
  * @param {string} token
+ * @param {string} origin https://huggingface.co, or a mirror (which is never sent the token)
  * @returns {Promise<ResolvedModel>}
  */
-async function resolveHuggingFace(pageUrl, token) {
+async function resolveHuggingFace(pageUrl, token, origin) {
   const { rev, filePath, repoId } = parseHuggingFaceUrl(pageUrl);
   const headers = {
     'User-Agent': 'Darkroom/1.0',
@@ -322,7 +562,7 @@ async function resolveHuggingFace(pageUrl, token) {
 
   // Direct file link: .../blob|resolve/<rev>/<file>
   if (filePath && WEIGHT_RE.test(filePath)) {
-    const downloadUrl = `https://huggingface.co/${repoId}/resolve/${rev}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+    const downloadUrl = `${origin}/${repoId}/resolve/${rev}/${filePath.split('/').map(encodeURIComponent).join('/')}`;
     const filename = path.basename(filePath);
     return {
       downloadUrl,
@@ -335,7 +575,7 @@ async function resolveHuggingFace(pageUrl, token) {
   }
 
   // Repo (or folder) page — list weight files via the HF API
-  const treeUrl = `https://huggingface.co/api/models/${repoId}/tree/${encodeURIComponent(rev || 'main')}?recursive=true`;
+  const treeUrl = `${origin}/api/models/${repoId}/tree/${encodeURIComponent(rev || 'main')}?recursive=true`;
   const res = await httpGetJson(treeUrl, { headers });
   if (res.status !== 200 || !Array.isArray(res.json)) {
     throw new Error(
@@ -358,7 +598,7 @@ async function resolveHuggingFace(pageUrl, token) {
     candidates.push({
       path: entry.path,
       size,
-      downloadUrl: `https://huggingface.co/${repoId}/resolve/${rev}/${entry.path
+      downloadUrl: `${origin}/${repoId}/resolve/${rev}/${entry.path
         .split('/')
         .map(encodeURIComponent)
         .join('/')}`,

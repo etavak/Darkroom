@@ -164,7 +164,7 @@ settingsRouter.get('/diagnostics', async (_req, res) => {
   const disk = getDiskUsage();
   let comfyOk = false;
   try {
-    const r = await fetch(`${config.comfyUrl}/system_stats`);
+    const r = await fetch(`${config.comfyUrl}/system_stats`, { signal: AbortSignal.timeout(5_000) });
     comfyOk = r.ok;
   } catch {
     comfyOk = false;

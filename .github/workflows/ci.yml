@@ -57,3 +57,36 @@ jobs:
         env:
           DARKROOM_FORCE_PORTABLE_NODE: '1'
         run: bash launcher/start-linux.sh --bootstrap-only
+
+      # Work an update leaves for the next start, because Windows locks the running node.exe and
+      # its folder: a listed old Node folder is removed, and a deferred runtime\ move happens,
+      # before Node runs
+      - name: Start file finishes deferred work (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          DARKROOM_FORCE_PORTABLE_NODE: '1'
+        run: |
+          mkdir "dependencies\runtime\node\node-v0.0.1-win-x64"
+          echo node-v0.0.1-win-x64> "dependencies\runtime\node\.remove"
+          call "Start Darkroom (Windows).bat" --bootstrap-only || exit /b 1
+          if exist "dependencies\runtime\node\node-v0.0.1-win-x64" (echo The listed Node folder was not removed & exit /b 1)
+          if exist "dependencies\runtime\node\.remove" (echo .remove was not cleared & exit /b 1)
+          move "dependencies\runtime" "runtime" || exit /b 1
+          type nul > "runtime\.move-to-dependencies"
+          call "Start Darkroom (Windows).bat" --bootstrap-only || exit /b 1
+          if exist "runtime" (echo runtime was not moved into dependencies & exit /b 1)
+          if not exist "dependencies\runtime\node" (echo dependencies\runtime is missing after the move & exit /b 1)
+          if exist "dependencies\runtime\.move-to-dependencies" (echo The move note was left behind & exit /b 1)
+
+      - name: Start file finishes deferred work (macOS / Linux)
+        if: runner.os != 'Windows'
+        env:
+          DARKROOM_FORCE_PORTABLE_NODE: '1'
+          START: ${{ runner.os == 'macOS' && 'Start Darkroom (Mac).command' || 'launcher/start-linux.sh' }}
+        run: |
+          mkdir -p dependencies/runtime/node/node-v0.0.1-test
+          printf 'node-v0.0.1-test\r\n' > dependencies/runtime/node/.remove
+          bash "$START" --bootstrap-only
+          test ! -e dependencies/runtime/node/node-v0.0.1-test
+          test ! -e dependencies/runtime/node/.remove

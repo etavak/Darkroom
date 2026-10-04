@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { createApp } from '../src/app.js';
 import { attachComfyWsProxy } from '../src/ws/comfyProxy.js';
-import { pendingIds, queuedClients, sockets } from './fakeComfy';
+import { frozen, pendingIds, queuedClients, sockets } from './fakeComfy';
 
 let base = '';
 let server: http.Server;
@@ -64,5 +64,22 @@ describe('live progress (fast GPUs)', () => {
     pendingIds.push('someone-elses-job', job.promptId);
     expect(await json(`/api/generate/status/${job.jobId}`)).toEqual({ state: 'queued', ahead: 1 });
     pendingIds.length = 0;
+  });
+});
+
+describe('a frozen ComfyUI', () => {
+  it('starting a job gives up with a clear message instead of waiting forever', async () => {
+    process.env.DARKROOM_COMFY_TIMEOUT_MS = '300';
+    frozen.on = true;
+    try {
+      const started = Date.now();
+      const r = await json('/api/generate', { ...settings, seed: 99 });
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(JSON.stringify(r)).toMatch(/ComfyUI isn't responding/);
+      expect((await json('/api/health')).comfy).toBe(false);
+    } finally {
+      frozen.on = false;
+      delete process.env.DARKROOM_COMFY_TIMEOUT_MS;
+    }
   });
 });

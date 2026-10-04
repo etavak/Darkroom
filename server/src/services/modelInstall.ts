@@ -117,7 +117,7 @@ export async function startDownloadJob(
   const rawKey = (process.env.CIVITAI_TOKEN || readEnvValue('CIVITAI_TOKEN') || '').trim();
   const civitaiKey = /^[A-Za-z0-9_-]{20,200}$/.test(rawKey) ? rawKey : '';
   const headers =
-    job.headers?.Authorization || !civitaiKey || !/(^|\.)civitai\.com$/i.test(safeHost(downloadUrl))
+    job.headers?.Authorization || !civitaiKey || !/(^|\.)civitai\.(com|red|green)$/i.test(safeHost(downloadUrl))
       ? job.headers
       : { ...(job.headers ?? {}), Authorization: `Bearer ${civitaiKey}` };
 

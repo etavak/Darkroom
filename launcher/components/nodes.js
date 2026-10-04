@@ -10,6 +10,7 @@ import {
   getCustomNodesDir,
   getGitBin,
 } from '../lib/paths.js';
+import { comfyStoppedFor } from '../lib/comfy.js';
 import { runCommand } from '../lib/process.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
 import { defaultConfirm } from './types.js';
@@ -91,29 +92,20 @@ export function createNodeComponent(id, meta) {
         }
         const ref = meta.testedRef;
         const git = getGitBin();
-        const args = ['clone', '--depth', '1'];
-        if (ref && ctx.channel !== 'latest') args.push('--branch', ref);
-        args.push(meta.repo, dest);
-        try {
-          await runCommand(git, args, { cwd: custom, stdio: 'inherit' });
-        } catch {
-          await runCommand(git, ['clone', '--depth', '1', meta.repo, dest], {
-            cwd: custom,
-            stdio: 'inherit',
-          });
-        }
-        const python = getComfyPython(process.env.COMFY_DIR || '');
-        const req = path.join(dest, 'requirements.txt');
-        if (fs.existsSync(req)) {
-          await runCommand(python, ['-m', 'pip', 'install', '-r', req], {
-            cwd: dest,
-            stdio: 'inherit',
-          });
-        }
-        const installPy = path.join(dest, 'install.py');
-        if (fs.existsSync(installPy)) {
-          await runCommand(python, [installPy], { cwd: dest, stdio: 'inherit' });
-        }
+        await comfyStoppedFor(ctx, defaultConfirm, async () => {
+          const args = ['clone', '--depth', '1'];
+          if (ref && ctx.channel !== 'latest') args.push('--branch', ref);
+          args.push(meta.repo, dest);
+          try {
+            await runCommand(git, args, { cwd: custom, stdio: 'inherit' });
+          } catch {
+            await runCommand(git, ['clone', '--depth', '1', meta.repo, dest], {
+              cwd: custom,
+              stdio: 'inherit',
+            });
+          }
+          await installNodeRequirements(dest);
+        });
         log.info(`Installed ${meta.dir}`);
       });
     },
@@ -127,10 +119,14 @@ export function createNodeComponent(id, meta) {
           await this.install(ctx);
           return;
         }
-        await withRestorePoint(`node:${id}`, { comfyDir: dest }, async () => {
-          await runCommand(getGitBin(), ['pull', '--ff-only'], { cwd: dest, stdio: 'inherit' });
-          log.info('pulled');
-        });
+        await comfyStoppedFor(ctx, defaultConfirm, () =>
+          withRestorePoint(`node:${id}`, { comfyDir: dest }, async () => {
+            await runCommand(getGitBin(), ['pull', '--ff-only'], { cwd: dest, stdio: 'inherit' });
+            // a pull can add requirements
+            await installNodeRequirements(dest);
+            log.info('pulled');
+          }),
+        );
       });
     },
 
@@ -139,8 +135,11 @@ export function createNodeComponent(id, meta) {
     },
 
     async reinstall(ctx = {}) {
-      await this.uninstall({ ...ctx, confirm: async () => true });
-      await this.install(ctx);
+      // ComfyUI stopped once for both steps
+      await comfyStoppedFor(ctx, defaultConfirm, async () => {
+        await this.uninstall({ ...ctx, confirm: async () => true, comfyStopped: true });
+        await this.install({ ...ctx, comfyStopped: true });
+      });
     },
 
     async uninstall(ctx = {}) {
@@ -151,12 +150,31 @@ export function createNodeComponent(id, meta) {
         const custom = getCustomNodesDir(process.env.COMFY_DIR || '');
         const dest = custom ? path.join(custom, meta.dir) : null;
         if (dest && fs.existsSync(dest)) {
-          fs.rmSync(dest, { recursive: true, force: true });
+          // Windows can't delete files of a node ComfyUI has loaded
+          await comfyStoppedFor(ctx, defaultConfirm, async () => fs.rmSync(dest, { recursive: true, force: true }));
           log.info(`Removed ${dest}`);
         }
       });
     },
   };
+}
+
+/**
+ * A custom node's Python packages and install script, into ComfyUI's Python. `-s` keeps pip
+ * from counting packages in the user's own Python folder, which ComfyUI (started with -s on
+ * the Windows portable) can't see.
+ * @param {string} dest
+ */
+async function installNodeRequirements(dest) {
+  const python = getComfyPython(process.env.COMFY_DIR || '');
+  const req = path.join(dest, 'requirements.txt');
+  if (fs.existsSync(req)) {
+    await runCommand(python, ['-s', '-m', 'pip', 'install', '-r', req], { cwd: dest, stdio: 'inherit' });
+  }
+  const installPy = path.join(dest, 'install.py');
+  if (fs.existsSync(installPy)) {
+    await runCommand(python, ['-s', installPy], { cwd: dest, stdio: 'inherit' });
+  }
 }
 
 /** @returns {import('./types.js').Component[]} */

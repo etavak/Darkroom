@@ -341,7 +341,7 @@ async function watchAndPersist(
   settings: GenerationSettings,
 ): Promise<void> {
   let missingFor = 0;
-  let unreachableFor = 0;
+  let unreachableSince = 0;
   let persistErrors = 0;
   const fail = (message: string) => history.markFailed(jobId, message);
 
@@ -355,7 +355,7 @@ async function watchAndPersist(
     }
     try {
       const entry = await comfy.getHistory(promptId);
-      unreachableFor = 0;
+      unreachableSince = 0;
       if (!entry) {
         const queued = await comfy.getQueuedPromptIds();
         missingFor = queued.has(promptId) ? 0 : missingFor + 1;
@@ -413,7 +413,9 @@ async function watchAndPersist(
       const message = err instanceof Error ? err.message : 'Failed to persist generation';
       // Network-level failure: ComfyUI down or restarting — tolerate for a while
       if (err instanceof comfy.ComfyError && err.status === undefined) {
-        if (++unreachableFor >= UNREACHABLE_LIMIT_S) {
+        // by elapsed time: each try can take up to a request's time limit when ComfyUI is frozen
+        unreachableSince ||= Date.now();
+        if (Date.now() - unreachableSince >= UNREACHABLE_LIMIT_S * 1000) {
           fail(message);
           return;
         }

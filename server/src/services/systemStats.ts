@@ -45,6 +45,9 @@ function appleChipName(): string | null {
 
 function backendLabel(type: string | undefined, name: string | undefined): string {
   const t = (type || name || '').toLowerCase();
+  // AMD's ROCm builds of PyTorch present the card as "cuda"
+  if (/\b(amd|radeon)\b/i.test(name || '')) return 'ROCm';
+  if (t.includes('xpu')) return 'XPU';
   if (t.includes('mps') || t === 'mps') return 'MPS';
   if (t.includes('cuda') || t.startsWith('cuda')) return 'CUDA';
   if (t.includes('cpu')) return 'CPU';
@@ -66,7 +69,7 @@ function deviceDisplayName(dev: ComfyDevice): string {
 
 export async function fetchSystemStatsSummary(): Promise<SystemStatsSummary> {
   try {
-    const res = await fetch(`${config.comfyUrl}/system_stats`);
+    const res = await fetch(`${config.comfyUrl}/system_stats`, { signal: AbortSignal.timeout(5_000) });
     if (!res.ok) {
       return {
         ok: false,
@@ -86,7 +89,7 @@ export async function fetchSystemStatsSummary(): Promise<SystemStatsSummary> {
     const primary =
       devices.find((d) => {
         const t = String(d.type || d.name || '').toLowerCase();
-        return t.includes('cuda') || t.includes('mps') || t.includes('gpu');
+        return t.includes('cuda') || t.includes('mps') || t.includes('xpu') || t.includes('gpu');
       }) || devices[0];
 
     if (!primary) {

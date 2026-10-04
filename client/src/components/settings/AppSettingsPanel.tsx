@@ -1009,7 +1009,12 @@ export function usePreferenceEntries({
               scope: 'server' as const,
               label: 'Other devices',
               description: lan
-                ? `Open ${lan.urls[0] ?? 'this computer’s address'} on your phone or tablet and type the code — it changes every 30 seconds, like an authenticator. Signed-in devices stay signed in. Reset signs every device out.`
+                ? `Open ${lan.urls[0] ?? 'this computer’s address'} on your phone or tablet and type the code — it changes every 30 seconds, like an authenticator. Signed-in devices stay signed in. Reset signs every device out.` +
+                  (lan.platform === 'win32'
+                    ? ' If the phone can’t connect, Windows Firewall is blocking it: allow Node.js on Private networks when Windows asks — or in Windows Security → Firewall & network protection → Allow an app through firewall — and set your Wi-Fi to a Private network.'
+                    : lan.platform === 'darwin'
+                      ? ' If the phone can’t connect and the macOS firewall is on, allow incoming connections for node in System Settings → Network → Firewall → Options.'
+                      : '')
                 : 'Shown only on the computer running Darkroom.',
               keywords: ['pin', 'phone', 'tablet', 'lan', 'wifi', 'remote', 'password'],
               icon: <Shield />,

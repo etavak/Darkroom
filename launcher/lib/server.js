@@ -1,9 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfig } from './env.js';
 import { httpGetOk, sleep } from './http.js';
 import { clientDist, ensureLogsDir, logsDir, root, serverEntry } from './paths.js';
-import { clearPid, isPidAlive, killTree, readPids, runNpm, setPid, spawnDetached } from './process.js';
+import { clearPid, isPidAlive, killTree, listeningProcesses, readPids, runNpm, setPid, spawnDetached } from './process.js';
 
 const SERVER_TIMEOUT_MS = 60_000;
 
@@ -29,33 +30,55 @@ function readLogTail(logFile, maxChars = 1800) {
 }
 
 /**
- * better-sqlite3 only dlopens the native addon when constructing Database —
- * a bare require() always succeeds and hides ABI mismatches.
- * @param {NodeRequire} require
+ * Does better-sqlite3's native module load under this Node? Checked in a separate process:
+ * loading it here would keep the file locked on Windows for as long as the launcher runs, and
+ * Update / Repair Darkroom (npm) couldn't replace it. (A bare require() hides an ABI mismatch;
+ * the native file only loads when a Database is created.)
  */
-function probeBetterSqlite3(require) {
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.close();
+function betterSqlite3Loads() {
+  const probe = "const D=require('better-sqlite3'); const d=new D(':memory:'); d.close();";
+  return spawnSync(process.execPath, ['-e', probe], { cwd: root, stdio: 'ignore', windowsHide: true }).status === 0;
 }
 
 /**
  * Rebuild better-sqlite3 when the native addon does not load under the current Node.
  */
 export async function ensureNativeModules() {
-  const addon = path.join(root, 'node_modules', 'better-sqlite3');
-  if (!fs.existsSync(addon)) return;
-  const { createRequire } = await import('node:module');
-  const require = createRequire(path.join(root, 'package.json'));
-  try {
-    probeBetterSqlite3(require);
-    return;
-  } catch {
-    // fall through to rebuild against this process's Node
-  }
+  if (!fs.existsSync(path.join(root, 'node_modules', 'better-sqlite3'))) return;
+  if (betterSqlite3Loads()) return;
   // Use inherit so rebuild failures are visible in the CLI.
   await runNpm(['rebuild', 'better-sqlite3'], { stdio: 'inherit' });
-  probeBetterSqlite3(require);
+  if (!betterSqlite3Loads()) throw new Error('better-sqlite3 still does not load after rebuilding it — run Components → Darkroom → Repair.');
+}
+
+/**
+ * The Darkroom server answering on this install's port, if it runs this folder's server —
+ * also one this launcher has no record of starting (e.g. from an earlier window).
+ * @param {ReturnType<typeof getConfig>} [cfg]
+ */
+export function findLocalServer(cfg = getConfig()) {
+  const want = serverEntry.toLowerCase().replace(/\\/g, '/');
+  const proc = listeningProcesses(cfg.port).find((p) => {
+    const cmd = p.cmd.toLowerCase().replace(/\\/g, '/');
+    return cmd.includes(want) || (cmd.includes('dist/index.js') && p.cwd && path.resolve(p.cwd).toLowerCase().startsWith(root.toLowerCase()));
+  });
+  return proc ? { pid: proc.pid } : null;
+}
+
+/**
+ * Stop this folder's Darkroom server (started by this launcher or not) before its files are
+ * replaced — Windows can't replace a native module a running server has loaded.
+ * @returns {Promise<boolean>} whether one was running
+ */
+export async function stopDarkroomServer() {
+  const cfg = getConfig();
+  const rec = readPids().server;
+  const pid = rec?.pid && isPidAlive(rec.pid) ? rec.pid : findLocalServer(cfg)?.pid;
+  if (!pid) return false;
+  killTree(pid);
+  clearPid('server');
+  for (let i = 0; i < 20 && isPidAlive(pid); i++) await sleep(250);
+  return true;
 }
 
 /**

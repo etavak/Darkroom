@@ -77,7 +77,9 @@ export function tidyFolders(what, opts = {}) {
     // Windows locks the folder of the running node.exe
     const runningFromIt = process.execPath.startsWith(what.runtime + path.sep);
     if (process.platform === 'win32' && runningFromIt) {
-      notes.push('The portable tools stay in runtime\\ for now — Windows keeps them locked while the launcher runs from them.');
+      // The start file moves it before it runs Node next time
+      fs.writeFileSync(path.join(what.runtime, '.move-to-dependencies'), '', 'utf8');
+      notes.push('The portable tools move into dependencies\\ the next time you open Darkroom — Windows keeps them locked while the launcher runs from them.');
     } else {
       fs.renameSync(what.runtime, path.join(deps, 'runtime'));
       moved.push('runtime → dependencies/runtime');

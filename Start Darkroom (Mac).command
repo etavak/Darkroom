@@ -11,6 +11,14 @@ if [ ! -d "$ROOT/dependencies/runtime" ] && [ -d "$ROOT/runtime" ]; then
 fi
 OPS_LOG_DIR="$ROOT/logs/ops"
 mkdir -p "$OPS_LOG_DIR" "$RUNTIME_NODE"
+# Node folders an update or reinstall left for the next start (see launcher/components/node.js)
+if [ -f "$RUNTIME_NODE/.remove" ]; then
+  while IFS= read -r d || [ -n "$d" ]; do
+    d="${d%$'\r'}"
+    case "$d" in node-v*) rm -rf "${RUNTIME_NODE:?}/$d" ;; esac
+  done < "$RUNTIME_NODE/.remove"
+  rm -f "$RUNTIME_NODE/.remove"
+fi
 
 arch="$(uname -m)"
 case "$arch" in

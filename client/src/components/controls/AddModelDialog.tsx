@@ -280,7 +280,7 @@ export function AddModelDialog({ open, onClose, onInstalled, families, preferTyp
                 id="model-url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://huggingface.co/… or civitai.com/…"
+                placeholder="https://civitai.com/models/… or huggingface.co/…"
                 disabled={busy || job?.status === 'downloading'}
               />
               <Button
@@ -292,6 +292,10 @@ export function AddModelDialog({ open, onClose, onInstalled, families, preferTyp
                 Resolve
               </Button>
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              Civitai (.com, .red, .green), Hugging Face or hf-mirror, ModelScope, GitHub, OpenModelDB, Google Drive,
+              Dropbox, or any direct file link.
+            </p>
           </div>
 
           <div className="space-y-1.5">

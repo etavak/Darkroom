@@ -3,7 +3,8 @@ import path from 'node:path';
 import * as p from '@clack/prompts';
 import { withOpLog } from '../lib/opLog.js';
 import { getGitBin, root } from '../lib/paths.js';
-import { clearPid, isPidAlive, killTree, readPids, runCommand, runNpm } from '../lib/process.js';
+import { runCommand, runNpm } from '../lib/process.js';
+import { stopDarkroomServer } from '../lib/server.js';
 import {
   readInstalledVersion,
   rollbackOverlay,
@@ -21,12 +22,7 @@ import { defaultConfirm } from './types.js';
  * @param {{ info: (m: string) => void }} log
  */
 async function updateZipInstall(comp, ctx, log) {
-  const pids = readPids();
-  if (pids.server?.owned && isPidAlive(pids.server.pid)) {
-    p.log.step('Stopping the Darkroom server for the update…');
-    killTree(pids.server.pid);
-    clearPid('server');
-  }
+  if (await stopDarkroomServer()) p.log.step('Stopped the Darkroom server for the update…');
 
   const s = p.spinner();
   s.start('Checking for updates…');
@@ -110,6 +106,8 @@ export const darkroomComponent = {
 
   async install() {
     await withOpLog('darkroom', 'install', async (log) => {
+      // npm replaces node_modules — Windows can't while a running server has its native module loaded
+      if (await stopDarkroomServer()) p.log.step('Stopped the Darkroom server while its files are replaced — start it again afterwards.');
       // Always use the same Node/npm as this CLI process (portable 22), never PATH npm.
       const hasLock = fs.existsSync(path.join(root, 'package-lock.json'));
       p.log.step(hasLock ? 'npm ci…' : 'npm install…');
@@ -156,6 +154,7 @@ export const darkroomComponent = {
   async reinstall(ctx = {}) {
     const confirm = ctx.confirm || defaultConfirm;
     if (await confirm('Delete node_modules and reinstall?', true)) {
+      await stopDarkroomServer();
       const nm = path.join(root, 'node_modules');
       if (fs.existsSync(nm)) fs.rmSync(nm, { recursive: true, force: true });
     }
@@ -169,6 +168,7 @@ export const darkroomComponent = {
       return;
     }
     await withOpLog('darkroom', 'uninstall', async (log) => {
+      await stopDarkroomServer();
       const nm = path.join(root, 'node_modules');
       if (fs.existsSync(nm)) {
         fs.rmSync(nm, { recursive: true, force: true });

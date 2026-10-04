@@ -212,7 +212,7 @@ export const pythonComponent = {
 
   async update(ctx = {}) {
     if (process.platform === 'win32') {
-      p.log.info('Update ComfyUI portable to refresh embedded Python.');
+      p.log.info('On Windows, Python comes inside the portable ComfyUI. Updating ComfyUI keeps it; a fresh one comes with Components → ComfyUI → Reinstall.');
       return;
     }
     await withOpLog('python', 'update', async (log) => {

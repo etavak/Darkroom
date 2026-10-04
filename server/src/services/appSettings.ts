@@ -274,6 +274,7 @@ async function freeComfyMemory() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ unload_models: true, free_memory: true }),
+      signal: AbortSignal.timeout(20_000),
     });
   } catch {
     // ignore when ComfyUI is down

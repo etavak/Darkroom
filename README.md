@@ -21,7 +21,7 @@ You don't need Node or Python beforehand — the launcher downloads what it need
    - **macOS:** double-click **`Start Darkroom (Mac).command`**. If macOS blocks it, open **System Settings → Privacy & Security**, scroll to the message about Darkroom, and click **Open Anyway**. (Or run `xattr -dr com.apple.quarantine` on the folder in Terminal.)
    - **Linux:** run `./launcher/start-linux.sh` from a terminal (`chmod +x launcher/start-linux.sh` first if needed).
 3. **First run** opens the setup menu. Pick one:
-   - **Install everything** — downloads ComfyUI and PyTorch for your hardware (NVIDIA CUDA, Apple Silicon MPS, or CPU) into `dependencies/`.
+   - **Install everything** — downloads ComfyUI and PyTorch for your hardware into `dependencies/`: Apple Silicon (MPS) on a Mac; on Windows, ComfyUI's build for your graphics card (NVIDIA — including older GTX cards — AMD Radeon or Intel Arc), or the CPU if there isn't one it can use.
    - **Use existing ComfyUI** — point at a ComfyUI you already have (source, Windows portable, or the Desktop app).
    - **Remote ComfyUI** — use ComfyUI running on another machine (it must be started with `--listen`).
 4. Choose **Start Darkroom**. ComfyUI and the Darkroom server start and your browser opens.
@@ -31,18 +31,28 @@ Next time, just open the launcher again and choose **Start Darkroom**.
 **What's in the folder:** `Start Darkroom (Mac).command` / `Start Darkroom (Windows).bat` start it; `launcher/` is the terminal menu; `client/` and `server/` are the app; `dependencies/` holds ComfyUI, its models and the portable tools; `logs/` has the logs. Installs from before this layout keep ComfyUI and `runtime/` straight in the Darkroom folder — the launcher offers **Tidy up folders** to move them into `dependencies/` (a rename on the same disk; nothing is copied).
 
 <details>
-<summary>Prefer git? (macOS / Linux one-liner)</summary>
+<summary>Prefer a one-line install?</summary>
+
+**macOS / Linux** (git):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/etavak/Darkroom/main/install.sh | bash
 ```
 
 Clones (or updates) `~/Darkroom` and launches it. If git is missing on macOS, it offers the Xcode Command Line Tools and waits for them.
+
+**Windows** (PowerShell, no git needed):
+
+```powershell
+irm https://raw.githubusercontent.com/etavak/Darkroom/main/install.ps1 | iex
+```
+
+Downloads Darkroom into `%USERPROFILE%\Darkroom` and opens it (if it's already there, it just opens it — update from the menu).
 </details>
 
 ## Adding models
 
-From the launcher menu: **Install model from file** (drag a file into the terminal), **Download model from URL** (Civitai, Hugging Face, or a direct link), **Manage models**, or **ControlNet models**. In the web UI, use **Add model…** in any model picker (or **Add file** in the LoRA picker).
+From the launcher menu: **Install model from file** (drag a file into the terminal), **Download model from URL** (Civitai including civitai.red, Hugging Face or hf-mirror.com, ModelScope, GitHub, OpenModelDB, Google Drive, Dropbox, or a direct link), **Manage models**, or **ControlNet models**. In the web UI, use **Add model…** in any model picker (or **Add file** in the LoRA picker).
 
 - The model type is detected from the file. Checkpoints and diffusion models ask for their **family** (SDXL, Pony, Illustrious, NoobAI, Anima, Flux, SD3, …) so the right defaults and tags apply.
 - Families that need extra files (text encoders, VAE) offer to download them, sized to your VRAM and checksum-verified.

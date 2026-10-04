@@ -2,10 +2,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import * as p from '@clack/prompts';
 import { loadAndApplyEnv } from '../lib/env.js';
-import { detectAccelProfile, isIntelMac } from '../lib/hardware.js';
+import path from 'node:path';
+import { comfyStoppedFor } from '../lib/comfy.js';
+import { detectAccelProfile, detectGpu, isIntelMac } from '../lib/hardware.js';
 import { withOpLog } from '../lib/opLog.js';
 import { loadPins } from '../lib/pins.js';
-import { getComfyPython, getComfyUiRoot } from '../lib/paths.js';
+import { getComfyPortableRoot, getComfyPython, getComfyUiRoot } from '../lib/paths.js';
 import { runCommand } from '../lib/process.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
 import { defaultConfirm } from './types.js';
@@ -22,6 +24,46 @@ function probeTorch(python) {
   if (r.status !== 0) return null;
   const lines = r.stdout.trim().split(/\r?\n/);
   return { version: lines[0], device: lines[1] || 'cpu' };
+}
+
+/** The Windows portable build: its own Python, with PyTorch chosen by ComfyUI for one GPU family. */
+function isPortable(dir) {
+  return fs.existsSync(path.join(getComfyPortableRoot(dir) || dir, 'python_embeded', 'python.exe'));
+}
+
+/**
+ * Where pip finds PyTorch builds like an installed one: "2.14.0+cu130" → the cu130 index,
+ * "+xpu" → Intel, "+cpu" → CPU. AMD's Windows (ROCm) builds aren't on that index.
+ * @param {string} version
+ */
+export function torchIndexFor(version) {
+  const m = /\+(cu\d+|xpu|cpu)\b/.exec(version);
+  return m ? `https://download.pytorch.org/whl/${m[1]}` : null;
+}
+
+/**
+ * The PyTorch index for this PC's graphics card on Windows (for a portable whose PyTorch is gone).
+ * CUDA 13 builds stop at the RTX 20 series (compute capability 7.5); older cards need 12.6.
+ */
+function windowsTorchIndex() {
+  const gpu = detectGpu();
+  if (gpu.vendor === 'nvidia') return `https://download.pytorch.org/whl/${gpu.computeCap !== null && gpu.computeCap < 7.5 ? 'cu126' : 'cu130'}`;
+  if (gpu.vendor === 'intel') return 'https://download.pytorch.org/whl/xpu';
+  if (gpu.vendor === 'amd') return null;
+  return 'https://download.pytorch.org/whl/cpu';
+}
+
+/**
+ * pip into the portable's Python, the way ComfyUI's own update_comfyui_and_python_dependencies.bat does.
+ * @param {string} python
+ * @param {string} index
+ */
+async function pipPortableTorch(python, index) {
+  await runCommand(
+    python,
+    ['-s', '-m', 'pip', 'install', '--upgrade', '--retries', '10', '--timeout', '120', 'torch', 'torchvision', 'torchaudio', '--extra-index-url', index],
+    { stdio: 'inherit' },
+  );
 }
 
 /**
@@ -71,7 +113,7 @@ async function installTorchForHardware(python, channel, log) {
   log.info(`profile=${profile} pkgs=${pkgs.join(' ')}`);
   await runCommand(
     python,
-    ['-m', 'pip', 'install', '--upgrade', '--retries', '10', '--timeout', '120', ...extra, ...pkgs],
+    ['-s', '-m', 'pip', 'install', '--upgrade', '--retries', '10', '--timeout', '120', ...extra, ...pkgs],
     { stdio: 'inherit' },
   );
 }
@@ -93,16 +135,18 @@ export const torchComponent = {
     }
 
     // Windows portable: torch ships with the build
-    if (process.platform === 'win32') {
+    if (isPortable(dir)) {
       const t = probeTorch(python);
-      if (t) {
-        return {
-          state: 'installed',
-          version: t.version,
-          detail: `${t.device} · portable`,
-        };
-      }
-      return { state: 'broken', problems: ['torch not importable in portable Python'] };
+      if (!t) return { state: 'broken', problems: ['torch not importable in portable Python'] };
+      const gpu = detectGpu();
+      const cpuOnly = (process.env.COMFY_FORCE_CPU || '').toLowerCase() === 'true';
+      const problems = gpu.vendor !== 'none' && t.device === 'cpu' && !cpuOnly ? [`${gpu.name || 'The graphics card'} isn't being used — PyTorch only sees the CPU`] : [];
+      return {
+        state: problems.length ? 'broken' : 'installed',
+        version: t.version,
+        detail: `${t.device} · portable`,
+        problems: problems.length ? problems : undefined,
+      };
     }
 
     const t = probeTorch(python);
@@ -143,34 +187,53 @@ export const torchComponent = {
       const python = getComfyPython(dir);
       if (!python || !fs.existsSync(python)) throw new Error('ComfyUI Python not found');
 
-      if (process.platform === 'win32') {
+      if (isPortable(dir)) {
         const t = probeTorch(python);
         if (t) {
           p.log.info(`Torch already present in portable build (${t.version} / ${t.device})`);
           log.info('skip — portable ships torch');
           return;
         }
-        p.log.warn('Torch missing from portable — reinstall ComfyUI portable.');
-        throw new Error('Repair via ComfyUI reinstall on Windows');
+        const index = windowsTorchIndex();
+        if (!index) throw new Error("PyTorch is missing from ComfyUI's AMD build, and pip can't install that one — reinstall ComfyUI.");
+        p.log.step('Installing PyTorch into the portable ComfyUI…');
+        await comfyStoppedFor(ctx, defaultConfirm, () => pipPortableTorch(python, index));
+        return;
       }
 
-      await installTorchForHardware(python, ctx.channel || 'tested', log);
+      await comfyStoppedFor(ctx, defaultConfirm, () => installTorchForHardware(python, ctx.channel || 'tested', log));
     });
   },
 
   async update(ctx = {}) {
-    if (process.platform === 'win32') {
-      p.log.info('On Windows, update torch by updating the ComfyUI portable component.');
-      return;
-    }
     await withOpLog('torch', 'update', async (log) => {
       loadAndApplyEnv();
       const dir = process.env.COMFY_DIR;
       const ui = getComfyUiRoot(dir);
       const python = getComfyPython(dir);
-      await withRestorePoint('torch', { comfyDir: ui || dir }, async () => {
-        await installTorchForHardware(python, ctx.channel || 'tested', log);
-      });
+      if (isPortable(dir)) {
+        // ComfyUI chose this PyTorch for the build; "latest" upgrades it within the same
+        // build (same CUDA version / Intel / CPU)
+        if (ctx.channel !== 'latest') {
+          p.log.info('The portable ComfyUI’s own PyTorch is the tested one — choose "Update to latest" to upgrade it.');
+          return;
+        }
+        const t = probeTorch(python);
+        const index = t ? torchIndexFor(t.version) : windowsTorchIndex();
+        if (!index) throw new Error('This PyTorch (AMD build) can’t be upgraded with pip — update ComfyUI by reinstalling it.');
+        await comfyStoppedFor(ctx, defaultConfirm, () =>
+          withRestorePoint('torch', { comfyDir: ui || dir }, async () => {
+            await pipPortableTorch(python, index);
+            log.info(`upgraded from ${index}`);
+          }),
+        );
+        return;
+      }
+      await comfyStoppedFor(ctx, defaultConfirm, () =>
+        withRestorePoint('torch', { comfyDir: ui || dir }, async () => {
+          await installTorchForHardware(python, ctx.channel || 'tested', log);
+        }),
+      );
     });
   },
 
@@ -183,7 +246,7 @@ export const torchComponent = {
   },
 
   async uninstall(ctx = {}) {
-    if (process.platform === 'win32') {
+    if (isPortable(process.env.COMFY_DIR || '')) {
       p.log.info('Torch is part of the ComfyUI portable — uninstall ComfyUI to remove it.');
       return;
     }
@@ -194,7 +257,7 @@ export const torchComponent = {
     await withOpLog('torch', 'uninstall', async (log) => {
       loadAndApplyEnv();
       const python = getComfyPython(process.env.COMFY_DIR || '');
-      await runCommand(python, ['-m', 'pip', 'uninstall', '-y', 'torch', 'torchvision', 'torchaudio'], {
+      await runCommand(python, ['-s', '-m', 'pip', 'uninstall', '-y', 'torch', 'torchvision', 'torchaudio'], {
         stdio: 'inherit',
       });
       log.info('Uninstalled torch packages');

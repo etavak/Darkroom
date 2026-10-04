@@ -10,9 +10,24 @@ if exist "%~f0.new" (
 )
 set "ROOT=%CD%"
 set "PIN_NODE=22.14.0"
+REM Tidy up folders: Windows can't move runtime\ while the launcher runs from it, so it leaves
+REM a note and the move happens here, before Node starts.
+if exist "%ROOT%\runtime\.move-to-dependencies" if not exist "%ROOT%\dependencies\runtime" (
+  if not exist "%ROOT%\dependencies" mkdir "%ROOT%\dependencies"
+  move "%ROOT%\runtime" "%ROOT%\dependencies\runtime" >nul 2>nul
+  if exist "%ROOT%\dependencies\runtime\.move-to-dependencies" del /f /q "%ROOT%\dependencies\runtime\.move-to-dependencies" >nul 2>nul
+)
 REM Portable Node lives in dependencies\runtime\node (older installs: runtime\node)
 set "RUNTIME_NODE=%ROOT%\dependencies\runtime\node"
 if not exist "%ROOT%\dependencies\runtime" if exist "%ROOT%\runtime" set "RUNTIME_NODE=%ROOT%\runtime\node"
+REM Node folders an update or reinstall couldn't delete while this window's Node ran from them
+if exist "%RUNTIME_NODE%\.remove" (
+  for /f "usebackq delims=" %%R in ("%RUNTIME_NODE%\.remove") do (
+    echo %%R| findstr /b /c:"node-v" >nul
+    if not errorlevel 1 if exist "%RUNTIME_NODE%\%%R\" rmdir /s /q "%RUNTIME_NODE%\%%R"
+  )
+  del /f /q "%RUNTIME_NODE%\.remove" >nul 2>nul
+)
 set "OPS_LOG_DIR=%ROOT%\logs\ops"
 if not exist "%RUNTIME_NODE%" mkdir "%RUNTIME_NODE%"
 if not exist "%OPS_LOG_DIR%" mkdir "%OPS_LOG_DIR%"

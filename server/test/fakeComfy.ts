@@ -10,6 +10,8 @@ export const queuedClients: string[] = [];
 export const pendingIds: string[] = [];
 /** client ids with an open websocket */
 export const sockets = new Set<string>();
+/** When on, the fake accepts connections but never answers — a frozen ComfyUI */
+export const frozen = { on: false };
 
 /**
  * A ComfyUI stand-in for tests: serves the recorded object_info, accepts /prompt (rejecting
@@ -23,6 +25,7 @@ export async function startFakeComfy(): Promise<{ url: string; close: () => Prom
       res.end(JSON.stringify(body));
     };
     const url = new URL(req.url ?? '/', 'http://x');
+    if (frozen.on) return;
     if (req.method === 'GET' && url.pathname === '/object_info') return send(200, info);
     if (req.method === 'GET' && url.pathname.startsWith('/object_info/')) {
       const name = decodeURIComponent(url.pathname.slice('/object_info/'.length));
@@ -67,6 +70,7 @@ export async function startFakeComfy(): Promise<{ url: string; close: () => Prom
       new Promise((r) => {
         wss.close();
         server.close(() => r());
+        server.closeAllConnections(); // requests left hanging by the frozen mode
       }),
   };
 }

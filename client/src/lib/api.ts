@@ -52,7 +52,8 @@ export function submitLanPin(pin: string): Promise<{ ok: boolean }> {
 }
 
 /** pin rotates every periodS seconds (authenticator-style); expiresInMs until the next one */
-export type LanAccessInfo = { pin: string; urls: string[]; expiresInMs?: number; periodS?: number };
+/** `platform` is the OS of the computer running Darkroom (Node's process.platform). */
+export type LanAccessInfo = { pin: string; urls: string[]; expiresInMs?: number; periodS?: number; platform?: string };
 
 /** PIN + LAN URLs; only answers on the computer running Darkroom. */
 export function fetchLanAccess(): Promise<LanAccessInfo> {

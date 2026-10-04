@@ -103,6 +103,8 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
     }
     inFlightRef.current = true;
     cancelledRef.current = false;
+    activePromptId.current = null;
+    activeJobId.current = null;
     const livePreview = opts?.livePreview !== false;
     livePreviewRef.current = livePreview;
 
@@ -149,10 +151,18 @@ export function useGeneration(onComplete?: (record: GenerationRecord) => void) {
       await client.connect(clientId, { preview: livePreview });
       if (cancelledRef.current) throw new CancelledError();
 
+      // Handing the job over normally takes well under a second; say so if it doesn't
+      // (the server gives up and reports an error if ComfyUI never answers)
+      const slowStart = window.setTimeout(() => {
+        setRuntime((r) => ({ ...r, stall: 'Waiting for ComfyUI to accept the job — it may be busy loading, or not responding' }));
+      }, 10_000);
       const { jobId, promptId } = await startGenerate({
         ...settings,
         clientId,
         ...(opts?.previewMethod ? { previewMethod: opts.previewMethod } : {}),
+      }).finally(() => {
+        window.clearTimeout(slowStart);
+        setRuntime((r) => (r.stall ? { ...r, stall: null } : r));
       });
       if (cancelledRef.current) {
         // Cancel was pressed before we had a job id — drop the prompt we just queued

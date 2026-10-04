@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getConfig, loadEnvFile } from './env.js';
@@ -11,7 +10,7 @@ import {
   logsDir,
   root,
 } from './paths.js';
-import { clearPid, isPidAlive, readPids, setPid, spawnDetached } from './process.js';
+import { clearPid, isPidAlive, killTree, listeningProcesses, readPids, setPid, spawnDetached } from './process.js';
 
 const COMFY_TIMEOUT_MS = 120_000;
 
@@ -78,6 +77,8 @@ export function comfyLaunchFlags() {
   const flags = ['--preview-method', previewMethod];
   const vramFlag = VRAM_FLAGS[/** @type {keyof typeof VRAM_FLAGS} */ (vram)];
   if (vramFlag) flags.push(vramFlag);
+  // Set when ComfyUI was installed on a PC without a GPU it can use (see installComfy.js)
+  if ((fileEnv.COMFY_FORCE_CPU || process.env.COMFY_FORCE_CPU || '').toLowerCase() === 'true') flags.push('--cpu');
   return flags;
 }
 
@@ -134,16 +135,20 @@ export function startComfyProcess(cfg = getConfig()) {
   const serveArgs = ['--listen', '127.0.0.1', '--port', String(port), ...comfyLaunchFlags()];
 
   let pid = 0;
-  if (process.platform === 'win32') {
-    const python = path.join(portable, 'python_embeded', 'python.exe');
-    if (!fs.existsSync(python)) throw new Error(`Windows portable Python not found: ${python}`);
-    // --windows-standalone-build also opens ComfyUI's own page in the browser; Darkroom is the UI
-    pid = spawnDetached(python, ['-s', mainPy, '--windows-standalone-build', '--disable-auto-launch', ...serveArgs], {
+  const embedded = path.join(portable, 'python_embeded', 'python.exe');
+  if (process.platform === 'win32' && fs.existsSync(embedded)) {
+    // The portable build. --windows-standalone-build also opens ComfyUI's own page in the
+    // browser; Darkroom is the UI
+    pid = spawnDetached(embedded, ['-s', mainPy, '--windows-standalone-build', '--disable-auto-launch', ...serveArgs], {
       cwd: portable,
       logFile,
     });
   } else {
-    pid = spawnDetached(getComfyPython(cfg.comfyDir), ['main.py', ...serveArgs], {
+    // A ComfyUI with its own Python environment (venv) — macOS, Linux, or one set up by hand on
+    // Windows. main.py by its full path, so findLocalComfy can recognise the process later.
+    const python = getComfyPython(cfg.comfyDir);
+    if (path.isAbsolute(python) && !fs.existsSync(python)) throw new Error(`ComfyUI's Python not found: ${python}`);
+    pid = spawnDetached(python, [mainPy, ...serveArgs], {
       cwd: uiRoot,
       logFile,
       env: {
@@ -216,37 +221,11 @@ export function findLocalComfy(cfg = getConfig()) {
     return c.includes('main.py') && c.includes(dir.replace(/\\/g, '/'));
   };
 
-  if (process.platform === 'win32') {
-    // netstat: "  TCP    127.0.0.1:8188    0.0.0.0:0    LISTENING    1234"
-    const net = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8', windowsHide: true }).stdout || '';
-    const pids = new Set(
-      net
-        .split(/\r?\n/)
-        .filter((l) => /LISTENING/i.test(l) && new RegExp(`:${port}\\s`).test(l))
-        .map((l) => Number(l.trim().split(/\s+/).pop()))
-        .filter(Boolean),
-    );
-    for (const pid of pids) {
-      const ps = spawnSync(
-        'powershell',
-        ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`],
-        { encoding: 'utf8', windowsHide: true },
-      );
-      // The portable build runs main.py by its full path, which includes COMFY_DIR
-      if (ours(ps.stdout || '')) return { pid };
-    }
-    return null;
-  }
-
-  const lsof = spawnSync('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' });
-  for (const line of (lsof.stdout || '').split('\n')) {
-    const pid = Number(line.trim());
-    if (!pid) continue;
-    const cmd = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).stdout || '';
-    // macOS / Linux run "python main.py" from inside ComfyUI, so also check the working folder
-    const cwd = spawnSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' }).stdout || '';
-    const cwdPath = cwd.split('\n').find((l) => l.startsWith('n'))?.slice(1) ?? '';
-    if (ours(cmd) || (cmd.includes('main.py') && cwdPath && path.resolve(cwdPath).toLowerCase().startsWith(dir))) return { pid };
+  for (const proc of listeningProcesses(port)) {
+    // The portable build runs main.py by its full path (which includes COMFY_DIR); older
+    // macOS / Linux starts ran "python main.py" from inside ComfyUI, so check the folder too
+    if (ours(proc.cmd)) return { pid: proc.pid };
+    if (proc.cmd.includes('main.py') && proc.cwd && path.resolve(proc.cwd).toLowerCase().startsWith(dir)) return { pid: proc.pid };
   }
   return null;
 }
@@ -262,4 +241,63 @@ export function adoptRunningComfy(cfg) {
   if (rec?.pid && isPidAlive(rec.pid)) return;
   const found = findLocalComfy(cfg);
   if (found) setPid('comfy', found.pid, true);
+}
+
+/**
+ * Stop this install's ComfyUI before its files are replaced: Windows refuses to change files a
+ * running program has open, or the folder it runs in. Returns whether it was running, so the
+ * caller can start it again afterwards.
+ * @param {(message: string, initialValue?: boolean) => Promise<boolean>} confirm
+ * @param {ReturnType<typeof getConfig>} [cfg]
+ */
+export async function stopComfyForUpdate(confirm, cfg = getConfig()) {
+  if (!(await httpGetOk(`${cfg.comfyUrl}/system_stats`))) return false;
+  const rec = readPids().comfy;
+  const pid = rec?.owned && rec.pid && isPidAlive(rec.pid) ? rec.pid : findLocalComfy(cfg)?.pid;
+  if (!pid) {
+    throw new Error(`ComfyUI is running at ${cfg.comfyUrl}, but not from this install as far as Darkroom can tell. Close it, then update again.`);
+  }
+  if (!(await confirm('ComfyUI is running. Stop it while this runs? (It starts again afterwards.)', true))) {
+    throw new Error('Skipped: ComfyUI is still running.');
+  }
+  killTree(pid);
+  clearPid('comfy');
+  // Python can take a few seconds to unload models and exit
+  for (let i = 0; i < 40 && isPidAlive(pid); i++) await sleep(500);
+  if (isPidAlive(pid)) throw new Error(`ComfyUI (pid ${pid}) didn't stop. Close it, then update again.`);
+  return true;
+}
+
+/**
+ * Run `fn` with this install's ComfyUI stopped (asks first), then start it again if it was
+ * running. Windows can't replace files ComfyUI has open (its Python packages, the folder it
+ * runs in); on every OS, new code and packages only load when ComfyUI starts.
+ * @template T
+ * @param {(message: string, initialValue?: boolean) => Promise<boolean>} confirm
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export async function withComfyStopped(confirm, fn) {
+  const wasRunning = await stopComfyForUpdate(confirm);
+  try {
+    return await fn();
+  } finally {
+    if (wasRunning) {
+      console.log('Starting ComfyUI again…');
+      startComfyProcess();
+    }
+  }
+}
+
+/**
+ * withComfyStopped for a component action — unless the caller already stopped ComfyUI for a
+ * batch (ctx.comfyStopped), so one Update stops and restarts it once.
+ * @template T
+ * @param {{ confirm?: (message: string, initialValue?: boolean) => Promise<boolean>, comfyStopped?: boolean }} ctx
+ * @param {(message: string, initialValue?: boolean) => Promise<boolean>} defaultConfirm
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export function comfyStoppedFor(ctx, defaultConfirm, fn) {
+  return ctx.comfyStopped ? fn() : withComfyStopped(ctx.confirm || defaultConfirm, fn);
 }

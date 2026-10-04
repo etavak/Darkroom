@@ -7,6 +7,8 @@ import {
   formatBytes,
   resolveModelUrl,
   civitaiAutoFetchEnabled,
+  isCivitaiHost,
+  SUPPORTED_SITES,
   saveModelSidecars,
 } from '../lib/download.js';
 import { getConfig, upsertEnvValue } from '../lib/env.js';
@@ -16,7 +18,7 @@ import { confirmAndInstallModel } from './installModel.js';
 export async function downloadModelFromUrl() {
   const cfg = getConfig();
   const raw = await p.text({
-    message: 'Model URL (Civitai, Hugging Face, or direct file link)',
+    message: `Model URL — ${SUPPORTED_SITES}`,
     placeholder: 'https://civitai.com/models/...',
     validate: (v) => {
       if (!v?.trim()) return 'URL required';
@@ -30,7 +32,8 @@ export async function downloadModelFromUrl() {
   if (handleCancel(raw)) return;
 
   const pageUrl = String(raw).trim();
-  if (/civitai\.com/i.test(pageUrl) && !cfg.civitaiToken) {
+  const host = new URL(pageUrl).hostname;
+  if (isCivitaiHost(host) && !cfg.civitaiToken) {
     const key = await p.password({
       message: 'Civitai API key (optional — some files need sign-in; Enter to skip). civitai.com → Account settings → API keys',
     });
@@ -43,7 +46,7 @@ export async function downloadModelFromUrl() {
       p.log.success('Saved the Civitai key in .env');
     }
   }
-  if (/huggingface\.co/i.test(pageUrl) && !cfg.hfToken) {
+  if (/(^|\.)(huggingface\.co|hf\.co)$/i.test(host) && !cfg.hfToken) {
     p.log.info('Tip: set HF_TOKEN in .env for gated Hugging Face repos.');
   }
 
@@ -96,7 +99,7 @@ export async function downloadModelFromUrl() {
     await downloadFile(meta.downloadUrl, tempPath, {
       headers: {
         ...(meta.headers || {}),
-        ...(cfg.civitaiToken && /civitai\.com/i.test(meta.downloadUrl)
+        ...(cfg.civitaiToken && isCivitaiHost(new URL(meta.downloadUrl).hostname)
           ? { Authorization: `Bearer ${cfg.civitaiToken}` }
           : {}),
       },

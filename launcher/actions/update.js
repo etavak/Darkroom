@@ -2,6 +2,8 @@ import * as p from '@clack/prompts';
 import { handleCancel } from '../lib/prompt.js';
 import { getComponent } from '../components/registry.js';
 import { isRemoteMode } from '../lib/env.js';
+import { withComfyStopped } from '../lib/comfy.js';
+import { defaultConfirm } from '../components/types.js';
 
 /**
  * Update shortcut — delegates to component update(channel: tested|latest).
@@ -22,7 +24,7 @@ export async function updateAll() {
     message: 'What should we update?',
     options: [
       { value: 'darkroom', label: 'Darkroom', hint: 'latest from GitHub' },
-      ...(remote ? [] : [{ value: 'comfyui', label: 'ComfyUI', hint: 'git pull / portable' }]),
+      ...(remote ? [] : [{ value: 'comfyui', label: 'ComfyUI', hint: 'in place — models and custom nodes stay' }]),
       ...(remote ? [] : [{ value: 'torch', label: 'PyTorch' }]),
       { value: 'tags', label: 'Tag CSVs' },
       ...(remote ? [] : [{ value: 'taesd', label: 'TAESD' }]),
@@ -35,17 +37,30 @@ export async function updateAll() {
   // Darkroom last: updating it replaces the CLI that is running right now
   const ordered = [...choices].sort((a, b) => Number(a === 'darkroom') - Number(b === 'darkroom'));
   let restartRequired = false;
-  for (const id of ordered) {
-    const comp = getComponent(String(id));
-    if (!comp) continue;
-    try {
-      p.log.step(`Updating ${comp.name}…`);
-      const result = await comp.update({ channel });
-      if (result?.restartRequired) restartRequired = true;
-      p.log.success(`${comp.name} updated`);
-    } catch (err) {
-      p.log.warn(`${comp.name}: ${err instanceof Error ? err.message : err}`);
+  const runAll = async (/** @type {boolean} */ comfyStopped) => {
+    for (const id of ordered) {
+      const comp = getComponent(String(id));
+      if (!comp) continue;
+      try {
+        p.log.step(`Updating ${comp.name}…`);
+        const result = await comp.update({ channel, comfyStopped });
+        if (result?.restartRequired) restartRequired = true;
+        p.log.success(`${comp.name} updated`);
+      } catch (err) {
+        p.log.warn(`${comp.name}: ${err instanceof Error ? err.message : err}`);
+      }
     }
+  };
+  // ComfyUI and PyTorch need ComfyUI stopped (Windows can't replace files it has open):
+  // stop it once for the whole batch, and start it again at the end
+  if (ordered.some((id) => id === 'comfyui' || id === 'torch')) {
+    try {
+      await withComfyStopped(defaultConfirm, () => runAll(true));
+    } catch (err) {
+      p.log.warn(err instanceof Error ? err.message : String(err));
+    }
+  } else {
+    await runAll(false);
   }
   if (restartRequired) exitForRelaunch();
 }

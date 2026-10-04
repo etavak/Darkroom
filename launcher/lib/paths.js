@@ -158,24 +158,28 @@ export function ensureRuntimeDirs() {
 }
 
 /**
- * Resolve portable Node binary if present under runtime/node.
+ * Portable Node folders under runtime/node, newest version first.
  * Layout: runtime/node/node-vX.Y.Z-<platform>-<arch>/bin/node (Unix)
  *         runtime/node/node-vX.Y.Z-win-x64/node.exe (Windows)
+ * @param {string} [nodeDir] runtime/node (tests pass a scratch folder)
+ * @returns {{ dir: string, bin: string, version: number[] }[]}
  */
-export function getPortableNodeBin() {
-  if (!fs.existsSync(runtimeNodeDir)) return null;
-  const entries = fs.readdirSync(runtimeNodeDir, { withFileTypes: true });
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    if (process.platform === 'win32') {
-      const exe = path.join(runtimeNodeDir, e.name, 'node.exe');
-      if (fs.existsSync(exe)) return exe;
-    } else {
-      const bin = path.join(runtimeNodeDir, e.name, 'bin', 'node');
-      if (fs.existsSync(bin)) return bin;
-    }
+export function listPortableNodes(nodeDir = runtimeNodeDir) {
+  if (!fs.existsSync(nodeDir)) return [];
+  const out = [];
+  for (const e of fs.readdirSync(nodeDir, { withFileTypes: true })) {
+    const m = e.isDirectory() && e.name.match(/^node-v(\d+)\.(\d+)\.(\d+)-/);
+    if (!m) continue;
+    const dir = path.join(nodeDir, e.name);
+    const bin = process.platform === 'win32' ? path.join(dir, 'node.exe') : path.join(dir, 'bin', 'node');
+    if (fs.existsSync(bin)) out.push({ dir, bin, version: m.slice(1, 4).map(Number) });
   }
-  return null;
+  return out.sort((a, b) => b.version[0] - a.version[0] || b.version[1] - a.version[1] || b.version[2] - a.version[2]);
+}
+
+/** The newest portable Node binary, if any. */
+export function getPortableNodeBin() {
+  return listPortableNodes()[0]?.bin ?? null;
 }
 
 /**

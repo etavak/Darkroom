@@ -18,6 +18,7 @@
  *   confirm?: (message: string, initialValue?: boolean) => Promise<boolean>,
  *   installDir?: string,
  *   dryRun?: boolean,
+ *   comfyStopped?: boolean,
  * }} ComponentContext
  *
  * @typedef {{

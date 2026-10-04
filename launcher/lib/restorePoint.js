@@ -46,7 +46,7 @@ export function createRestorePoint(componentId, opts = {}) {
     if (hash.status === 0) meta.comfyGitHash = hash.stdout.trim();
 
     const python = getComfyPython(comfyRoot);
-    const freeze = spawnSync(python, ['-m', 'pip', 'freeze'], {
+    const freeze = spawnSync(python, ['-s', '-m', 'pip', 'freeze'], {
       encoding: 'utf8',
       windowsHide: true,
       timeout: 120_000,
@@ -87,7 +87,7 @@ export async function rollbackRestorePoint(point, opts = {}) {
     if (fs.existsSync(freezeFile)) {
       const python = getComfyPython(opts.comfyDir);
       p.log.step('Restoring pip packages from freeze…');
-      await runCommand(python, ['-m', 'pip', 'install', '-r', freezeFile], {
+      await runCommand(python, ['-s', '-m', 'pip', 'install', '-r', freezeFile], {
         cwd: opts.comfyDir,
         stdio: 'inherit',
       });

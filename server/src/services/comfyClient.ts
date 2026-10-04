@@ -10,11 +10,30 @@ export class ComfyError extends Error {
   }
 }
 
+/**
+ * How long each ComfyUI call may take. A frozen ComfyUI would otherwise leave every caller
+ * (starting a job, the health check, the job watcher) waiting forever.
+ */
+function timeoutFor(path: string): number {
+  if (path.startsWith('/system_stats')) return 5_000;
+  if (path.startsWith('/object_info')) return 90_000; // first call loads every custom node's info
+  if (path.startsWith('/view') || path.startsWith('/upload')) return 60_000;
+  if (path.startsWith('/prompt')) return 30_000;
+  return 20_000;
+}
+
 async function comfyFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = `${config.comfyUrl}${path}`;
+  // tests shorten the limits rather than wait tens of seconds
+  const ms = Number(process.env.DARKROOM_COMFY_TIMEOUT_MS) || timeoutFor(path);
   try {
-    return await fetch(url, init);
+    return await fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(ms) });
   } catch (err) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      throw new ComfyError(
+        `ComfyUI isn't responding (no answer to ${path.split('?')[0]} in ${ms / 1000} s) — it may be frozen. Check logs/comfyui.log, or restart ComfyUI from the launcher.`,
+      );
+    }
     throw new ComfyError(
       `ComfyUI unreachable at ${config.comfyUrl}: ${err instanceof Error ? err.message : String(err)}`,
     );

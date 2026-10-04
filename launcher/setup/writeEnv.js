@@ -37,6 +37,11 @@ export function writeEnvFile(vars) {
   if (!wroteOptional) {
     lines.push('# CIVITAI_TOKEN=', '# HF_TOKEN=', '# COMFY_PREVIEW_METHOD=auto');
   }
+  // Everything else already in .env (settings saved from the web page — VRAM mode, Civitai
+  // auto-fetch, log level…) stays as it was
+  const managed = new Set(['PORT', 'COMFY_URL', 'COMFY_MODE', 'COMFY_DIR', 'COMFY_PYTHON', ...OPTIONAL_KEYS]);
+  const kept = Object.entries({ ...existing, ...vars }).filter(([k, v]) => !managed.has(k) && v !== undefined && v !== null && v !== '');
+  if (kept.length) lines.push('', ...kept.map(([k, v]) => `${k}=${v}`));
   lines.push('');
 
   fs.writeFileSync(envPath, lines.join('\n'), 'utf8');

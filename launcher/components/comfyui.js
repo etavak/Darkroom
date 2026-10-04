@@ -2,16 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as p from '@clack/prompts';
 import { loadAndApplyEnv, applyEnv, loadEnvFile } from '../lib/env.js';
+import { comfyStoppedFor } from '../lib/comfy.js';
 import { accelInstallNote, isIntelMac } from '../lib/hardware.js';
 import { withOpLog } from '../lib/opLog.js';
 import { loadPins } from '../lib/pins.js';
 import {
+  getComfyPortableRoot,
   getComfyPython,
   getComfyUiRoot,
   getGitBin,
   defaultComfyDir,
   getModelsRoot,
-  runtimeDir,
 } from '../lib/paths.js';
 import { runCommand } from '../lib/process.js';
 import { withRestorePoint } from '../lib/restorePoint.js';
@@ -91,14 +92,14 @@ async function installUnixSource(dest, ctx, log) {
   p.log.step('Upgrading pip…');
   await runCommand(
     venvPython,
-    ['-m', 'pip', 'install', '--upgrade', '--retries', '10', '--timeout', '60', 'pip', 'wheel', 'setuptools'],
+    ['-s', '-m', 'pip', 'install', '--upgrade', '--retries', '10', '--timeout', '60', 'pip', 'wheel', 'setuptools'],
     { cwd: dest, stdio: 'inherit' },
   );
 
   p.log.step('Installing ComfyUI requirements…');
   await runCommand(
     venvPython,
-    ['-m', 'pip', 'install', '--retries', '10', '--timeout', '60', '-r', 'requirements.txt'],
+    ['-s', '-m', 'pip', 'install', '--retries', '10', '--timeout', '60', '-r', 'requirements.txt'],
     { cwd: dest, stdio: 'inherit' },
   );
 
@@ -106,6 +107,74 @@ async function installUnixSource(dest, ctx, log) {
   if (!validated) throw new Error('ComfyUI install finished but validation failed');
   persistLocalEnv(validated);
   log.info(`ComfyUI ready at ${validated.comfyDir}`);
+}
+
+/**
+ * Run the Windows portable's own updater: pulls ComfyUI (to the newest release with --stable),
+ * then installs its requirements. Mirrors update\update_comfyui(_stable).bat, including the
+ * updater replacing itself and running again.
+ * @param {string} portable ComfyUI_windows_portable folder
+ * @param {string} python its python_embeded\python.exe
+ * @param {boolean} stable newest release rather than the newest commit
+ */
+export async function runPortableUpdater(portable, python, stable) {
+  const updateDir = path.join(portable, 'update');
+  const comfyArg = `..${path.sep}ComfyUI${path.sep}`;
+  const run = (/** @type {string[]} */ extra) =>
+    runCommand(python, ['update.py', comfyArg, ...extra, ...(stable ? ['--stable'] : [])], { cwd: updateDir, stdio: 'inherit' });
+  p.log.step(stable ? 'Updating ComfyUI to its newest release…' : 'Updating ComfyUI to the newest version…');
+  await run([]);
+  const fresh = path.join(updateDir, 'update_new.py');
+  if (fs.existsSync(fresh)) {
+    fs.renameSync(fresh, path.join(updateDir, 'update.py'));
+    p.log.info('The updater updated itself — running it again');
+    await run(['--skip_self_update']);
+  }
+  // update.py ignores a failed requirements install; run it here too so a failure shows
+  p.log.step('Checking ComfyUI requirements…');
+  await runCommand(python, ['-s', '-m', 'pip', 'install', '-r', path.join(portable, 'ComfyUI', 'requirements.txt')], {
+    cwd: portable,
+    stdio: 'inherit',
+  });
+}
+
+/**
+ * git, with a clear message when it isn't installed (Windows has none until Darkroom adds MinGit).
+ * @param {string[]} args
+ * @param {string} cwd
+ */
+async function runGit(args, cwd) {
+  try {
+    await runCommand(getGitBin(), args, { cwd, stdio: 'inherit' });
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === 'ENOENT') {
+      throw new Error('Git is needed for this — install it from Components → Git, then try again.');
+    }
+    throw err;
+  }
+}
+
+/**
+ * Move a folder's contents into another (renames — same drive), the moved files winning over
+ * same-named ones (a fresh ComfyUI's models/ holds only placeholder files). Removes `src` when done.
+ * @param {string} src
+ * @param {string} dst
+ */
+export function mergeInto(src, dst) {
+  if (!fs.existsSync(dst)) {
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.renameSync(src, dst);
+    return;
+  }
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, e.name);
+    const to = path.join(dst, e.name);
+    const toIsDir = fs.existsSync(to) && fs.statSync(to).isDirectory();
+    if (e.isDirectory() && toIsDir) mergeInto(from, to);
+    // a file where the new install has a folder of that name: keep both
+    else fs.renameSync(from, toIsDir ? `${to}.kept` : to);
+  }
+  fs.rmdirSync(src);
 }
 
 /** @type {import('./types.js').Component} */
@@ -168,61 +237,78 @@ export const comfyuiComponent = {
       const ui = getComfyUiRoot(dir);
       if (!ui) throw new Error('Invalid COMFY_DIR');
 
-      if (process.platform === 'win32') {
-        const ok = await (ctx.confirm || defaultConfirm)(
-          'Re-download the Windows portable to update ComfyUI?',
-          true,
+      const portable = getComfyPortableRoot(dir) || dir;
+      const embedded = path.join(portable, 'python_embeded', 'python.exe');
+      if (fs.existsSync(embedded) && fs.existsSync(path.join(portable, 'update', 'update.py'))) {
+        // The Windows portable build: in place, with the updater it ships (what its
+        // update_comfyui.bat runs) — models, custom nodes and their packages stay as they are
+        await comfyStoppedFor(ctx, defaultConfirm, () =>
+          withRestorePoint('comfyui', { comfyDir: ui }, async () => {
+            await runPortableUpdater(portable, embedded, ctx.channel !== 'latest');
+            log.info('ComfyUI updated');
+          }),
         );
-        if (!ok) return;
-        await withRestorePoint('comfyui', { comfyDir: ui }, async () => {
-          const validated = await installComfyWindowsPortable({
-            dest: ctx.installDir || dir,
-          });
-          persistLocalEnv(validated);
-        });
         return;
       }
-
       if (!fs.existsSync(path.join(ui, '.git'))) {
-        throw new Error('ComfyUI is not a git checkout — use Reinstall');
+        throw new Error(
+          fs.existsSync(embedded)
+            ? `This ComfyUI (${dir}) has no update\\update.py to update itself with. Use Reinstall instead.`
+            : 'ComfyUI is not a git checkout — use Reinstall',
+        );
       }
-      await withRestorePoint('comfyui', { comfyDir: ui }, async () => {
-        await runCommand(getGitBin(), ['pull', '--ff-only'], { cwd: ui, stdio: 'inherit' });
-        const py = getComfyPython(dir);
-        await runCommand(py, ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-          cwd: ui,
-          stdio: 'inherit',
-        });
-        log.info('ComfyUI updated');
-      });
+      // A git checkout with its own venv (macOS, Linux, or set up by hand on Windows)
+      await comfyStoppedFor(ctx, defaultConfirm, () =>
+        withRestorePoint('comfyui', { comfyDir: ui }, async () => {
+          await runGit(['pull', '--ff-only'], ui);
+          await runCommand(getComfyPython(dir), ['-s', '-m', 'pip', 'install', '-r', 'requirements.txt'], {
+            cwd: ui,
+            stdio: 'inherit',
+          });
+          log.info('ComfyUI updated');
+        }),
+      );
     });
   },
 
   async repair(ctx = {}) {
     const st = await this.status();
     if (st.state === 'missing') return this.install(ctx);
-    if (process.platform !== 'win32') {
-      loadAndApplyEnv();
-      const dir = process.env.COMFY_DIR;
-      const ui = getComfyUiRoot(dir);
-      const py = getComfyPython(dir);
-      if (ui && py && fs.existsSync(py)) {
-        await withOpLog('comfyui', 'repair', async (log) => {
-          await runCommand(py, ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-            cwd: ui,
-            stdio: 'inherit',
-          });
-          log.info('Reinstalled requirements');
-        });
-        return;
-      }
+    loadAndApplyEnv();
+    const dir = process.env.COMFY_DIR;
+    const ui = getComfyUiRoot(dir);
+    const py = getComfyPython(dir);
+    if (ui && py && fs.existsSync(py)) {
+      // Reinstall ComfyUI's requirements — the portable's Python or the venv alike
+      await withOpLog('comfyui', 'repair', async (log) => {
+        await comfyStoppedFor(ctx, defaultConfirm, () =>
+          runCommand(py, ['-s', '-m', 'pip', 'install', '-r', 'requirements.txt'], { cwd: ui, stdio: 'inherit' }),
+        );
+        log.info('Reinstalled requirements');
+      });
+      return;
     }
     return this.reinstall(ctx);
   },
 
   async reinstall(ctx = {}) {
-    await this.uninstall({ ...ctx, skipModelConfirm: false });
+    const kept = /** @type {{ rel: string, kept: string }[] | undefined} */ (await this.uninstall({ ...ctx, skipModelConfirm: false }));
     await this.install(ctx);
+    // Put the kept models / outputs into the new ComfyUI
+    const ui = getComfyUiRoot(process.env.COMFY_DIR || '');
+    for (const k of kept ?? []) {
+      if (!ui) break;
+      try {
+        mergeInto(k.kept, path.join(ui, k.rel));
+        p.log.success(`Moved your ${k.rel} into the new ComfyUI`);
+      } catch (err) {
+        p.log.warn(`Your ${k.rel} are still at ${k.kept} — move them into ${path.join(ui, k.rel)} yourself (${err instanceof Error ? err.message : err}).`);
+      }
+    }
+    for (const k of kept ?? []) {
+      const parent = path.dirname(k.kept);
+      if (fs.existsSync(parent) && !fs.readdirSync(parent).length) fs.rmdirSync(parent);
+    }
   },
 
   async uninstall(ctx = {}) {
@@ -252,26 +338,34 @@ export const comfyuiComponent = {
       );
     }
 
+    /** @type {{ rel: string, kept: string }[]} */
+    const kept = [];
     await withOpLog('comfyui', 'uninstall', async (log) => {
-      if (!wipeModels && sensitive.length) {
-        // Move sensitive dirs aside under runtime backup, delete the rest
-        const keepParent = path.join(runtimeDir, 'comfy-keep');
-        fs.mkdirSync(keepParent, { recursive: true });
-        for (const s of sensitive) {
-          const base = path.basename(s);
-          const dest = path.join(keepParent, `${base}-${Date.now()}`);
-          try {
-            fs.renameSync(s, dest);
+      // Windows can't delete a folder ComfyUI is running from
+      await comfyStoppedFor(ctx, defaultConfirm, async () => {
+        if (!wipeModels && sensitive.length) {
+          // Next to the ComfyUI folder: same drive, so it's a rename (a move to another drive fails)
+          const keepParent = path.join(path.dirname(path.resolve(dir)), `${path.basename(dir)}-kept-${new Date().toISOString().slice(0, 10)}-${Date.now() % 100000}`);
+          fs.mkdirSync(keepParent, { recursive: true });
+          for (const s of sensitive) {
+            const dest = path.join(keepParent, path.basename(s));
+            try {
+              fs.renameSync(s, dest);
+            } catch (err) {
+              // Never delete what couldn't be kept: put back what moved, and stop
+              for (const k of kept) fs.renameSync(k.kept, path.join(ui || dir, k.rel));
+              fs.rmSync(keepParent, { recursive: true, force: true });
+              throw new Error(`Couldn't keep ${s} aside (${/** @type {NodeJS.ErrnoException} */ (err).code ?? err}) — nothing was removed. Close any program using it and try again.`);
+            }
+            kept.push({ rel: path.basename(s), kept: dest });
             log.info(`Preserved ${s} → ${dest}`);
-            p.log.info(`Preserved ${base} at ${dest}`);
-          } catch (err) {
-            log.warn(`Could not preserve ${s}: ${err}`);
           }
+          p.log.info(`Kept your ${kept.map((k) => k.rel).join(' and ')} at ${keepParent}`);
         }
-      }
-      fs.rmSync(dir, { recursive: true, force: true });
-      // Also remove nested ComfyUI if portable parent
+        fs.rmSync(dir, { recursive: true, force: true });
+      });
       log.info(`Removed ${dir}`);
     });
+    return kept;
   },
 };

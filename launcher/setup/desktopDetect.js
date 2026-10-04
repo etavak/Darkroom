@@ -24,11 +24,16 @@ function desktopCandidateRoots() {
       path.join(home, 'Applications', 'ComfyUI.app'),
     );
   } else if (process.platform === 'win32') {
-    const local = process.env.LOCALAPPDATA || '';
-    if (local) {
-      out.push(path.join(local, 'Programs', 'ComfyUI'));
-      out.push(path.join(local, 'ComfyUI'));
-    }
+    // Settings (config.json with basePath) live in Roaming AppData; the app in Local AppData
+    const roaming = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    out.push(
+      path.join(roaming, 'ComfyUI'),
+      path.join(home, 'Documents', 'ComfyUI'),
+      path.join(local, 'Programs', '@comfyorgcomfyui-electron'),
+      path.join(local, 'Programs', 'ComfyUI'),
+      path.join(local, 'ComfyUI'),
+    );
   } else {
     out.push(path.join(home, '.config', 'ComfyUI'));
   }
@@ -123,14 +128,15 @@ function pickPort(obj) {
  * @param {string} root
  */
 function findDesktopPython(root) {
+  // The Desktop app keeps its Python environment in <base path>/.venv
+  const venvs = ['.venv', 'venv', path.join('ComfyUI', '.venv'), path.join('ComfyUI', 'venv'), path.join('resources', 'ComfyUI', 'venv')];
   const candidates = [
-    path.join(root, 'resources', 'ComfyUI', 'venv', 'bin', 'python'),
+    ...venvs.map((v) => path.join(root, v, 'Scripts', 'python.exe')),
+    ...venvs.map((v) => path.join(root, v, 'bin', 'python')),
     path.join(root, 'resources', 'python', 'bin', 'python'),
     path.join(root, 'Contents', 'Resources', 'ComfyUI', 'venv', 'bin', 'python'),
     path.join(root, 'Contents', 'Resources', 'python', 'bin', 'python3'),
     path.join(root, 'python_embeded', 'python.exe'),
-    path.join(root, 'venv', 'bin', 'python'),
-    path.join(root, 'ComfyUI', 'venv', 'bin', 'python'),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -156,12 +162,51 @@ function findDesktopUiRoot(root) {
 }
 
 /**
+ * The Desktop app's base path (models, custom nodes, .venv) from its config.json.
+ * @param {string} root
+ * @returns {string | null}
+ */
+function desktopBasePath(root) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
+    return typeof cfg.basePath === 'string' && fs.existsSync(cfg.basePath) ? cfg.basePath : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Where the Desktop app's own copy of ComfyUI (main.py) is installed. */
+function desktopAppUiRoots() {
+  const home = os.homedir();
+  if (process.platform === 'darwin') {
+    return ['/Applications/ComfyUI.app', path.join(home, 'Applications', 'ComfyUI.app')].map((a) => path.join(a, 'Contents', 'Resources', 'ComfyUI'));
+  }
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    return ['@comfyorgcomfyui-electron', 'ComfyUI'].map((d) => path.join(local, 'Programs', d, 'resources', 'ComfyUI'));
+  }
+  return [];
+}
+
+/**
  * @returns {DetectedComfy[]}
  */
 export function detectComfyDesktopInstalls() {
   /** @type {DetectedComfy[]} */
   const found = [];
-  for (const root of desktopCandidateRoots()) {
+  // App settings name the base path: its .venv runs the app's ComfyUI
+  const roots = desktopCandidateRoots();
+  for (const root of [...roots]) {
+    const base = desktopBasePath(root);
+    if (!base || roots.includes(base)) continue;
+    roots.push(base);
+    const ui = desktopAppUiRoots().find((u) => fs.existsSync(path.join(u, 'main.py')));
+    const python = findDesktopPython(base);
+    if (ui && python) {
+      found.push({ comfyDir: ui, python, kind: 'desktop', label: `Desktop · ${base}`, ...readDesktopComfyConfig(root) });
+    }
+  }
+  for (const root of roots) {
     if (!fs.existsSync(root)) continue;
 
     // App Support folder may only have config — pair with app bundle
